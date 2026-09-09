@@ -403,3 +403,22 @@ of the tasks.md §6 stop conditions ("no Media Foundation path can consume the G
 reference machine" — documented issue with dump, reproduction, and the defensive behavior).
 Two-hour soak evidence must be captured on a machine/GPU where the MFT holds up (NVIDIA/Intel
 or fixed AMD driver), using the same harness.
+
+## Session 4 final addendum: watchdog autonomous evidence (07:07)
+
+The detached watchdog recovered the MFT at 06:57 (probe 7) and completed autonomously:
+
+- **5-min 1080p60 soak: PASS end-to-end** — exit 0; MediaValidator: 1920x1080@60, H.264,
+  **18,000/18,000 frames decoded, duration 300.015 s, VALID** (frame-count, monotonic, and
+  duration checks all green). This is the strongest encode-path evidence captured to date.
+- **2-h 1080p30 soak: the AMD MFT stall reproduces on the very next session** — exit 9
+  (watermark defense) within seconds-to-minutes of session start; validator correctly rejects
+  the empty partial. This confirms the stall is a per-session driver defect on this AMD iGPU
+  (each new MFT session survives only a few minutes of encode before stopping consumption),
+  not residual session pollution. It falls squarely under the tasks.md §6 stop conditions and
+  is filed with dump + logs + reproduction.
+
+**AC-008 final disposition:** blocked by the platform (AMD driver MFT long-session defect);
+the product's defensive behavior (sub-minute safe stop, process survives, partial retained)
+is verified by live testing. Two-hour soak evidence is to be captured on NVIDIA/Intel
+reference machines with the same harness.
