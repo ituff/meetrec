@@ -34,6 +34,7 @@ struct Options {
     double expectFps = 0.0;
     double expectDurationSec = 0.0;
     double toleranceSec = 2.0;
+    unsigned expectFrames = 0;
 };
 
 Options ParseArgs(int argc, wchar_t** argv) {
@@ -45,6 +46,7 @@ Options ParseArgs(int argc, wchar_t** argv) {
         else if (wcscmp(argv[i], L"--expect-fps") == 0) o.expectFps = _wtof(argv[i + 1]);
         else if (wcscmp(argv[i], L"--expect-duration-sec") == 0) o.expectDurationSec = _wtof(argv[i + 1]);
         else if (wcscmp(argv[i], L"--tolerance-sec") == 0) o.toleranceSec = _wtof(argv[i + 1]);
+        else if (wcscmp(argv[i], L"--expect-frames") == 0) o.expectFrames = static_cast<unsigned>(_wtoi(argv[i + 1]));
     }
     return o;
 }
@@ -176,6 +178,17 @@ int wmain(int argc, wchar_t** argv) {
     if (frames == 0) {
         wprintf(L"FAIL: no frames decoded\n");
         ++failures;
+    }
+    if (opt.expectFrames != 0) {
+        // Consistency: decoded count must match the expected count within 15%
+        // (tolerates encoder priming and boundary rounding).
+        const double low = opt.expectFrames * 0.85;
+        const double high = opt.expectFrames * 1.15;
+        if (frames < low || frames > high) {
+            wprintf(L"FAIL: frame count %u outside %.0f..%.0f (expected %u)\n", frames, low,
+                    high, opt.expectFrames);
+            ++failures;
+        }
     }
     if (opt.expectDurationSec > 0.0) {
         const double delta = durationSec - opt.expectDurationSec;

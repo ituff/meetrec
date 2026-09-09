@@ -107,24 +107,34 @@ void PreviewPanel::Tick() {
 void PreviewPanel::Render() {
     if (hwnd_ == nullptr || frameBgra_.empty() || frameW_ == 0 || frameH_ == 0) return;
 
-    if (bitmap_ != nullptr) {
-        DeleteObject(bitmap_);
-        bitmap_ = nullptr;
+    // Reuse the DIB section across frames of the same size (10 FPS ticks
+    // would otherwise churn an ~8 MB GDI allocation per frame).
+    if (bitmap_ == nullptr || dibW_ != frameW_ || dibH_ != frameH_) {
+        if (bitmap_ != nullptr) {
+            DeleteObject(bitmap_);
+            bitmap_ = nullptr;
+        }
+        BITMAPINFOHEADER header = {};
+        header.biSize = sizeof(BITMAPINFOHEADER);
+        header.biWidth = static_cast<LONG>(frameW_);
+        header.biHeight = -static_cast<LONG>(frameH_); // top-down
+        header.biPlanes = 1;
+        header.biBitCount = 32;
+        header.biCompression = BI_RGB;
+
+        void* bits = nullptr;
+        bitmap_ = CreateDIBSection(nullptr, reinterpret_cast<const BITMAPINFO*>(&header),
+                                   DIB_RGB_COLORS, &bits, nullptr, 0);
+        dibBits_ = bits;
+        dibW_ = frameW_;
+        dibH_ = frameH_;
+        if (bitmap_ == nullptr || bits == nullptr) {
+            dibBits_ = nullptr;
+            return;
+        }
     }
-
-    BITMAPINFOHEADER header = {};
-    header.biSize = sizeof(BITMAPINFOHEADER);
-    header.biWidth = static_cast<LONG>(frameW_);
-    header.biHeight = -static_cast<LONG>(frameH_); // top-down
-    header.biPlanes = 1;
-    header.biBitCount = 32;
-    header.biCompression = BI_RGB;
-
-    void* bits = nullptr;
-    bitmap_ = CreateDIBSection(nullptr, reinterpret_cast<const BITMAPINFO*>(&header), DIB_RGB_COLORS,
-                               &bits, nullptr, 0);
-    if (bitmap_ == nullptr || bits == nullptr) return;
-    memcpy(bits, frameBgra_.data(), frameBgra_.size());
+    if (dibBits_ == nullptr) return;
+    memcpy(dibBits_, frameBgra_.data(), frameBgra_.size());
 
     HDC windowDc = GetDC(hwnd_);
     HDC memDc = CreateCompatibleDC(windowDc);

@@ -43,6 +43,9 @@ private:
     UINT frameW_ = 0;
     UINT frameH_ = 0;
     HBITMAP bitmap_ = nullptr;
+    void* dibBits_ = nullptr;
+    UINT dibW_ = 0;
+    UINT dibH_ = 0;
     DWORD lastRenderMs_ = 0;
 };
 
