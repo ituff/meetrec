@@ -34,7 +34,7 @@ source inspection, `DRV-*` = driver manual log.
 | FR-026 | Restore on stop / recoverable failure | CODE `TeardownSession` restore; MAN-3 |
 | FR-027 | Primary-monitor fallback restore | CODE `Restore` fallback; MAN-3 |
 | FR-028 | Target destroyed → `VSR-TARGET-LOST` | CODE consume-loop liveness poll; MAN-3 (AC-006) |
-| FR-029 | New owned popups relocated | P1 backlog (T100) — SHOULD, documented |
+| FR-029 | New owned popups relocated | UT PopupTracker.*; CODE `PopupTracker` (WinEvent hook, no focus steal); MAN-3 popup row |
 | FR-030 | UI states minimize target caveat | MAN-3; CODE start-dialog text |
 | FR-040 | Capture targets virtual monitor only | CODE `CreateCaptureItemForMonitor`; MAN-4 isolation |
 | FR-041 | GPU D3D11 frame path | CODE GraphicsDevice/WGC; ADR-003 |
@@ -81,6 +81,8 @@ source inspection, `DRV-*` = driver manual log.
 | FR-094 | No content/credential logging | UT Sanitize.*; CODE sanitization rule; MAN-6 |
 | FR-095 | Rotation ≤ 7 days / 50 MB | UT Logger rotation test; MAN-6 |
 | FR-096 | Diagnostics package (SHOULD) | CODE Diagnostics.cpp; MAN-6 |
+| P1/T100 | Owned-popup relocation (FR-029, SHOULD) | Implemented — see FR-029 row |
+| P1/T103 | Local opt-in crash dumps | CODE `CrashReporter` (`enableCrashDumps` default off, never uploaded); settings UTs cover schema round trip |
 
 ## 2. Non-functional requirements
 
@@ -134,6 +136,5 @@ source inspection, `DRV-*` = driver manual log.
 
 ## Coverage gaps tracked
 
-- FR-029 (owned-popup relocation) is SHOULD and deferred to P1 T100.
 - T091/T092/T093 measurements and cross-machine runs require physical reference machines; the
   harness and checklists above are the deliverable until those runs execute.

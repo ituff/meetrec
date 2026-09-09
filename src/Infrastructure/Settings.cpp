@@ -93,13 +93,19 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         if (v.GetType() == json::Type::Boolean) settings.restoreTargetWindow = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
     }
+    {
+        const json::Value& v = root.Find("enableCrashDumps");
+        if (v.GetType() == json::Type::Boolean) settings.enableCrashDumps = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
 
     // Preserve unknown fields verbatim (FR-091).
     for (const auto& kv : root.AsObject()) {
         const bool known = kv.first == "schemaVersion" || kv.first == "outputDirectory" ||
                            kv.first == "qualityPreset" || kv.first == "showPreview" ||
                            kv.first == "captureCursor" || kv.first == "minimizeToTray" ||
-                           kv.first == "restoreTargetWindow";
+                           kv.first == "restoreTargetWindow" ||
+                           kv.first == "enableCrashDumps";
         if (!known) {
             unknown_.Set(kv.first, kv.second);
         }
@@ -120,6 +126,7 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("captureCursor", json::Value(settings.captureCursor));
     root.Set("minimizeToTray", json::Value(settings.minimizeToTray));
     root.Set("restoreTargetWindow", json::Value(settings.restoreTargetWindow));
+    root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
 
     // Re-attach preserved unknown keys verbatim (FR-091).
     if (unknown_.GetType() == json::Type::Object) {

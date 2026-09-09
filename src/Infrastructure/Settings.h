@@ -22,6 +22,8 @@ struct Settings {
     bool captureCursor = false;
     bool minimizeToTray = true;
     bool restoreTargetWindow = true;
+    // T103: local crash dumps are strictly opt-in and never uploaded.
+    bool enableCrashDumps = false;
 };
 
 class SettingsStore {

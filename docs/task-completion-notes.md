@@ -120,3 +120,52 @@ MediaValidator.exe (usage)                          → runs; used by integratio
    runs through the T093 pipeline once a certificate/attestation flow is available.
 4. Preview tap uses a bounded CPU copy at ≤ 10 FPS (observability only); the recording path
    remains GPU-only — documented in code and design alignment notes.
+
+---
+
+# Continuation session (2026-09-10, before 09:00)
+
+## Defect fixes found by review
+
+1. **Target list was never drawn** — the owner-draw listbox (LBS_OWNERDRAWFIXED) had no
+   WM_MEASUREITEM/WM_DRAWITEM handling, so the eligible-window list rendered blank (FR-021).
+   Implemented icon + "exe - title" rows with DPI-scaled metrics, selection colors, and focus
+   rect.
+2. **TopologyWatcher never terminated** — message-only windows do not process WM_CLOSE via
+   DefWindowProc, so `Stop()` always waited out its 5 s timeout and leaked the pump thread.
+   Added WM_CLOSE → DestroyWindow and WM_DESTROY → PostQuitMessage.
+3. **Preview toggle had no live effect** — the checkbox now enables/disables the preview panel
+   immediately and clears cached frames (FR-048 observability-only rule unaffected).
+4. **Settings were only saved from the diagnostics dialog** — now saved on window destroy and
+   after folder selection (FR-052).
+5. **Idle CPU risk** — `GetStatus` queried the full display topology on every 100 ms UI timer
+   tick; the liveness check is now cached with a 2 s cadence (NFR-001).
+
+## P1 backlog items implemented
+
+- **T100 (FR-029):** `window::PopupTracker` — WinEvent hook (EVENT_OBJECT_SHOW, target PID) on
+  a dedicated pump thread; new target-process windows are fitted into the virtual work area
+  with SWP_NOZORDER|SWP_NOACTIVATE (no focus steal). Decision logic is pure and covered by
+  8 unit tests (process boundary, tool/cloaked/borderless windows, ownership link, main-frame
+  exclusion). Coordinator starts/stops it around the recording session; failures are non-fatal.
+- **T103:** `CrashReporter` — SetUnhandledExceptionFilter + MiniDumpWriteDump into
+  `%LOCALAPPDATA%\VirtualScreenRecorder\CrashDumps`; strictly opt-in via the new
+  `enableCrashDumps` settings field (default false, never uploaded). Settings schema extended
+  with unknown-field preservation intact; wiring happens in `Application::InitRuntime`.
+- **T102:** `docs/spike-system-audio.md` — WASAPI loopback / AAC / sink-writer feasibility
+  report with privacy UX requirements; explicitly no audio code (per task stop rule).
+- **T104:** `docs/enterprise-deployment-assessment.md` — Intune wrap vs WiX/MSI vs MSIX and the
+  driver pre-staging recommendation.
+
+## Verification (this session)
+
+```text
+Debug|x64 full rebuild:          0 errors, 0 warnings (/W4 /WX)   ✓
+Release|x64 full rebuild:        0 errors, 0 warnings (/W4 /WX)   ✓
+Unit tests (Debug and Release):  64 tests, 0 failing checks       ✓
+```
+
+## Follow-ups unchanged from baseline
+
+Driver/build-machine evidence (T011/T012/T022/T023/T030/T031/T040-T042 media checks, T090-T093
+execution) remains pending physical machines, as recorded above.

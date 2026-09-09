@@ -220,8 +220,12 @@ public:
                     if (self->callback_) self->callback_();
                 }
                 return 0;
+            case WM_CLOSE:
+                DestroyWindow(hwnd);
+                return 0;
             case WM_DESTROY:
                 KillTimer(hwnd, kDebounceTimer);
+                PostQuitMessage(0);
                 return 0;
             default:
                 return DefWindowProcW(hwnd, msg, wp, lp);

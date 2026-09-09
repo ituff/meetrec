@@ -7,6 +7,7 @@
 #include <DisplayControl/SoftwareDisplayDevice.h>
 #include <DisplayControl/TopologyService.h>
 #include <Encoder/VideoPreset.h>
+#include <Infrastructure/CrashReporter.h>
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Paths.h>
 #include <Infrastructure/Settings.h>
@@ -77,6 +78,9 @@ bool Application::InitRuntime() {
     }
     minimizeToTray_ = settings.minimizeToTray;
     outputDirectory_ = settings.outputDirectory;
+
+    // T103: crash dumps are strictly opt-in and stay local.
+    CrashReporter::Install(settings.enableCrashDumps);
 
     if (!IsWindows11OrLater()) {
         Error e(ErrorCode::InitOsUnsupported,

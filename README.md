@@ -175,6 +175,15 @@ scripts/
   gen-edid.py              # regenerates src/Driver/Edid.h (checksum verified)
 ```
 
+## P1 backlog status
+
+Implemented beyond the P0 baseline (see `docs/task-completion-notes.md`):
+
+- **T100** — owned-popup relocation during recording (FR-029), no focus steal.
+- **T103** — local opt-in crash dumps (`enableCrashDumps`, default off, never uploaded).
+- **T102 / T104** — evaluation docs: `docs/spike-system-audio.md`,
+  `docs/enterprise-deployment-assessment.md`.
+
 ## License / attribution
 
 Driver code in `src/Driver` is derived from Microsoft's

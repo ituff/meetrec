@@ -149,12 +149,73 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 case ID_BTN_DIAG:
                     if (code == BN_CLICKED) OnDiagnosticsClicked();
                     return 0;
+                case ID_PREVIEW_TOGGLE:
+                    if (code == BN_CLICKED && preview_ != nullptr) {
+                        // Live preview toggle; disabling releases panel state
+                        // and never touches capture (FR-048).
+                        preview_->SetEnabled(IsDlgButtonChecked(hwnd, ID_PREVIEW_TOGGLE) ==
+                                             BST_CHECKED);
+                        if (!preview_->IsEnabled()) preview_->Clear();
+                    }
+                    return 0;
                 case ID_LIST_WINDOWS:
                     if (code == LBN_DBLCLK) RefreshWindowList();
                     return 0;
                 default:
                     return 0;
             }
+        }
+        case WM_MEASUREITEM: {
+            // Owner-draw target list (FR-021): row height fits the icon.
+            auto* mis = reinterpret_cast<MEASUREITEMSTRUCT*>(lp);
+            if (mis != nullptr && mis->CtlID == ID_LIST_WINDOWS) {
+                mis->itemHeight = static_cast<UINT>(Scale(24, dpi_));
+                return TRUE;
+            }
+            return DefWindowProcW(hwnd, msg, wp, lp);
+        }
+        case WM_DRAWITEM: {
+            auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+            if (dis == nullptr || dis->CtlID != ID_LIST_WINDOWS ||
+                dis->itemID >= windows_.size()) {
+                return DefWindowProcW(hwnd, msg, wp, lp);
+            }
+            const auto& info = windows_[dis->itemID];
+
+            // Selection / focus background.
+            const bool selected = (dis->itemState & ODS_SELECTED) != 0;
+            FillRect(dis->hDC, &dis->rcItem,
+                     GetSysColorBrush(selected ? COLOR_HIGHLIGHT : COLOR_WINDOW));
+            SetBkMode(dis->hDC, TRANSPARENT);
+            SetTextColor(dis->hDC, selected ? GetSysColor(COLOR_HIGHLIGHTTEXT)
+                                            : GetSysColor(COLOR_WINDOWTEXT));
+
+            // Icon at the left (FR-021).
+            const int iconPx = Scale(16, dpi_);
+            const int pad = Scale(4, dpi_);
+            if (info.icon != nullptr) {
+                DrawIconEx(dis->hDC, dis->rcItem.left + pad,
+                           dis->rcItem.top + ((dis->rcItem.bottom - dis->rcItem.top) - iconPx) / 2,
+                           info.icon, iconPx, iconPx, 0, nullptr, DI_NORMAL);
+            }
+
+            // "exe - title" single line, vertically centered (NFR-040 DPI text).
+            wchar_t line[768] = {};
+            _snwprintf_s(line, ARRAYSIZE(line), _TRUNCATE, L"%s - %s", info.exeName.c_str(),
+                         info.title.c_str());
+            RECT textRect = dis->rcItem;
+            textRect.left += pad * 2 + iconPx;
+            HGDIOBJ oldFont = SelectObject(dis->hDC, uiFont_);
+            DrawTextW(dis->hDC, line, -1, &textRect,
+                      DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+            SelectObject(dis->hDC, oldFont);
+
+            if ((dis->itemState & ODS_FOCUS) != 0) {
+                RECT focus = dis->rcItem;
+                InflateRect(&focus, -1, -1);
+                DrawFocusRect(dis->hDC, &focus);
+            }
+            return TRUE;
         }
         case WM_APP_ACTIVATE:
             ShowAndActivate();
@@ -233,6 +294,7 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DESTROY:
             KillTimer(hwnd, timerId_);
             tray_.Remove();
+            SaveSettings(); // FR-052: remember folder/preset for the next run
             PostQuitMessage(0);
             return 0;
         default:

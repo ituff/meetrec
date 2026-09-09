@@ -27,10 +27,12 @@
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="WindowEnumerator.cpp" />
+    <ClCompile Include="PopupTracker.cpp" />
     <ClCompile Include="WindowPlacement.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="WindowEnumerator.h" />
+    <ClInclude Include="PopupTracker.h" />
     <ClInclude Include="WindowPlacement.h" />
   </ItemGroup>
   <ItemGroup>

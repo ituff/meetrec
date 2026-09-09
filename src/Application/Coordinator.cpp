@@ -408,6 +408,17 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         savedPlacement_ = std::make_unique<SavedPlacement>(moved.Value());
     }
 
+    // 5b. Track new windows of the target process and relocate them onto the
+    // virtual display (FR-029 / T100). Display-only dev mode skips this.
+    if (request.targetWindow != nullptr) {
+        auto tracking = popupTracker_.Start(request.targetWindow, monitor.workRect);
+        if (!tracking) {
+            // Non-fatal (SHOULD requirement): log and continue recording.
+            log::Warning("Coordinator", "POPUP_TRACKING_UNAVAILABLE", correlationId_,
+                         tracking.TakeError().technicalMessage);
+        }
+    }
+
     // 6. Queue + capture session (FR-040..FR-046).
     queue_ = std::make_unique<BoundedFrameQueue>(kQueueCapacity);
     auto sessionResult = MonitorCaptureSession::Start(*device_, monitor.handle, *queue_, *clock_);
@@ -665,6 +676,7 @@ void Coordinator::TeardownSession() {
     }
 
     topologyWatcher_.Stop();
+    popupTracker_.Stop();
 
     // Restore the target window (FR-026 / NFR-013).
     if (savedPlacement_ != nullptr) {
@@ -712,8 +724,17 @@ StatusSnapshot Coordinator::GetStatus() const {
             s.activeElapsedMs = timeline_.ActiveElapsed100Ns(Monotonic100Ns(*clock_)) / 10'000;
         }
     }
-    // Topology query outside the lock; it can touch the display stack.
-    s.virtualMonitorActive = display::SoftwareDisplayDevice::IsMonitorActive();
+    // Topology query on a slow cadence, outside the lock; it touches the
+    // display stack and would otherwise run on every UI timer tick (NFR-001).
+    const std::int64_t nowMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(clock_->MonotonicNow()).count();
+    std::int64_t last = lastMonitorCheckMs_.load(std::memory_order_relaxed);
+    if (nowMs - last >= kMonitorCheckIntervalMs) {
+        const bool active = display::SoftwareDisplayDevice::IsMonitorActive();
+        monitorActiveCached_.store(active, std::memory_order_relaxed);
+        lastMonitorCheckMs_.compare_exchange_strong(last, nowMs, std::memory_order_relaxed);
+    }
+    s.virtualMonitorActive = monitorActiveCached_.load(std::memory_order_relaxed);
     return s;
 }
 

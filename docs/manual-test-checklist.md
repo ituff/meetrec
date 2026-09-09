@@ -34,6 +34,7 @@ where available — T092). Automated portions are marked ⚙; everything else is
 | ☐ | Original monitor unplugged while recording | Restore lands visibly on the primary monitor (FR-027) | _ |
 | ☐ | Mixed-DPI placement (100 % + 150 %) | Target fully visible on the virtual display; restored correctly (NFR-040) | _ |
 | ☐ | Target list quality (Win32, Chromium, Office-style) | Eligible windows listed with icon, exe, title; recorder and shell excluded (FR-020..FR-022) | _ |
+| ☐ | New target-process dialog during recording | Dialog relocated onto the virtual display without stealing focus (FR-029, T100) | _ |
 
 ## 4. Recording (AC-002, AC-003, AC-005, AC-007, AC-008)
 
@@ -75,6 +76,7 @@ where available — T092). Automated portions are marked ⚙; everything else is
 | ☐ | Log review | UTC ts, severity, component, eventId, correlationId, message; no titles/content/tokens (FR-093/094) | _ |
 | ☐ | Rotation | ≤ 50 MB / 7 days / 5 files retained (FR-095) | _ |
 | ☐ | Diagnostics package | Zip contains logs + sanitized metadata; no video frames/credentials (FR-096) | _ |
+| ☐ | Crash dumps opt-in (T103) | Off by default; enabled → forced-crash writes .dmp into CrashDumps; never uploaded | _ |
 
 ## 7. Installer lifecycle (AC-001, AC-010)
 

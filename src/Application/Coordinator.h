@@ -25,6 +25,7 @@
 #include "RecordingTimeline.h"
 #include "StatusSnapshot.h"
 #include <Encoder/VideoPreset.h>
+#include <WindowManagement/PopupTracker.h>
 
 namespace vsr::capture {
 class BoundedFrameQueue;
@@ -134,6 +135,7 @@ private:
     std::unique_ptr<encoder::EncoderCapability> encoderCap_;
     display::SoftwareDisplayDevice softwareDevice_;
     display::TopologyWatcher topologyWatcher_;
+    window::PopupTracker popupTracker_; // FR-029 / T100
     HANDLE recordingMutex_ = nullptr; // per-user-session recording mutex (FR-074)
 
     // Timing. timeline_ is written by UI-thread commands (Pause/Resume) and
@@ -154,6 +156,12 @@ private:
     std::uintmax_t encodedBytes_ = 0;
     std::int64_t nextDiskCheckMs_ = 0;
     std::int64_t nextTargetCheckMs_ = 0;
+
+    // Monitor liveness is queried on a slow cadence (NFR-001: the 100 ms UI
+    // timer must not drive full topology queries).
+    static constexpr std::int64_t kMonitorCheckIntervalMs = 2000;
+    mutable std::atomic<std::int64_t> lastMonitorCheckMs_{-1'000'000};
+    mutable std::atomic<bool> monitorActiveCached_{false};
 };
 
 } // namespace vsr::app

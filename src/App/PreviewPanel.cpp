@@ -74,6 +74,17 @@ LRESULT PreviewPanel::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 }
 
+void PreviewPanel::Clear() {
+    frameBgra_.clear();
+    frameW_ = 0;
+    frameH_ = 0;
+    if (bitmap_ != nullptr) {
+        DeleteObject(bitmap_);
+        bitmap_ = nullptr;
+    }
+    if (hwnd_ != nullptr) InvalidateRect(hwnd_, nullptr, TRUE);
+}
+
 void PreviewPanel::Tick() {
     if (hwnd_ == nullptr || !enabled_) return;
     // Sample at ~10 FPS, independent of the recording frame rate

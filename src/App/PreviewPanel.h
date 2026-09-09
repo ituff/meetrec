@@ -27,6 +27,8 @@ public:
     void Tick();
     void SetEnabled(bool enabled) noexcept { enabled_ = enabled; }
     bool IsEnabled() const noexcept { return enabled_; }
+    // Drops the cached frame and repaints an empty panel.
+    void Clear();
     HWND Hwnd() const noexcept { return hwnd_; }
 
 private:
