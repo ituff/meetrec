@@ -353,3 +353,30 @@ AMD MFT entered a state where new sessions either fail (`WriteSample` E_INVALIDA
 without consuming — reproduced across Debug/Release. The failure paths behave as designed
 (safe stop, error surfaced, process recovers); a clean reboot is required before re-running
 encode soak evidence. Debug 120 s standard re-verified flat 480 MB after the fixes.
+
+## Session 4 addendum 2: wedged-worker containment + Release soak re-verified
+
+- **Wedged-worker containment (NFR-014/NFR-013):** `WaitForWorkerExit` is bounded (polls
+  `workerAlive_` up to the stop deadline). On deadline the worker is detached and
+  `AbandonSessionResources()` (a) restores the target window from the coordinator thread
+  (the wedged worker will never reach its own restore — NFR-013), (b) stops the topology
+  watcher, and (c) deliberately **leaks** the wedged pipeline objects (writer, converter,
+  capture session, queue, device, capability) so the abandoned thread can never operate on
+  freed memory. The session mutex is released; a new recording is still correctly refused
+  while the wedged pipeline lives (FR-074). Also fixed: `workerAlive_` was never
+  set/cleared by `SessionWorker` in the rewritten flow, which would have made every Stop
+  burn its full bounded-wait window.
+- **Release soak re-verified after driver session recovery:** 5 minutes @ 1920x1080@60
+  (High, 18,000 frames), Release build, real-time paced — working set flat at
+  **478.5-482.7 MB**, exit 0, and MediaValidator reports **18,000/18,000 frames decoded,
+  duration 300.015 s, VALID** (monotonic timestamps). This is the NFR-007 encode-path
+  evidence on the AMD hardware MFT, completing the earlier Debug-only verification.
+
+## Verification (final state of this session)
+
+```text
+Debug|x64 rebuild:    0 errors, 0 warnings (/W4 /WX)   ✓
+Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
+Unit tests:           64 tests, 0 failing checks (both configs) ✓
+Release 5-min soak:   flat ~479 MB, 18000 frames decoded, VALID ✓
+```

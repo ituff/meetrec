@@ -244,11 +244,61 @@ void Coordinator::SetStopRequested(StopReason reason) {
 }
 
 Result<void> Coordinator::WaitForWorkerExit(std::chrono::milliseconds bounded) {
-    UNREFERENCED_PARAMETER(bounded);
+    // Bounded wait (NFR-014): a worker wedged inside a driver call (e.g. a
+    // WriteSample that never returns on a stalled encoder MFT) must not hang
+    // Stop or process shutdown. After the deadline the thread is detached and
+    // the session resources it may still touch are deliberately leaked so the
+    // abandoned thread can never operate on freed memory.
+    const auto deadline = std::chrono::steady_clock::now() + bounded;
+    while (workerAlive_.load(std::memory_order_acquire)) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            if (worker_.joinable()) worker_.detach();
+            {
+                std::lock_guard<std::mutex> lock(stateMutex_);
+                state_ = AppState::Faulted;
+            }
+            AbandonSessionResources();
+            ReleaseRecordingMutex(); // wedged worker will never release it
+            log::Error("Coordinator", "WORKER_ABANDONED", correlationId_,
+                       L"Recording worker did not exit in time; abandoned with its session "
+                       L"resources (NFR-014 bounded stop).");
+            return Error(ErrorCode::InternalState,
+                         L"The recording pipeline stopped responding. The application recovered, "
+                         L"but the recording file may be incomplete.",
+                         L"Worker thread exceeded the stop deadline", S_OK, false);
+        }
+        Sleep(50);
+    }
     if (worker_.joinable()) {
-        worker_.join();
+        worker_.join(); // sets workerAlive_ false just before exiting
     }
     return Result<void>{};
+}
+
+void Coordinator::AbandonSessionResources() noexcept {
+    bool expected = false;
+    if (!sessionAbandoned_.compare_exchange_strong(expected, true)) return;
+
+    // NFR-013: restore the target window from this thread — the wedged
+    // worker will never reach its own restore step.
+    if (savedPlacement_ != nullptr) {
+        (void)WindowPlacementManager().Restore(*savedPlacement_);
+        savedPlacement_.reset();
+    }
+    topologyWatcher_.Stop();
+
+    // Deliberate leak of the wedged pipeline (bounded set of objects): the
+    // abandoned worker may be blocked inside any of these objects' calls;
+    // releasing ownership instead of destroying them keeps the process alive
+    // and memory-safe. The OS reclaims everything at process exit.
+    (void)writer_.release();
+    (void)converter_.release();
+    (void)session_.release();
+    (void)queue_.release();
+    (void)device_.release();
+    (void)encoderCap_.release();
+    log::Error("Coordinator", "SESSION_ABANDONED", correlationId_,
+               L"Session resources abandoned to contain a wedged worker (NFR-014).");
 }
 
 Result<display::MonitorDescriptor> Coordinator::EnsureVirtualDisplay() {
@@ -312,6 +362,7 @@ Result<void> Coordinator::Shutdown() {
 // ---------------------------------------------------------------------------
 
 void Coordinator::SessionWorker(const StartRecordingRequest& request) {
+    workerAlive_.store(true, std::memory_order_release);
     if (!PrepareSession(request)) {
         // PrepareSession rolled back and published the error.
         bool recoverable = true;
@@ -322,6 +373,7 @@ void Coordinator::SessionWorker(const StartRecordingRequest& request) {
         SetState(recoverable ? AppState::Ready : AppState::Faulted);
         TeardownSession();
         ReleaseRecordingMutex();
+        workerAlive_.store(false, std::memory_order_release);
         return;
     }
 
@@ -341,6 +393,7 @@ void Coordinator::SessionWorker(const StartRecordingRequest& request) {
         SetState(AppState::Faulted);
     }
     ReleaseRecordingMutex();
+    workerAlive_.store(false, std::memory_order_release);
 }
 
 void Coordinator::ReleaseRecordingMutex() {

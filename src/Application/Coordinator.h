@@ -101,6 +101,12 @@ private:
     void SetStopRequested(StopReason reason);
     Result<void> WaitForWorkerExit(std::chrono::milliseconds bounded);
     void ReleaseRecordingMutex();
+    // Wedged-worker containment: when the bounded stop deadline expires the
+    // worker thread is detached while still inside a driver call. The session
+    // objects it may touch are deliberately leaked (bounded set) and the
+    // target-window restore is performed here instead, so the abandoned
+    // thread can never touch freed memory (NFR-014).
+    void AbandonSessionResources() noexcept;
 
     StatusSnapshot BuildSnapshot() const;
     double SampleFps();
@@ -117,6 +123,7 @@ private:
     // Worker lifecycle.
     std::thread worker_;
     std::atomic<bool> workerAlive_{false};
+    std::atomic<bool> sessionAbandoned_{false};
     std::atomic<bool> stopRequested_{false};
     std::atomic<StopReason> stopReason_{StopReason::User};
     std::atomic<bool> paused_{false};
