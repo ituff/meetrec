@@ -169,3 +169,53 @@ Unit tests (Debug and Release):  64 tests, 0 failing checks       ✓
 
 Driver/build-machine evidence (T011/T012/T022/T023/T030/T031/T040-T042 media checks, T090-T093
 execution) remains pending physical machines, as recorded above.
+
+---
+
+# Continuation session 2 (2026-09-10, before 09:00)
+
+## New: `--self-check` diagnostics mode
+
+`VirtualScreenRecorder.exe --self-check` prints a read-only capability report: OS build, settings
+health, the created D3D11 adapter + feature level, Windows.Graphics.Capture availability, the
+H.264 encoder probe result (all candidate MFTs plus the selected hardware/software transform),
+virtual display driver/monitor state, and a sanitized topology summary. Exit 0 when core
+capabilities exist; never mutates state.
+
+**Evidence captured on the development machine (AMD graphics):**
+
+```text
+[ OK ] Direct3D 11: adapter=AMD Radeon(TM) Graphics, featureLevel=0xB000
+[ OK ] Graphics capture: available
+[ OK ] H.264 encoders: selected=AMDh264Encoder (hardware, D3D11-aware), candidates=12
+[ OK ] Display topology: 1 active monitor(s)
+```
+
+This records the T020 "diagnostic reports adapter and feature level" item and the T030
+encoder-probe output on an AMD machine; Intel/NVIDIA probes remain part of T092.
+
+## FR-016 completed in the UI
+
+The controller now has a Connect/Disconnect display button (idle states only; coordinator still
+rejects disconnect while active — FR-017) plus a "Virtual display: active/inactive (WxH)" status
+line. Connect runs on a worker with a timer-reap pattern (bounded waits; UI stays responsive).
+
+## Hardening and polish
+
+- Tray notifications throttled: `Shell_NotifyIcon` only on state change or displayed-second
+  change, not on every 100 ms timer tick (NFR-001).
+- NFR-023: `SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
+  LOAD_LIBRARY_SEARCH_SYSTEM32)` at process start; the product ships no side DLLs.
+- Diagnostics package now embeds real runtime facts: OS build string, GPU adapter description,
+  probed encoder name + hardware flag, and virtual display driver presence (FR-096).
+- First-run settings: self-check treats a missing `settings.json` as OK (normal first run) and
+  only flags an existing-but-invalid file.
+
+## Verification (this session)
+
+```text
+Debug|x64 rebuild:    0 errors, 0 warnings (/W4 /WX)   ✓
+Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
+Unit tests:           64 tests, 0 failing checks (both configs) ✓
+--self-check:         runs to completion, exit 0, exit 1 path not exercised here
+```

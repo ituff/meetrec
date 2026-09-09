@@ -28,6 +28,13 @@ public:
     // Runs the headless development recording entry point (T040).
     int RunDevRecord(int seconds, const std::wstring& presetName,
                      const std::wstring& outputDir);
+    // Prints a capability report (OS, GPU, capture, encoder, virtual display,
+    // topology, settings) and exits. Support/diagnostics tool; satisfies the
+    // T020/T030 "diagnostic output" verification items. Never mutates state.
+    int RunSelfCheck();
+
+    // "Windows 11 build 26100" style string for diagnostics.
+    static std::wstring OsBuildString();
 
     Coordinator& GetCoordinator() noexcept { return *coordinator_; }
 

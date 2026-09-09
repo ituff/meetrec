@@ -72,7 +72,13 @@ artifacts/<Configuration>/
 ```text
 VirtualScreenRecorder.exe                       # controller UI (also creates the tray icon)
 VirtualScreenRecorder.exe --dev-record --seconds 10 --preset standard --output D:\Clips
+VirtualScreenRecorder.exe --self-check          # capability report (read-only diagnostics)
 ```
+
+`--self-check` prints OS build, the D3D11 adapter + feature level, capture availability, the
+probed H.264 encoder MFTs (hardware vs software, D3D11-aware), virtual display driver/monitor
+state, and a sanitized topology summary. Exit 0 when the core recording capabilities are
+present. It never changes any state, so it is safe for support workflows.
 
 `--dev-record` is the headless development entry point (task T040): it creates/locates the
 virtual display, records it for the fixed duration at the chosen preset
@@ -183,6 +189,8 @@ Implemented beyond the P0 baseline (see `docs/task-completion-notes.md`):
 - **T103** — local opt-in crash dumps (`enableCrashDumps`, default off, never uploaded).
 - **T102 / T104** — evaluation docs: `docs/spike-system-audio.md`,
   `docs/enterprise-deployment-assessment.md`.
+- **FR-016 UI** — Connect/Disconnect display button (idle only), live display status line.
+- **`--self-check`** — read-only capability report used for T020/T030 evidence and support.
 
 ## License / attribution
 

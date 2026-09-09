@@ -7,6 +7,9 @@
 #include <shlobj.h>
 
 #include <Application/Diagnostics.h>
+#include <Capture/GraphicsDevice.h>
+#include <DisplayControl/SoftwareDisplayDevice.h>
+#include <Encoder/EncoderProbe.h>
 #include <Encoder/VideoPreset.h>
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Paths.h>
@@ -40,6 +43,8 @@ constexpr int ID_TXT_DROPPED = 216;
 constexpr int ID_TXT_ERROR = 217;
 constexpr int ID_TXT_OUTPUT = 218;
 constexpr int ID_TXT_TARGET = 219;
+constexpr int ID_BTN_DISPLAY = 220;
+constexpr int ID_TXT_DISPLAY = 221;
 
 constexpr UINT WM_APP_ACTIVATE = WM_APP + 1;
 constexpr UINT WM_APP_TRAY = WM_APP + 2;
@@ -80,7 +85,7 @@ bool MainWindow::Create() {
 
     dpi_ = GetDpiForSystem();
     const int w = Scale(760, dpi_);
-    const int h = Scale(600, dpi_);
+    const int h = Scale(640, dpi_);
     hwnd_ = CreateWindowExW(0, kMainWindowClassName, L"Virtual Screen Recorder",
                             WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, w,
                             h, nullptr, nullptr, GetModuleHandleW(nullptr), this);
@@ -148,6 +153,9 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     return 0;
                 case ID_BTN_DIAG:
                     if (code == BN_CLICKED) OnDiagnosticsClicked();
+                    return 0;
+                case ID_BTN_DISPLAY:
+                    if (code == BN_CLICKED) OnDisplayToggleClicked();
                     return 0;
                 case ID_PREVIEW_TOGGLE:
                     if (code == BN_CLICKED && preview_ != nullptr) {
@@ -293,6 +301,7 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_DESTROY:
             KillTimer(hwnd, timerId_);
+            if (displayOp_.joinable()) displayOp_.join();
             tray_.Remove();
             SaveSettings(); // FR-052: remember folder/preset for the next run
             PostQuitMessage(0);
@@ -357,6 +366,8 @@ void MainWindow::OnCreate() {
     makeControl(L"STATIC", L"Target: -", SS_LEFT, ID_TXT_TARGET);
     makeControl(L"STATIC", L"Output: -", SS_LEFT, ID_TXT_OUTPUT);
     makeControl(L"STATIC", L"", SS_LEFT, ID_TXT_ERROR);
+    makeControl(L"BUTTON", L"Connect display", BS_PUSHBUTTON, ID_BTN_DISPLAY);
+    makeControl(L"STATIC", L"Virtual display: checking...", SS_LEFT, ID_TXT_DISPLAY);
 
     // Preset combo entries (FR-051).
     HWND combo = GetDlgItem(hwnd_, ID_COMBO_PRESET);
@@ -429,7 +440,8 @@ void MainWindow::LayoutControls(UINT dpi) {
 
     PlaceControl(GetDlgItem(hwnd_, ID_CHK_CURSOR), margin, y, 260, 22, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_PREVIEW_TOGGLE), 290, y, 120, 22, dpi);
-    PlaceControl(GetDlgItem(hwnd_, ID_BTN_DIAG), 420, y, 120, 24, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_BTN_DIAG), 290, y + 30, 120, 24, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_BTN_DISPLAY), 420, y + 30, 150, 24, dpi);
     y += 36;
 
     // Preview occupies the right side lower area.
@@ -448,6 +460,8 @@ void MainWindow::LayoutControls(UINT dpi) {
     PlaceControl(GetDlgItem(hwnd_, ID_TXT_FPS), 460, y, 80, 20, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_TXT_DROPPED), 545, y, 110, 20, dpi);
     y += 24;
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DISPLAY), margin, y, 700, 20, dpi);
+    y += 22;
     PlaceControl(GetDlgItem(hwnd_, ID_TXT_TARGET), margin, y, 700, 20, dpi);
     y += 22;
     PlaceControl(GetDlgItem(hwnd_, ID_TXT_OUTPUT), margin, y, 700, 20, dpi);
@@ -469,9 +483,17 @@ void MainWindow::ApplyCommandStates(const StatusSnapshot& snap) {
     // Pause button becomes Resume when paused.
     pauseButtonMode_ = canResume ? 1 : 0;
     SetWindowTextW(GetDlgItem(hwnd_, ID_BTN_PAUSE), canResume ? L"Resume" : L"Pause");
+
+    // FR-016/FR-017: display connect/disconnect only while idle; hidden
+    // while an async connect is still running.
+    EnableWindow(GetDlgItem(hwnd_, ID_BTN_DISPLAY),
+                 (IsCommandAllowed(snap.state, Command::EnableDisplay) && !displayOpRunning_)
+                     ? TRUE
+                     : FALSE);
 }
 
 void MainWindow::OnTimer() {
+    ReapDisplayOperation();
     const StatusSnapshot snap = coordinator_.GetStatus();
     ApplyCommandStates(snap);
 
@@ -499,6 +521,19 @@ void MainWindow::OnTimer() {
     swprintf_s(buf, L"Output: %s", outPath.empty() ? L"-" : outPath.c_str());
     SetWindowTextW(GetDlgItem(hwnd_, ID_TXT_OUTPUT), buf);
 
+    // Virtual display line + adaptive button label (FR-016).
+    if (snap.virtualMonitorActive) {
+        swprintf_s(buf, L"Virtual display: active (%ldx%ld)", snap.monitorW, snap.monitorH);
+    } else {
+        swprintf_s(buf, L"Virtual display: inactive");
+    }
+    SetWindowTextW(GetDlgItem(hwnd_, ID_TXT_DISPLAY), buf);
+    if (snap.virtualMonitorActive != lastVirtualActive_) {
+        lastVirtualActive_ = snap.virtualMonitorActive;
+        SetWindowTextW(GetDlgItem(hwnd_, ID_BTN_DISPLAY),
+                       lastVirtualActive_ ? L"Disconnect display" : L"Connect display");
+    }
+
     if (snap.hasError) {
         swprintf_s(buf, L"Error [%hs]: %s", ToString(snap.errorCode),
                    snap.errorUserMessage.c_str());
@@ -507,7 +542,14 @@ void MainWindow::OnTimer() {
     }
     SetWindowTextW(GetDlgItem(hwnd_, ID_TXT_ERROR), buf);
 
-    tray_.Update(snap);
+    // Throttle tray updates: notify only when state or the displayed second
+    // changes instead of every 100 ms tick (NFR-001).
+    const UINT trayKey = static_cast<UINT>(snap.state) * 100000u +
+                         static_cast<UINT>(snap.activeElapsedMs / 1000);
+    if (trayKey != lastTrayKey_) {
+        lastTrayKey_ = trayKey;
+        tray_.Update(snap);
+    }
     if (preview_ != nullptr && preview_->IsEnabled()) preview_->Tick();
 }
 
@@ -603,6 +645,43 @@ void MainWindow::OnDiagnosticsClicked() {
                     L"Diagnostics", MB_OK | MB_ICONWARNING);
     }
     SaveSettings();
+}
+
+void MainWindow::OnDisplayToggleClicked() {
+    // FR-016: connect/disconnect the virtual display while idle. The work
+    // can take a few seconds (device creation + monitor arrival wait), so it
+    // runs on a worker; OnTimer reaps it and refreshes the UI.
+    if (displayOpRunning_.load()) return;
+    if (displayOp_.joinable()) displayOp_.join(); // reap a finished prior op
+
+    displayOpRunning_.store(true);
+    displayOpDone_.store(false);
+    const bool connect = !lastVirtualActive_;
+    try {
+        displayOp_ = std::thread([this, connect] {
+            if (connect) {
+                (void)coordinator_.EnsureVirtualDisplay();
+            } else {
+                (void)coordinator_.DisableVirtualDisplay();
+            }
+            displayOpDone_.store(true); // last touch: the timer takes over
+        });
+    } catch (...) {
+        displayOpRunning_.store(false);
+        displayOpDone_.store(false);
+        MessageBoxW(hwnd_, L"Could not start the display operation.", L"Virtual Screen Recorder",
+                    MB_OK | MB_ICONWARNING);
+        return;
+    }
+    ApplyCommandStates(coordinator_.GetStatus()); // reflect the disabled button
+}
+
+void MainWindow::ReapDisplayOperation() {
+    if (!displayOpDone_.load()) return;
+    if (displayOp_.joinable()) displayOp_.join();
+    displayOpRunning_.store(false);
+    displayOpDone_.store(false);
+    RefreshUi();
 }
 
 void MainWindow::RefreshWindowList() {

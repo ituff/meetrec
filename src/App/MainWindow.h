@@ -3,7 +3,9 @@
 // Virtual Screen Recorder - native controller window (FR-070, FR-075..FR-077,
 // NFR-040..NFR-044; T070, T072).
 
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include <Application/Coordinator.h>
@@ -46,6 +48,8 @@ private:
     void OnBrowseClicked();
     void OnOpenOutputFolder();
     void OnDiagnosticsClicked();
+    void OnDisplayToggleClicked();
+    void ReapDisplayOperation();
     void RefreshWindowList();
     void SaveSettings();
 
@@ -58,6 +62,11 @@ private:
     UINT activateMessage_ = 0;
     UINT taskbarCreatedMessage_ = 0;
     int pauseButtonMode_ = 0; // 0 = Pause, 1 = Resume
+    bool lastVirtualActive_ = false;
+    UINT lastTrayKey_ = 0;
+    std::atomic<bool> displayOpRunning_{false};
+    std::atomic<bool> displayOpDone_{false};
+    std::thread displayOp_;   // bounded display connect/disconnect work
     HFONT uiFont_ = nullptr;
     std::vector<window::WindowInfo> windows_;
 };

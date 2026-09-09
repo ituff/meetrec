@@ -23,7 +23,7 @@ source inspection, `DRV-*` = driver manual log.
 | FR-013 | Locate monitor by stable identity | UT Identity.*; CODE TopologyService; DRV-9 |
 | FR-014 | Verify active + extended desktop before recording | CODE `VerifyVirtualMonitorActive`, coordinator Prepare step; DRV-2 |
 | FR-015 | Monitor interruption → safe stop + finalize | MAN-3; IT display-removal row; DRV-10 |
-| FR-016 | UI enable/disable when idle | CODE `DisableVirtualDisplay`, tray commands; MAN-2 |
+| FR-016 | UI enable/disable when idle | CODE `DisableVirtualDisplay` + MainWindow Connect/Disconnect display button (idle-only); MAN-2 |
 | FR-017 | Disable rejected while recording | UT StateMachine.DisplayDisableRejectedWhileActive; DRV-11 |
 | FR-020 | Enumerate eligible top-level windows | CODE WindowEnumerator; MAN-3 |
 | FR-021 | Icon + exe + title in list | MAN-3 (owner-draw list shows exe + title; icon via WM_GETICON) |

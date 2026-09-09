@@ -1,11 +1,15 @@
 #include "Application.h"
 
 #include <cstdio>
+#include <vector>
 
 #include <objbase.h>
 
+#include <Capture/CaptureInterop.h>
+#include <Capture/GraphicsDevice.h>
 #include <DisplayControl/SoftwareDisplayDevice.h>
 #include <DisplayControl/TopologyService.h>
+#include <Encoder/EncoderProbe.h>
 #include <Encoder/VideoPreset.h>
 #include <Infrastructure/CrashReporter.h>
 #include <Infrastructure/Log.h>
@@ -28,16 +32,19 @@ struct OsVersionInfoW {
     wchar_t szCSDVersion[128];
 };
 
-bool IsWindows11OrLater() {
+bool QueryOsVersion(OsVersionInfoW& info) {
     // FR-004: OS gate. Windows 11 reports build >= 22000.
     typedef unsigned long(__stdcall * RtlGetVersionFn)(OsVersionInfoW*);
-    OsVersionInfoW info = {};
     info.dwOSVersionInfoSize = sizeof(info);
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (ntdll == nullptr) return false;
     auto fn = reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"));
-    if (fn == nullptr || fn(&info) != 0) return false;
-    return info.dwMajorVersion >= 10 && info.dwBuildNumber >= 22000;
+    return fn != nullptr && fn(&info) == 0;
+}
+
+bool IsWindows11OrLater() {
+    OsVersionInfoW info = {};
+    return QueryOsVersion(info) && info.dwMajorVersion >= 10 && info.dwBuildNumber >= 22000;
 }
 
 void ShowStartupError(const std::wstring& text) {
@@ -123,6 +130,117 @@ bool Application::EnsureSingleInstance() {
     }
     // Ownership released by the OS when the process exits.
     return true;
+}
+
+std::wstring Application::OsBuildString() {
+    OsVersionInfoW info = {};
+    if (!QueryOsVersion(info)) return L"unknown Windows version";
+    wchar_t buf[96] = {};
+    swprintf_s(buf, L"Windows build %lu ( %lu.%lu )", info.dwBuildNumber, info.dwMajorVersion,
+               info.dwMinorVersion);
+    return buf;
+}
+
+int Application::RunSelfCheck() {
+    // Support/diagnostics report. Read-only: creates a D3D device and probes
+    // encoders, but never creates the virtual display or writes files.
+    AttachParentConsole();
+
+    struct Section {
+        const wchar_t* name;
+        bool ok;
+        std::wstring detail;
+    };
+    std::vector<Section> sections;
+    bool coreOk = true;
+
+    // 1. OS gate (FR-004).
+    sections.push_back({L"OS version", IsWindows11OrLater(), OsBuildString()});
+    coreOk = coreOk && IsWindows11OrLater();
+
+    // 2. Settings (FR-090..FR-092). A missing file is a normal first run.
+    {
+        SettingsStore store;
+        bool usedDefaults = false;
+        const Settings settings = store.Load(&usedDefaults);
+        const bool fileExists = std::filesystem::exists(SettingsPath());
+        std::wstring detail = L"preset=" + Utf8ToWide(ToString(settings.preset)) +
+                              L", crashDumps=" + (settings.enableCrashDumps ? L"on" : L"off") +
+                              (usedDefaults ? L" (defaults in use)" : L"");
+        const bool ok = !usedDefaults || !fileExists;
+        if (!ok) detail += L" - settings file is invalid and was replaced by defaults";
+        sections.push_back({L"Settings", ok, detail});
+    }
+
+    // 3. D3D11 device (FR-041, T020 verification: adapter + feature level).
+    {
+        auto device = capture::GraphicsDevice::Create();
+        if (device) {
+            wchar_t fl[32] = {};
+            swprintf_s(fl, L"0x%04X", static_cast<unsigned>(device.Value().FeatureLevel()));
+            sections.push_back({L"Direct3D 11", true,
+                                L"adapter=" + device.Value().AdapterDescription() +
+                                    L", featureLevel=" + fl});
+        } else {
+            const Error e = device.TakeError();
+            sections.push_back({L"Direct3D 11", false, e.userMessage});
+            coreOk = false;
+        }
+    }
+
+    // 4. Windows.Graphics.Capture (ADR-003).
+    sections.push_back({L"Graphics capture", capture::IsGraphicsCaptureSupported(),
+                        capture::IsGraphicsCaptureSupported() ? L"available" : L"unavailable"});
+
+    // 5. Encoder probe (FR-062/FR-063, T030 verification output).
+    {
+        auto probe = encoder::ProbeEncoders();
+        if (probe) {
+            std::wstring detail =
+                L"selected=" + probe.Value().selected.name +
+                (probe.Value().selected.hardware ? L" (hardware" : L" (software") +
+                (probe.Value().selected.d3d11Aware ? L", D3D11-aware)" : L")") +
+                L", candidates=" + std::to_wstring(probe.Value().discovered.size());
+            sections.push_back({L"H.264 encoders", true, detail});
+        } else {
+            const Error e = probe.TakeError();
+            sections.push_back({L"H.264 encoders", false, e.userMessage});
+            coreOk = false;
+        }
+    }
+
+    // 6. Virtual display driver + monitor (FR-013/FR-014).
+    {
+        const bool adapterPresent = display::SoftwareDisplayDevice::IsAdapterDevicePresent();
+        const bool monitorActive = display::SoftwareDisplayDevice::IsMonitorActive();
+        sections.push_back({L"Virtual display driver", adapterPresent || monitorActive,
+                            std::wstring(L"adapter device ") +
+                                (adapterPresent ? L"present" : L"absent") +
+                                L", monitor " + (monitorActive ? L"active" : L"inactive")});
+    }
+
+    // 7. Topology summary (sanitized).
+    {
+        const auto summary = display::TopologyService::Summarize();
+        std::wstring detail = std::to_wstring(summary.monitors.size()) + L" active monitor(s)";
+        for (const auto& m : summary.monitors) {
+            detail += L"; " + (m.friendlyName.empty() ? m.gdiDeviceName : m.friendlyName);
+            wchar_t geo[64] = {};
+            swprintf_s(geo, L" %ldx%ld@%u", m.w, m.h, m.dpiX);
+            detail += geo;
+            if (m.isVirtual) detail += L" [virtual]";
+        }
+        sections.push_back({L"Display topology", true, detail});
+    }
+
+    // Report.
+    wprintf(L"Virtual Screen Recorder self-check\n");
+    wprintf(L"app: %s\n", OsBuildString().c_str());
+    for (const auto& sec : sections) {
+        wprintf(L"[%s] %s: %s\n", sec.ok ? L" OK " : L"FAIL", sec.name, sec.detail.c_str());
+    }
+    wprintf(L"core capabilities: %s\n", coreOk ? L"OK" : L"MISSING");
+    return coreOk ? 0 : 1;
 }
 
 int Application::RunInteractive() {
@@ -240,9 +358,20 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
 int wmain(int argc, wchar_t* argv[]) {
     using namespace vsr::app;
 
+    // NFR-023: resolve DLL dependencies only from known-safe locations; the
+    // product ships no side-by-side DLLs of its own.
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
+                             LOAD_LIBRARY_SEARCH_SYSTEM32);
+
     // COM + WinRT share the apartment; the MTA suits the free-threaded frame
     // pool and Media Foundation worker.
     const HRESULT coInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+    if (argc >= 2 && wcscmp(argv[1], L"--self-check") == 0) {
+        const int code = Application::Instance().RunSelfCheck();
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
 
     if (argc >= 2 && wcscmp(argv[1], L"--dev-record") == 0) {
         int seconds = 10;
