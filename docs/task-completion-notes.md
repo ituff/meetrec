@@ -248,3 +248,58 @@ Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
 Unit tests:           64 tests, 0 failing checks (both configs) ✓
 PowerShell scripts:   parser clean (IntegrationTests.ps1, build.ps1) ✓
 ```
+
+---
+
+# Continuation session 4 (2026-09-10, before 09:00)
+
+## New: `--encode-test` — T031 acceptance evidence captured on this machine
+
+`VirtualScreenRecorder.exe --encode-test --seconds N --preset p` pushes synthetic animated GPU
+frames (gradient + moving block uploaded to a BGRA texture) through the **production pipeline**
+(VideoConverter BGRA→NV12 → H.264 MFT → MP4 sink) with no capture or driver involvement, then
+renames the finalized file. IntegrationTests.ps1 now runs it for all three presets and
+validates each MP4 with MediaValidator.
+
+**T031 verification met on this machine (AMD Radeon 680M-class iGPU, AMDh264Encoder hardware
+MFT):**
+
+```text
+low      1280x720@30 : 300 frames, decoded 300, duration 10.033 s  VALID
+standard 1920x1080@30: 300 frames, decoded 300, duration 10.033 s  VALID
+high     1920x1080@60: 600 frames, decoded 600, duration 10.017 s  VALID
+```
+
+## Real defects found and fixed by the encode-test spike
+
+1. **D3D11 device lacked `D3D11_CREATE_DEVICE_VIDEO_SUPPORT`** — the Video Processor could not
+   be created on AMD drivers. Also enabled `ID3D11Multithread::SetMultithreadProtected(TRUE)`
+   on the shared context (Media Foundation requirement for multi-threaded device use).
+2. **`CreateVideoProcessorEnumerator(nullptr)` returns E_INVALIDARG on AMD drivers** — the
+   converter now passes a real `D3D11_VIDEO_PROCESSOR_CONTENT_DESC` based on the preset
+   geometry (stream source rects still adapt per frame).
+3. **`MF_READWRITE_DISABLE_CONVERTERS` broke `MFCreateSinkWriterFromURL` (E_INVALIDARG) on this
+   driver** — attribute removed; the writer probes submission instead.
+4. **The AMD driver/MFT rejects GPU DXGI-buffer samples with E_INVALIDARG** — the writer now
+   probes the selected submission path with one black frame + Flush **before recording starts**
+   (NFR-005 bounded) and automatically falls back to the documented CPU staging path
+   (ADR-004). The fallback is logged (`ENCODER_CPU_FALLBACK`) and `VSR_FORCE_CPU_ENCODER=1`
+   remains as a manual override. The probe frame shifts output timing by at most one frame
+   duration (~33 ms), well inside the 2 s duration tolerance.
+
+## Harness updates
+
+- IntegrationTests.ps1: PS7-only ternary removed (PS 5.1 parse-clean); now runs
+  unit tests → self-check → encode pipeline validation (driver-independent) → display
+  recording steps that SKIP (honestly reported) when the virtual display is not staged.
+- MediaValidator: enabled `MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING` so RGB32 decode-verify
+  works on machines without the legacy converter default.
+
+## Verification (this session)
+
+```text
+Debug|x64 rebuild:    0 errors, 0 warnings (/W4 /WX)   ✓
+Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
+Unit tests:           64 tests, 0 failing checks (both configs) ✓
+Integration harness:  PASS (unit + self-check + 3x encode validation; display steps SKIP) ✓
+```

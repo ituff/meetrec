@@ -46,8 +46,8 @@ source inspection, `DRV-*` = driver manual log.
 | FR-047 | Capture continues when controller hidden/minimized | MAN-4 (AC-003); ADR-003 (no HWND dependency) |
 | FR-048 | Closing preview never stops capture | CODE preview tap; MAN-5 |
 | FR-049 | Cursor exclusion when supported | CODE `IsCursorCaptureEnabled` toggle; MAN-5 |
-| FR-050 | H.264 in MP4 | MV h264 check; ADR-004 |
-| FR-051 | Low/Standard/High presets | UT Preset.TableMatchesSpec; IT preset rows |
+| FR-050 | H.264 in MP4 | MV h264 check; IT encode-* rows (VALID on AMD hardware MFT) |
+| FR-051 | Low/Standard/High presets | UT Preset.TableMatchesSpec; IT encode-low/standard/high rows VALID |
 | FR-052 | Output path selected + remembered | MAN-6; CODE settings round trip |
 | FR-053 | `Recording_yyyyMMdd_HHmmss.mp4` local time | UT OutputFile.Stamp* |
 | FR-054 | No overwrite without authorization | UT OutputFile.CollisionAvoidedWithSuffix |
@@ -136,5 +136,7 @@ source inspection, `DRV-*` = driver manual log.
 
 ## Coverage gaps tracked
 
+- T031 per-preset encode validation: PASSED on AMD (IT encode-*); NVIDIA/Intel repeat belongs
+  to T092.
 - T091/T092/T093 measurements and cross-machine runs require physical reference machines; the
   harness and checklists above are the deliverable until those runs execute.

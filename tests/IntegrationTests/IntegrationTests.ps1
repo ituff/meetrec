@@ -57,6 +57,38 @@ Add-Report @{
     detail = "exit $selfCheckExit"
 }
 
+# ---- Step 2b: encoder pipeline validation (no driver needed, T031) -----------
+$encodeExpect = @{
+    "low"      = @{ w = 1280; h = 720;  fps = 30 };
+    "standard" = @{ w = 1920; h = 1080; fps = 30 };
+    "high"     = @{ w = 1920; h = 1080; fps = 60 };
+}
+foreach ($preset in @("low", "standard", "high")) {
+    Write-Host "== Encoder pipeline $preset for $ClipSeconds s =="
+    $e = $encodeExpect[$preset]
+    $out = & $app --encode-test --seconds $ClipSeconds --preset $preset --output $clipDir 2>&1
+    $exit = $LASTEXITCODE
+    if ($exit -ne 0) {
+        Add-Report @{ name = "encode-$preset"; result = "FAIL"
+                      detail = "encode-test exit $exit :: $($out -join ' | ')" }
+        $failed = $true
+        continue
+    }
+    $clip = Get-ChildItem -Path $clipDir -Filter "*.mp4" |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    & $validator $clip.FullName `
+        --expect-width $e.w --expect-height $e.h --expect-fps $e.fps `
+        --expect-duration-sec $ClipSeconds --tolerance-sec 2 | Out-Null
+    $vExit = $LASTEXITCODE
+    if ($vExit -eq 0) {
+        Add-Report @{ name = "encode-$preset"; result = "PASS"; detail = $clip.Name }
+    } else {
+        Add-Report @{ name = "encode-$preset"; result = "FAIL"
+                      detail = "validator exit $vExit ($($clip.Name))" }
+        $failed = $true
+    }
+}
+
 # ---- Step 3: per-preset record + media validation ----------------------------
 $expect = @{
     "low"      = @{ w = 1280; h = 720;  fps = 30 };

@@ -68,7 +68,7 @@ int wmain(int argc, wchar_t** argv) {
     {
         ComPtr<IMFAttributes> attrs;
         MFCreateAttributes(&attrs, 1);
-        attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 0);
+        attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1); // decode to RGB32
         const HRESULT hr = MFCreateSourceReaderFromURL(opt.file.c_str(), attrs.Get(), &reader);
         if (FAILED(hr)) {
             wprintf(L"FAIL: container does not open (0x%08X)\n", static_cast<unsigned>(hr));

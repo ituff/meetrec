@@ -1,5 +1,7 @@
 #include "VideoConverter.h"
 
+#include <Infrastructure/Strings.h>
+
 #include <vector>
 
 namespace vsr::encoder {
@@ -20,22 +22,34 @@ Result<std::unique_ptr<VideoConverter>> VideoConverter::Create(
         return ErrorFromHresult(hr, ErrorCode::EncoderUnavailable,
                                 L"This GPU driver does not expose the video processing needed "
                                 L"for recording.",
-                                L"QueryInterface(ID3D11VideoDevice) failed");
+                                L"VideoConverter: QueryInterface(ID3D11VideoDevice) failed: " +
+                                    FormatHresult(hr));
     }
     hr = device.Context()->QueryInterface(IID_PPV_ARGS(&converter->videoContext_));
     if (FAILED(hr)) {
         return ErrorFromHresult(hr, ErrorCode::EncoderUnavailable,
                                 L"This GPU driver does not expose the video processing needed "
                                 L"for recording.",
-                                L"QueryInterface(ID3D11VideoContext) failed");
+                                L"VideoConverter: QueryInterface(ID3D11VideoContext) failed: " +
+                                    FormatHresult(hr));
     }
-    hr = converter->videoDevice_->CreateVideoProcessorEnumerator(nullptr,
+    // Some drivers (e.g. AMD) reject a null content descriptor with
+    // E_INVALIDARG — describe the conversion using the preset geometry; the
+    // per-stream source rect adapts to actual capture sizes at run time.
+    D3D11_VIDEO_PROCESSOR_CONTENT_DESC contentDesc = {};
+    contentDesc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+    contentDesc.InputWidth = dstWidth;
+    contentDesc.InputHeight = dstHeight;
+    contentDesc.OutputWidth = dstWidth;
+    contentDesc.OutputHeight = dstHeight;
+    hr = converter->videoDevice_->CreateVideoProcessorEnumerator(&contentDesc,
                                                                  &converter->enumerator_);
     if (FAILED(hr)) {
         return ErrorFromHresult(hr, ErrorCode::EncoderUnavailable,
                                 L"This GPU driver does not support the color conversion needed "
                                 L"for recording (BGRA to NV12).",
-                                L"CreateVideoProcessorEnumerator failed");
+                                L"VideoConverter: CreateVideoProcessorEnumerator failed: " +
+                                    FormatHresult(hr));
     }
     hr = converter->videoDevice_->CreateVideoProcessor(converter->enumerator_.Get(), 0,
                                                        &converter->processor_);
@@ -43,7 +57,8 @@ Result<std::unique_ptr<VideoConverter>> VideoConverter::Create(
         return ErrorFromHresult(hr, ErrorCode::EncoderUnavailable,
                                 L"This GPU driver does not support the color conversion needed "
                                 L"for recording (BGRA to NV12).",
-                                L"CreateVideoProcessor failed");
+                                L"VideoConverter: CreateVideoProcessor failed: " +
+                                    FormatHresult(hr));
     }
 
     // Capture is full-range sRGB BGRA; output full-range BT.709 NV12.
@@ -75,7 +90,9 @@ Result<std::unique_ptr<VideoConverter>> VideoConverter::Create(
     desc.Format = DXGI_FORMAT_NV12;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET; // VPBlt requires RT on NV12 outputs
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    // MFCreateDXGISurfaceBuffer requires shareable D3D11 textures.
+    desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
     for (std::size_t i = 0; i < 3; ++i) {
         OutputSlot slot;

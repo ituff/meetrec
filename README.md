@@ -73,6 +73,7 @@ artifacts/<Configuration>/
 VirtualScreenRecorder.exe                       # controller UI (also creates the tray icon)
 VirtualScreenRecorder.exe --dev-record --seconds 10 --preset standard --output D:\Clips
 VirtualScreenRecorder.exe --self-check          # capability report (read-only diagnostics)
+VirtualScreenRecorder.exe --encode-test --seconds 10 --preset high --output D:\Clips
 ```
 
 `--self-check` prints OS build, the D3D11 adapter + feature level, capture availability, the
@@ -191,6 +192,11 @@ Implemented beyond the P0 baseline (see `docs/task-completion-notes.md`):
   `docs/enterprise-deployment-assessment.md`.
 - **FR-016 UI** — Connect/Disconnect display button (idle only), live display status line.
 - **`--self-check`** — read-only capability report used for T020/T030 evidence and support.
+- **`--encode-test`** — T031 evidence: full encode-pipeline validation per preset without a
+  driver (synthetic GPU frames through the production converter + encoder + MP4 sink).
+- **Driver interop fallback** — writer probes GPU sample submission at start and automatically
+  uses the documented CPU staging path when a driver/MFT rejects it (logged as
+  `ENCODER_CPU_FALLBACK`; `VSR_FORCE_CPU_ENCODER=1` forces the fallback manually).
 
 ## License / attribution
 

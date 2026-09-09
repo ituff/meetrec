@@ -33,6 +33,13 @@ public:
     // T020/T030 "diagnostic output" verification items. Never mutates state.
     int RunSelfCheck();
 
+    // T031 verification: encodes synthetic GPU frames through the full
+    // VideoConverter -> H.264 -> MP4 pipeline for a fixed duration at the
+    // chosen preset. No capture or driver involvement. Returns the output
+    // path via the process exit log; exit 0 on a finalized MP4.
+    int RunEncodeTest(int seconds, const std::wstring& presetName,
+                      const std::wstring& outputDir);
+
     // "Windows 11 build 26100" style string for diagnostics.
     static std::wstring OsBuildString();
 

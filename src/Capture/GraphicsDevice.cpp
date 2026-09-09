@@ -1,12 +1,16 @@
 #include "GraphicsDevice.h"
 
+#include <d3d11_1.h>
+#include <d3d11_4.h>
 #include <dxgi1_4.h>
 
 namespace vsr::capture {
 
 Result<GraphicsDevice> GraphicsDevice::CreateInternal(IDXGIAdapter1* adapter) {
     GraphicsDevice result;
-    const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+    // BGRA for capture interop; VIDEO_SUPPORT enables the D3D11 Video
+    // Processor (BGRA->NV12) — required on several GPU drivers (e.g. AMD).
+    const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
 
     HRESULT hr = D3D11CreateDevice(adapter, adapter != nullptr ? D3D_DRIVER_TYPE_UNKNOWN
                                                                : D3D_DRIVER_TYPE_HARDWARE,
@@ -44,6 +48,13 @@ Result<GraphicsDevice> GraphicsDevice::CreateInternal(IDXGIAdapter1* adapter) {
     if (SUCCEEDED(result.adapter_->GetDesc1(&desc))) {
         result.adapterDescription_.assign(desc.Description);
         result.adapterLuid_ = desc.AdapterLuid;
+    }
+
+    // The device is shared by the capture callback thread, the encoder worker
+    // and Media Foundation; enable the driver-level lock (MF requirement).
+    Microsoft::WRL::ComPtr<ID3D11Multithread> multithread;
+    if (SUCCEEDED(result.context_.As(&multithread)) && multithread != nullptr) {
+        multithread->SetMultithreadProtected(TRUE);
     }
     return result;
 }

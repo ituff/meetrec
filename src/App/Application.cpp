@@ -7,10 +7,13 @@
 
 #include <Capture/CaptureInterop.h>
 #include <Capture/GraphicsDevice.h>
+#include <Encoder/H264Mp4Writer.h>
+#include <Encoder/VideoConverter.h>
 #include <DisplayControl/SoftwareDisplayDevice.h>
 #include <DisplayControl/TopologyService.h>
 #include <Encoder/EncoderProbe.h>
 #include <Encoder/VideoPreset.h>
+#include <Infrastructure/Clock.h>
 #include <Infrastructure/CrashReporter.h>
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Paths.h>
@@ -18,6 +21,8 @@
 #include <Infrastructure/Strings.h>
 
 #include "MainWindow.h"
+
+#include <Application/OutputFile.h>
 
 namespace vsr::app {
 
@@ -243,6 +248,158 @@ int Application::RunSelfCheck() {
     return coreOk ? 0 : 1;
 }
 
+int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
+                               const std::wstring& outputDir) {
+    // T031 verification: encode synthetic GPU frames through the production
+    // conversion + encoder + MP4 sink path without any display dependency.
+    AttachParentConsole();
+
+    const encoder::QualityPreset preset = encoder::FromString(WideToUtf8(presetName).c_str());
+    const encoder::PresetParams params = encoder::GetPresetParams(preset);
+
+    // 1. Encoder probe (FR-063: fail before any file exists).
+    auto probe = encoder::ProbeEncoders();
+    if (!probe) {
+        const Error e = probe.TakeError();
+        wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
+                ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
+        return 2;
+    }
+
+    // 2. GPU device.
+    auto deviceResult = capture::GraphicsDevice::Create();
+    if (!deviceResult) {
+        const Error e = deviceResult.TakeError();
+        wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
+                ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
+        return 3;
+    }
+    const capture::GraphicsDevice& device = deviceResult.Value();
+
+    // 3. Output naming with the production collision-safe planner.
+    SystemClock clock;
+    auto plan = PlanOutputFile(outputDir, clock);
+    if (!plan) {
+        const Error e = plan.TakeError();
+        wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
+                ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
+        return 4;
+    }
+
+    // 4. Converter + writer.
+    auto converter = encoder::VideoConverter::Create(device, params.width, params.height);
+    if (!converter) {
+        const Error e = converter.TakeError();
+        wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
+                ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
+        return 5;
+    }
+    encoder::EncoderCapability cap = probe.Value().selected;
+    {
+        // BISECT: force the CPU staging path to isolate GPU sample submission.
+        wchar_t force[4] = {};
+        if (GetEnvironmentVariableW(L"VSR_FORCE_CPU_ENCODER", force, 4) > 0 &&
+            force[0] == L'1') {
+            cap.d3d11Aware = false;
+        }
+    }
+    auto writer = encoder::H264Mp4Writer::Create(device, cap, params, plan.Value().partialPath);
+    if (!writer) {
+        const Error e = writer.TakeError();
+        wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
+                ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
+        return 6;
+    }
+
+    // 5. Synthetic source: animated gradient + moving block, uploaded to a
+    // BGRA texture and pushed through the production pipeline.
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
+    {
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = params.width;
+        desc.Height = params.height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        if (FAILED(device.Device()->CreateTexture2D(&desc, nullptr, source.GetAddressOf()))) {
+            wprintf(L"[encode-test] FAILED: BGRA source texture creation\n");
+            return 7;
+        }
+    }
+
+    const std::uint32_t frameCount = params.fps * static_cast<std::uint32_t>(seconds);
+    const std::int64_t frameDuration = encoder::FrameDuration100Ns(params.fps);
+    std::vector<std::uint8_t> pixels(static_cast<size_t>(params.width) * params.height * 4);
+
+    wprintf(L"[encode-test] encoding %u synthetic frames (%ux%u@%u) via %s\n", frameCount,
+            params.width, params.height, params.fps, probe.Value().selected.name.c_str());
+
+    for (std::uint32_t f = 0; f < frameCount; ++f) {
+        // CPU pattern (test-only path; production frames never touch the CPU).
+        const std::uint8_t phase = static_cast<std::uint8_t>(f * 255 / (frameCount ? frameCount : 1));
+        for (std::uint32_t y = 0; y < params.height; ++y) {
+            auto* row = pixels.data() + static_cast<size_t>(y) * params.width * 4;
+            for (std::uint32_t x = 0; x < params.width; ++x) {
+                row[x * 4 + 0] = static_cast<std::uint8_t>(x * 255 / params.width);      // B
+                row[x * 4 + 1] = static_cast<std::uint8_t>(y * 255 / params.height);     // G
+                row[x * 4 + 2] = phase;                                                  // R
+                row[x * 4 + 3] = 0xFF;                                                   // A
+            }
+            // Moving block every 30th frame boundary for temporal motion.
+            const std::uint32_t bx = (f * 7) % (params.width - 160);
+            const std::uint32_t by = (f * 3) % (params.height - 90);
+            if (y >= by && y < by + 90 && bx < params.width) {
+                for (std::uint32_t x = bx; x < std::min(bx + 160, params.width); ++x) {
+                    row[x * 4 + 0] = 0xFF;
+                    row[x * 4 + 1] = 0x40;
+                    row[x * 4 + 2] = 0x20;
+                }
+            }
+        }
+
+        D3D11_SUBRESOURCE_DATA init = {};
+        init.pSysMem = pixels.data();
+        init.SysMemPitch = params.width * 4;
+        device.Context()->UpdateSubresource(source.Get(), 0, nullptr, pixels.data(),
+                                            init.SysMemPitch, 0);
+
+        auto converted = converter.Value()->Convert(source.Get());
+        if (!converted) {
+            const Error e = converted.TakeError();
+            wprintf(L"[encode-test] FAILED at frame %u: %s\n", f, e.technicalMessage.c_str());
+            return 8;
+        }
+        auto submitted = writer.Value()->SubmitFrame(converted.Value(),
+                                                     static_cast<std::int64_t>(f) * frameDuration,
+                                                     frameDuration);
+        if (!submitted) {
+            const Error e = submitted.TakeError();
+            wprintf(L"[encode-test] FAILED at frame %u: %s\n", f, e.technicalMessage.c_str());
+            return 9;
+        }
+    }
+
+    if (!writer.Value()->Finalize().IsOk()) {
+        wprintf(L"[encode-test] FAILED: finalization\n");
+        return 10;
+    }
+    std::error_code ec;
+    std::filesystem::rename(plan.Value().partialPath, plan.Value().finalPath, ec);
+    if (ec) {
+        wprintf(L"[encode-test] FAILED: rename (%hs)\n", ec.message().c_str());
+        return 11;
+    }
+
+    wprintf(L"[encode-test] wrote %u frames to %s\n", frameCount,
+            plan.Value().finalPath.wstring().c_str());
+    wprintf(L"[encode-test] encoder=%s hardware=%d writtenFrames=%llu\n",
+            probe.Value().selected.name.c_str(), probe.Value().selected.hardware ? 1 : 0,
+            static_cast<unsigned long long>(writer.Value()->WrittenFrames()));
+    return 0;
+}
+
 int Application::RunInteractive() {
     if (!EnsureSingleInstance()) {
         return 0;
@@ -369,6 +526,20 @@ int wmain(int argc, wchar_t* argv[]) {
 
     if (argc >= 2 && wcscmp(argv[1], L"--self-check") == 0) {
         const int code = Application::Instance().RunSelfCheck();
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--encode-test") == 0) {
+        int seconds = 10;
+        std::wstring preset = L"standard";
+        std::wstring outputDir;
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--seconds") == 0) seconds = _wtoi(argv[i + 1]);
+            else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
+            else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
+        }
+        const int code = Application::Instance().RunEncodeTest(seconds, preset, outputDir);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
