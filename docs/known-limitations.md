@@ -46,6 +46,10 @@ release notes sections with the same purpose.
 - If no hardware H.264 encoder is available, the recorder falls back to the Microsoft software
   encoder (higher CPU use); with no software encoder either, it fails before recording with
   `VSR-ENCODER-UNAVAILABLE` (FR-063).
+- On some GPU drivers the hardware encoder rejects GPU-resident samples; the recorder detects
+  this at start (before any content is recorded) and automatically switches to a CPU staging
+  path (slightly higher CPU, identical output). The first frame of every recording is a brief
+  encoder-priming black frame (<= 1 frame duration).
 
 ## Environment
 

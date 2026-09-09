@@ -1,6 +1,8 @@
 #include "Application.h"
 
+#include <chrono>
 #include <cstdio>
+#include <thread>
 #include <vector>
 
 #include <objbase.h>
@@ -336,6 +338,11 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
     wprintf(L"[encode-test] encoding %u synthetic frames (%ux%u@%u) via %s\n", frameCount,
             params.width, params.height, params.fps, probe.Value().selected.name.c_str());
 
+    // Real-time pacing: the sink writer's WriteSample provides no backpressure,
+    // so feeding faster than the nominal rate grows the MFT queue without
+    // bound. Production frames arrive at wall-clock cadence from capture; the
+    // test paces identically so soak memory reflects production behavior.
+    const auto pacingStart = std::chrono::steady_clock::now();
     for (std::uint32_t f = 0; f < frameCount; ++f) {
         // CPU pattern (test-only path; production frames never touch the CPU).
         const std::uint8_t phase = static_cast<std::uint8_t>(f * 255 / (frameCount ? frameCount : 1));
@@ -376,8 +383,17 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
                                                      frameDuration);
         if (!submitted) {
             const Error e = submitted.TakeError();
-            wprintf(L"[encode-test] FAILED at frame %u: %s\n", f, e.technicalMessage.c_str());
+            wprintf(L"[encode-test] FAILED at frame %u: %s\n", f, e.technicalMessage.c_str());
             return 9;
+        }
+
+        // Pace to the nominal frame cadence (see pacingStart note above).
+        const auto target =
+            pacingStart + std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::duration<double, std::micro>(static_cast<double>(f + 1) /
+                                                                        params.fps));
+        if (std::chrono::steady_clock::now() < target) {
+            std::this_thread::sleep_until(target);
         }
     }
 

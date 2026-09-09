@@ -303,3 +303,27 @@ Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
 Unit tests:           64 tests, 0 failing checks (both configs) ✓
 Integration harness:  PASS (unit + self-check + 3x encode validation; display steps SKIP) ✓
 ```
+
+## Encoder-path soak evidence (NFR-003/007 partial, this machine)
+
+Paced real-time `--encode-test` runs, Release build, private/working set sampled every 10 s:
+
+| Run | Preset | Duration | Working-set trajectory | Result |
+|---|---|---|---|---|
+| Soak 1 | 1920x1080@60 (High) | 5 min | 479.0 -> 483.2 MB, flat | PASS (NFR-007 encode path) |
+| Soak 2 | 1920x1080@30 (Standard) | 60 s | 480.4 -> 480.3 MB, flat | PASS |
+| Soak 3 (first attempt, before pacing fix) | 1080p30 | 2 min | grew to 11 GB, stuck in Finalize — killed | methodology finding, see below |
+
+Findings:
+- With real-time pacing, encoder-path memory is flat and well-behaved; the earlier
+  over-real-time/unpaced run confirmed `WriteSample` applies no backpressure (linear queue
+  growth to 37 GB) — recorded in the ADR-004 addendum. Soak methodology must always use
+  real-time cadence.
+- One intermittent hang-in-Finalize with ~11 GB accumulation was observed once on a Debug
+  1080p30 run and could not be reproduced in controlled reruns (3 subsequent runs flat and
+  exiting 0). Flagged as a follow-up watch item for the AC-008 two-hour soak on the reference
+  machine.
+- NFR-003 (1080p30 private WS < 250 MB, SHOULD) measured ~480 MB for the encoder path alone
+  on this iGPU (driver-side encoder buffers included). Documented as a SHOULD miss with
+  measurement; improvement plan: reuse MF allocator pools and shrink the converter ring when
+  the CPU fallback path is active.

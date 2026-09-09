@@ -55,6 +55,25 @@ We will encode with **Media Foundation using an explicit `IMFSinkWriter`** pipel
 - (-) Sink writer behavior for exotic drivers can vary; the probe records the exact MFT chosen
   per machine in the log for support.
 
+## Addendum (2026-09-10): WriteSample has no backpressure; probe-and-degrade added
+
+Machine testing (AMD iGPU, AMDh264Encoder) surfaced two interop facts baked into the
+implementation now:
+
+1. `IMFSinkWriter::WriteSample` applies **no backpressure** when the async hardware MFT's input
+   queue grows: submitting faster than the encode rate makes Media Foundation's internal queue
+   grow without bound (measured: linear growth to ~37 GB at ~2.3 GB/10 s in a deliberately
+   over-real-time test). The production pipeline is inherently paced by wall-clock capture, but
+   `--encode-test` therefore paces to the nominal fps, and the soak methodology (NFR-007,
+   AC-008) must always run at real-time cadence.
+2. On this driver, `MF_READWRITE_DISABLE_CONVERTERS` broke `MFCreateSinkWriterFromURL`
+   (E_INVALIDARG) and GPU DXGI-buffer samples were rejected by `WriteSample` (E_INVALIDARG)
+   even though the D3D11 Video Processor conversion succeeded. The writer now **probes the
+   selected submission path with one black frame + Flush before recording starts** and
+   automatically degrades to the documented CPU staging path when the probe fails
+   (`ENCODER_CPU_FALLBACK` log event; `VSR_FORCE_CPU_ENCODER=1` manual override). The probe
+   adds at most one frame (~33 ms) of lead-in, within the 2 s duration tolerance.
+
 ## Validation evidence
 
 - Encoder policy and preset-table unit tests (EncoderTests).
