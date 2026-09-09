@@ -50,6 +50,8 @@ private:
     void OnDiagnosticsClicked();
     void OnDisplayToggleClicked();
     void ReapDisplayOperation();
+    void OnStopClickedAsync();
+    void ReapStopOperation();
     void RefreshWindowList();
     void SaveSettings();
 
@@ -67,6 +69,9 @@ private:
     std::atomic<bool> displayOpRunning_{false};
     std::atomic<bool> displayOpDone_{false};
     std::thread displayOp_;   // bounded display connect/disconnect work
+    std::atomic<bool> stopOpRunning_{false};
+    std::atomic<bool> stopOpDone_{false};
+    std::thread stopOp_;      // bounded stop/finalize work (FR-075)
     HFONT uiFont_ = nullptr;
     std::vector<window::WindowInfo> windows_;
 };

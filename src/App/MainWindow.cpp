@@ -302,6 +302,11 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DESTROY:
             KillTimer(hwnd, timerId_);
             if (displayOp_.joinable()) displayOp_.join();
+            if (stopOp_.joinable()) stopOp_.join();
+            for (const auto& w : windows_) {
+                if (w.icon != nullptr) DestroyIcon(w.icon);
+            }
+            windows_.clear();
             tray_.Remove();
             SaveSettings(); // FR-052: remember folder/preset for the next run
             PostQuitMessage(0);
@@ -486,14 +491,22 @@ void MainWindow::ApplyCommandStates(const StatusSnapshot& snap) {
 
     // FR-016/FR-017: display connect/disconnect only while idle; hidden
     // while an async connect is still running.
+    const bool stopPending = stopOpRunning_.load();
     EnableWindow(GetDlgItem(hwnd_, ID_BTN_DISPLAY),
-                 (IsCommandAllowed(snap.state, Command::EnableDisplay) && !displayOpRunning_)
+                 (IsCommandAllowed(snap.state, Command::EnableDisplay) && !displayOpRunning_ &&
+                  !stopPending)
                      ? TRUE
                      : FALSE);
+    // While a stop is pending, all recording commands are in flight (Stopping
+    // transition); keep Start/Pause disabled via the snapshot state itself.
+    if (stopPending) {
+        EnableWindow(GetDlgItem(hwnd_, ID_BTN_STOP), FALSE);
+    }
 }
 
 void MainWindow::OnTimer() {
     ReapDisplayOperation();
+    ReapStopOperation();
     const StatusSnapshot snap = coordinator_.GetStatus();
     ApplyCommandStates(snap);
 
@@ -596,7 +609,39 @@ void MainWindow::OnPauseResumeClicked() {
 }
 
 void MainWindow::OnStopClicked() {
-    (void)coordinator_.Stop(StopReason::User);
+    OnStopClickedAsync();
+}
+
+void MainWindow::OnStopClickedAsync() {
+    // FR-075 / NFR-006: finalization of a long recording can take up to the
+    // bounded 10 s; the UI must stay responsive, so Stop runs on a worker and
+    // the timer reaps it. Pause/Resume stay synchronous (no I/O).
+    if (stopOpRunning_.load()) return;
+    if (stopOp_.joinable()) stopOp_.join();
+
+    stopOpRunning_.store(true);
+    stopOpDone_.store(false);
+    ApplyCommandStates(coordinator_.GetStatus()); // disable command buttons
+
+    try {
+        stopOp_ = std::thread([this] {
+            (void)coordinator_.Stop(StopReason::User);
+            stopOpDone_.store(true); // last touch: the timer takes over
+        });
+    } catch (...) {
+        stopOpRunning_.store(false);
+        stopOpDone_.store(false);
+        // Synchronous fallback keeps the command effective (FR-073).
+        (void)coordinator_.Stop(StopReason::User);
+        RefreshUi();
+    }
+}
+
+void MainWindow::ReapStopOperation() {
+    if (!stopOpDone_.load()) return;
+    if (stopOp_.joinable()) stopOp_.join();
+    stopOpRunning_.store(false);
+    stopOpDone_.store(false);
     RefreshUi();
 }
 
@@ -695,6 +740,11 @@ void MainWindow::RefreshWindowList() {
 
     HWND list = GetDlgItem(hwnd_, ID_LIST_WINDOWS);
     ListBox_ResetContent(list);
+    // Icons are loaded fresh per refresh; release the previous batch so a
+    // long-running session does not leak GDI handles.
+    for (const auto& w : windows_) {
+        if (w.icon != nullptr) DestroyIcon(w.icon);
+    }
     windows_ = window::WindowEnumerator().Enumerate();
 
     int restoreIndex = -1;

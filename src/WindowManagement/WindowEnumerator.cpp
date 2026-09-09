@@ -81,7 +81,10 @@ std::wstring GetExeNameForPid(DWORD pid) {
     if (icon == nullptr) {
         icon = LoadIconW(nullptr, IDI_APPLICATION);
     }
-    return icon;
+    // The resolved handle belongs to the target window, its window class, or
+    // the shared system stock; hand the caller a private copy so refreshing
+    // the list can safely destroy it.
+    return icon != nullptr ? CopyIcon(icon) : nullptr;
 }
 
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {

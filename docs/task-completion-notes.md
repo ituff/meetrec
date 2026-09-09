@@ -219,3 +219,32 @@ Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
 Unit tests:           64 tests, 0 failing checks (both configs) ✓
 --self-check:         runs to completion, exit 0, exit 1 path not exercised here
 ```
+
+---
+
+# Continuation session 3 (2026-09-10, before 09:00)
+
+## Defect fixes
+
+1. **IntegrationTests.ps1 used the PS7-only ternary operator** — the default Windows
+   PowerShell 5.1 would fail to parse the harness. Rewritten with if/else; the whole script is
+   now parse-checked (`[System.Management.Automation.Language.Parser]::ParseFile`) and syntax
+   clean. The harness also gained a pre-step running `--self-check` and reports driver-dependent
+   steps as SKIP (honest reporting) when the virtual display is not staged, instead of FAIL.
+2. **Stop froze the UI for up to the 10 s finalize window** (FR-075/NFR-006). Stop now runs on a
+   worker with the same timer-reap pattern as the display toggle; command buttons disable while
+   the stop is pending; shutdown joins the worker with bounded waits. Pause/Resume remain
+   synchronous (no I/O).
+3. **GDI icon ownership** — the target list previously stored icons owned by the target windows
+   (WM_GETICON/class icons) or the shared stock, which must never be destroyed, and refreshing
+   the list leaked each batch's handles. `LoadWindowIcon` now hands out `CopyIcon` private
+   copies; RefreshWindowList and WM_DESTROY release them.
+
+## Verification (this session)
+
+```text
+Debug|x64 rebuild:    0 errors, 0 warnings (/W4 /WX)   ✓
+Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
+Unit tests:           64 tests, 0 failing checks (both configs) ✓
+PowerShell scripts:   parser clean (IntegrationTests.ps1, build.ps1) ✓
+```
