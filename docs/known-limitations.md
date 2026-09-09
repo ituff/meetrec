@@ -50,6 +50,10 @@ release notes sections with the same purpose.
   this at start (before any content is recorded) and automatically switches to a CPU staging
   path (slightly higher CPU, identical output). The first frame of every recording is a brief
   encoder-priming black frame (<= 1 frame duration).
+- Media Foundation applies no backpressure on encoder input; the recorder therefore feeds
+  frames at wall-clock rate only. A hard-stalled encoder for the whole session would
+  accumulate memory in the media pipeline — monitored via the AC-008 two-hour soak on
+  reference machines.
 
 ## Environment
 

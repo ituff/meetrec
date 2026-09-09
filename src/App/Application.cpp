@@ -388,10 +388,9 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
         }
 
         // Pace to the nominal frame cadence (see pacingStart note above).
-        const auto target =
-            pacingStart + std::chrono::duration_cast<std::chrono::microseconds>(
-                              std::chrono::duration<double, std::micro>(static_cast<double>(f + 1) /
-                                                                        params.fps));
+        const auto target = pacingStart +
+                            std::chrono::microseconds(
+                                static_cast<std::int64_t>(f + 1) * 1'000'000 / params.fps);
         if (std::chrono::steady_clock::now() < target) {
             std::this_thread::sleep_until(target);
         }

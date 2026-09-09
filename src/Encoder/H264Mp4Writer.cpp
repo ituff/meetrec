@@ -389,11 +389,34 @@ Result<void> H264Mp4Writer::SubmitFrame(ID3D11Texture2D* nv12Frame, std::int64_t
     if (time100Ns <= lastTimestamp_) {
         time100Ns = lastTimestamp_ + duration100Ns;
     }
+    // Encoder stall self-check (cheap, every 60 frames).
+    if ((writtenFrames_.load(std::memory_order_relaxed) % 60) == 0) {
+        auto health = QueueHealth();
+        if (!health) return health;
+    }
 
     auto result = useGpuSamples_ ? SubmitFrameGpu(nv12Frame, time100Ns, duration100Ns)
                                  : SubmitFrameCpu(nv12Frame, time100Ns, duration100Ns);
     if (result.IsOk()) lastTimestamp_ = time100Ns;
     return result;
+}
+
+Result<void> H264Mp4Writer::QueueHealth() {
+    if (writer_ == nullptr) return Result<void>{};
+    MF_SINK_WRITER_STATISTICS stats = {};
+    stats.cb = sizeof(stats);
+    if (FAILED(writer_->GetStatistics(streamIndex_, &stats))) {
+        return Result<void>{}; // statistics unavailable; nothing to act on
+    }
+    // Watermark: a healthy pipeline holds at most a few frames. 384 MB is
+    // ~128 NV12 1080p frames — far above any burst, far below the hang point
+    // observed with stalled MFTs (~11 GB).
+    constexpr DWORD kMaxQueuedBytes = 384u * 1024 * 1024;
+    if (stats.dwByteCountQueued > kMaxQueuedBytes) {
+        return EncodeError("IMFSinkWriter queue watermark", HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY),
+                           true);
+    }
+    return Result<void>{};
 }
 
 Result<void> H264Mp4Writer::Finalize() {

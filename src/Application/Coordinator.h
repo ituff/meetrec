@@ -155,6 +155,7 @@ private:
     bool captureCursor_ = false;
     std::uintmax_t encodedBytes_ = 0;
     std::int64_t nextDiskCheckMs_ = 0;
+    std::int64_t nextQueueCheckMs_ = 0;
     std::int64_t nextTargetCheckMs_ = 0;
 
     // Monitor liveness is queried on a slow cadence (NFR-001: the 100 ms UI

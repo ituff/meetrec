@@ -61,6 +61,12 @@ public:
     std::uint64_t WrittenFrames() const noexcept { return writtenFrames_.load(); }
     bool UsingGpuSamples() const noexcept { return useGpuSamples_; }
 
+    // Watchdog hook: reports EncoderWriteFailed when the sink's queued-byte
+    // watermark shows the encoder MFT has stopped consuming (observed as a
+    // real driver failure mode; WriteSample itself would otherwise block
+    // forever — NFR-007/NFR-014 defense). Cheap; call on a slow cadence.
+    Result<void> QueueHealth();
+
 private:
     H264Mp4Writer() = default;
 

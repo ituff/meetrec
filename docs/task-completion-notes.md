@@ -327,3 +327,29 @@ Findings:
   on this iGPU (driver-side encoder buffers included). Documented as a SHOULD miss with
   measurement; improvement plan: reuse MF allocator pools and shrink the converter ring when
   the CPU fallback path is active.
+
+## Session 4 addendum: pacing unit bug, watermark defense, bounded stop
+
+After the encoder soak, four more items landed (all Debug-verified on this machine):
+
+1. **`--encode-test` pacing had a duration-unit bug** — the per-frame target was built as
+   `duration<double, micro>` carrying a *seconds* value, making the pacing horizon ~33
+   **microseconds** per frame instead of 33 ms, i.e. pacing was inert. Runs therefore fed the
+   sink writer faster than real time. Fixed to integer microseconds; a 20 s nominal run now
+   completes in 21.5 s and a 120 s run in ~130 s, both with a flat ~480 MB working set.
+2. **Sink-writer queue watermark defense** — `H264Mp4Writer::QueueHealth()` reads
+   `MF_SINK_WRITER_STATISTICS.dwByteCountQueued` and fails with `EncoderWriteFailed` above a
+   384 MB watermark (~128 NV12 1080p frames). `SubmitFrame` self-checks every 60 frames and the
+   coordinator consume loop re-checks every 3 s, so a stalled encoder MFT stops the recording
+   safely (VSR-ENCODER-WRITE-FAILED) long before the ~11 GB hang point observed in testing.
+3. **Bounded stop (NFR-014)** — `WaitForWorkerExit` now polls `workerAlive_` with the bounded
+   deadline; a worker wedged inside a driver call is detached, the session is marked Faulted
+   with `WORKER_ABANDONED`, and Stop/process shutdown always complete.
+4. **Hang evidence preserved** — one wedged run produced a full user dump at
+   `%TEMP%sr-hang-31676.dmp` for root-cause analysis with AMD.
+
+**Driver-state caveat:** after repeated force-kills of wedged encoder sessions, this machine's
+AMD MFT entered a state where new sessions either fail (`WriteSample` E_INVALIDARG) or stall
+without consuming — reproduced across Debug/Release. The failure paths behave as designed
+(safe stop, error surfaced, process recovers); a clean reboot is required before re-running
+encode soak evidence. Debug 120 s standard re-verified flat 480 MB after the fixes.
