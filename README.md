@@ -148,7 +148,7 @@ All first-party modules are static libraries linked into `VirtualScreenRecorder.
 
 ## Testing
 
-- **Unit tests** (`tests/UnitTests`, 56 tests): state machine transition coverage, pause-aware
+- **Unit tests** (`tests/UnitTests`, 64 tests): state machine transition coverage, pause-aware
   timestamp math, bounded-queue policy including concurrent producer/consumer, JSON/settings
   round trips, output naming and collision handling, disk-guard thresholds, encoder selection
   policy, destination-rect geometry, error-code strings, identity matching, log redaction.

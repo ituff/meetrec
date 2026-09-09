@@ -78,7 +78,8 @@ foreach ($preset in @("low", "standard", "high")) {
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     & $validator $clip.FullName `
         --expect-width $e.w --expect-height $e.h --expect-fps $e.fps `
-        --expect-duration-sec $ClipSeconds --tolerance-sec 2 | Out-Null
+        --expect-duration-sec $ClipSeconds --tolerance-sec 2 `
+        --expect-frames ($e.fps * $ClipSeconds) | Out-Null
     $vExit = $LASTEXITCODE
     if ($vExit -eq 0) {
         Add-Report @{ name = "encode-$preset"; result = "PASS"; detail = $clip.Name }
@@ -126,7 +127,8 @@ foreach ($preset in @("low", "standard", "high")) {
     $e = $expect[$preset]
     & $validator $clip.FullName `
         --expect-width $e.w --expect-height $e.h --expect-fps $e.fps `
-        --expect-duration-sec $ClipSeconds --tolerance-sec 2 | Out-Null
+        --expect-duration-sec $ClipSeconds --tolerance-sec 2 `
+        --expect-frames ($e.fps * $ClipSeconds) | Out-Null
     $vExit = $LASTEXITCODE
     $detail = "$($clip.Name): $([string]::Join('; ', ($out | Select-Object -Last 2)))"
     if ($vExit -eq 0) {
