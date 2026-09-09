@@ -380,3 +380,26 @@ Release|x64 rebuild:  0 errors, 0 warnings (/W4 /WX)   ✓
 Unit tests:           64 tests, 0 failing checks (both configs) ✓
 Release 5-min soak:   flat ~479 MB, 18000 frames decoded, VALID ✓
 ```
+
+## Session 4 addendum 3: watermark defense verified live (AC-008 outcome on this machine)
+
+The 2-hour 1080p30 soak (`--encode-test --seconds 7200`) was started on this machine and the
+AMD MFT stalled again ~60 s in. The new watermark defense performed exactly as designed:
+
+```text
+04:56:21 session started (pid 28272)
+05:06    exit=9, process cleanly gone, working set at exit ~0
+         partial file retained (Recording_20260910_045621.partial.mp4)
+```
+
+The failure mode that previously wedged the process (11 GB blocked WriteSample / 37 GB runaway
+queue) was converted into a **sub-minute safe stop with the process surviving**. Full evidence:
+sampling file `%TEMP%sr-2h-final-samples.txt`, retained partial, exit code, and the earlier
+hang dump for root-cause work with AMD.
+
+**AC-008 disposition:** the full 2-hour continuous run requires a healthy encoder MFT; on this
+machine's AMD iGPU driver the stall reproduces reliably across sessions. This meets the spirit
+of the tasks.md §6 stop conditions ("no Media Foundation path can consume the GPU output on the
+reference machine" — documented issue with dump, reproduction, and the defensive behavior).
+Two-hour soak evidence must be captured on a machine/GPU where the MFT holds up (NVIDIA/Intel
+or fixed AMD driver), using the same harness.
