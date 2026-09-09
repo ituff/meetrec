@@ -1,0 +1,122 @@
+# Task completion notes (specs/001-mvp/tasks.md §1.7)
+
+Implementation record for the MVP P0 task list, executed 2026-09-09. Requirement IDs, files,
+commands, results, and remaining machine-dependent evidence are listed per milestone. The
+repository was implemented as one baseline change set; follow-up evidence runs (T091-T093) are
+called out explicitly rather than silently omitted.
+
+## M0 — T001, T002, T003 (NFR-031..NFR-036)
+
+- **Delivered:** repository skeleton per design.md §3; `.gitignore` (build outputs, catalogs,
+  certs/keys, recordings, logs); README (scope, prerequisites, build/test commands, test-signing
+  warning, platform); ADR template; `VirtualScreenRecorder.sln` (x64-only + ReleaseSigned mapped
+  to Release project configs); `Directory.Build.props` (C++20, Unicode, `/W4 /WX`, `/utf-8`,
+  artifact output conventions; driver project excluded by name); `scripts/build.ps1`,
+  `test.ps1`, `clean.ps1`, `common.ps1` with VS/SDK/WDK detection, actionable failure messages
+  (`VSR-BLD-00x`), and `artifacts/build-manifest.json`.
+- **Verified on this machine:** `build.ps1` (WDK missing) exits **2** with an actionable WDK
+  message (the T003 acceptance row); `build.ps1 -SkipDriver` builds app + tests and writes the
+  manifest; `clean.ps1` restores the tree; `test.ps1` runs the unit suite.
+
+## M1 — T010, T011, T012 (FR-010..FR-017, NFR-021, NFR-035)
+
+- **Delivered:** `src/Driver` (UMDF 2/IddCx driver adapted from the Microsoft IndirectDisplay
+  sample with per-file attribution): single adapter/monitor, product modes
+  720p30/1080p30(preferred)/1080p60, product EDID (`scripts/gen-edid.py`, checksum-verified),
+  stable container ID, WPP lifecycle tracing, x64-only vcxproj, INF with
+  `VirtualScreenRecorder` identities and unique UMDF host group. `docs/sample-audit-idd.md`
+  records every imported file, every sample TODO disposition, and removals (T010 done-criteria).
+  ADR-002 finalized the SwDeviceCreate lifecycle; ADR drafts ADR-001..ADR-006 created.
+  `scripts/install-driver.ps1`, `remove-driver.ps1`, `testsign.ps1` (test-signing workflow,
+  keys never committed).
+- **App side:** `DisplayControl` module — `TopologyService` (QueryDisplayConfig + HMONITOR
+  mapping + identity match, unit-tested), `TopologyWatcher` (debounced hidden-window watcher),
+  `SoftwareDisplayDevice` (SwDeviceCreate lifecycle, SetupAPI enable/disable, driver-presence
+  check).
+- **Remaining evidence (requires WDK + test machine):** T011 install/modes, T012 ten-cycle +
+  reboot identity stability — checklists prepared in `docs/driver-manual-test-log.md`.
+
+## M2 — T020..T031 (FR-040..FR-063, NFR-005..NFR-007, NFR-010..NFR-012)
+
+- **Delivered:** `Capture` module — `GraphicsDevice` (BGRA D3D11 bootstrap with typed
+  `VSR-INIT-D3D-FAILED` mapping and device-removed probe), WGC interop (local
+  `IGraphicsCaptureItemInterop` declaration, CreateForMonitor), `BoundedFrameQueue`
+  (capacity 3, drop-oldest, atomic counters, close/drain semantics), `MonitorCaptureSession`
+  (free-threaded frame pool, pooled-copy ownership per ADR-005, content-size adaptation,
+  preview tap). `Encoder` module — `VideoPreset` (spec table + validation), `EncoderProbe`
+  (MFTEnumEx + deterministic selection policy; fails `VSR-ENCODER-UNAVAILABLE` before any
+  output exists), `VideoConverter` (D3D11 VideoProcessor BGRA→NV12, GPU-only normal path),
+  `H264Mp4Writer` (sink writer, HW D3D11 path + documented software fallback, monotonic clamp,
+  `.partial.mp4`, idempotent finalize).
+- **Verified:** unit tests for queue semantics/conservation, presets, encoder policy.
+- **Remaining evidence:** T022 60-second spike, T023 30-minute soak, T030 vendor probe outputs,
+  T031 per-preset encodes — run via `--dev-record` + `MediaValidator` on a machine with the
+  driver (see `tests/IntegrationTests/IntegrationTests.ps1`).
+
+## M3 — T040, T041, T042 (FR-055..FR-077, FR-052..FR-060, NFR-012..NFR-014)
+
+- **Delivered:** `Application` module — `Coordinator` (sole lifecycle owner; serialized
+  commands; worker-thread pipeline; per-session correlation ID; named single-recording mutex;
+  display/target/device/disk monitors; rollback ordering on Preparing failures; idempotent
+  Stop; bounded-wait shutdown), `RecordingTimeline` (pause-excluded monotonic timestamps,
+  unit-tested), `AppState` (spec §8 transition/command tables, fully unit-tested),
+  `OutputFile` (naming/collision/validation), `DiskSpaceGuard` (documented threshold
+  max(256 MB, 30 s @ bitrate), injectable probe), `Diagnostics` (sanitized metadata + log
+  archive, PowerShell fallback to log folder).
+- **Verified:** `--dev-record` headless entry point executes end-to-end and on this machine
+  (no driver) terminates with the exact actionable error `VSR-INIT-D3D`→`VSR-INIT-DRIVER-MISSING`
+  path and exit code 2; 56 unit tests pass (state machine complete transition-branch coverage,
+  timeline math, queue conservation, file naming, disk thresholds).
+- **Remaining evidence:** 5-minute end-to-end and pause/resume media checks (T040/T041) on a
+  driver-enabled machine.
+
+## M4 — T050..T061, T070..T082 (FR-020..FR-030, FR-080..FR-096, NFR-040..NFR-044)
+
+- **Delivered:** `WindowManagement` — eligibility-filtered enumeration (visible/unowned/
+  non-cloaked/non-tool/non-shell, recorder excluded, stale-HWND PID revalidation),
+  placement/restore per design §4.5 with primary-monitor fallback and hung-window guard,
+  unit-tested destination geometry. `App` — WinMain (COM/WinRT MTA, Win11 gate, single-instance
+  mutex + registered activation message, `--dev-record`), `MainWindow` (target list, output
+  folder via IFileDialog, presets, cursor toggle, state/duration/FPS/dropped/error panel,
+  snapshot-driven command enabling, keyboard navigation via IsDialogMessage, Per-Monitor V2 +
+  WM_DPICHANGED re-layout, settings persistence), `TrayIcon` (state-colored runtime icons,
+  state+elapsed tooltip, Explorer-restart recreation, close-hides-to-tray, exit confirmation),
+  `PreviewPanel` (≈10 FPS observability-only GDI present from CPU tap; closing it never affects
+  capture).
+- **Verified:** full Debug|x64 build with `/W4 /WX` (0 errors/warnings), unit suite green.
+- **Remaining evidence:** DPI 100/150/200 %, mixed-DPI placement, tray/Explorer-restart and
+  multi-app placement runs — `docs/manual-test-checklist.md`; T081 failure-injection rows are
+  implemented (target loss, display loss, device loss, disk guard, write failure, repeated
+  shutdown) with bounded waits and are exercised manually per checklist section 4/5.
+
+## M5 — T090..T093 (FR-001..FR-007, NFR-020..NFR-023, AC-001/AC-010)
+
+- **Delivered:** `installer/VirtualScreenRecorderSetup.iss` (preflight Win11 x64 + running-app
+  guard, elevated driver staging via pnputil with surfaced exit codes, shortcuts, silent
+  switches, uninstall removes driver and preserves user data) and `installer/README.md`.
+  Test-signing hooks live in `scripts/testsign.ps1` with no secrets in the repository
+  (NFR-022); production signing is documented as the T093 gate (ADR-006).
+- **Remaining evidence:** T090 clean install/uninstall on a disposable machine, T091
+  performance/soak measurements, T092 two-machine/two-GPU matrix, T093 signed distribution gate
+  — harnesses and checklists delivered; execution requires physical machines.
+
+## Commands and results (this machine)
+
+```text
+scripts\build.ps1                                   → exit 2 (missing WDK, actionable VSR-BLD-004)  ✓ per T003
+scripts\build.ps1 -SkipDriver                       → exit 0, build-manifest.json written           ✓
+scripts\test.ps1 (UnitTests)                        → 56 tests, 0 failing checks                    ✓
+VirtualScreenRecorder.exe --dev-record --seconds 2  → exit 2, VSR-INIT-DRIVER-MISSING actionable    ✓
+MediaValidator.exe (usage)                          → runs; used by integration harness             ✓
+```
+
+## Limitations and follow-ups
+
+1. Driver build/run evidence (T011/T012/T022/T023/T030/T031/T040-T042 media checks) requires a
+   WDK + test-signed machine; all harnesses and logs are prepared.
+2. WGC yellow border suppression (`IsBorderRequired` consent) is out of MVP scope — documented
+   in `docs/known-limitations.md`.
+3. `ReleaseSigned` solution configuration maps to Release project configs; production signing
+   runs through the T093 pipeline once a certificate/attestation flow is available.
+4. Preview tap uses a bounded CPU copy at ≤ 10 FPS (observability only); the recording path
+   remains GPU-only — documented in code and design alignment notes.

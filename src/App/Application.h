@@ -1,0 +1,53 @@
+// Virtual Screen Recorder - Win32 application shell (FR-003..FR-006, T070,
+// T071; design.md §4.1).
+//
+// Responsibilities: process startup/shutdown, COM + WinRT init, Per-Monitor V2
+// DPI awareness (manifest), single-instance activation, logger and settings
+// bootstrap, and the `--dev-record` headless development entry point (T040).
+// The UI never touches capture, encoder, display, or driver objects directly;
+// everything routes through the coordinator.
+#pragma once
+
+#include <memory>
+
+#include <Application/Coordinator.h>
+
+namespace vsr::app {
+
+constexpr wchar_t kMainWindowClassName[] = L"VsrMainWindow";
+constexpr wchar_t kSingleInstanceMutexName[] = L"Local\\VirtualScreenRecorder.SingleInstance";
+
+class MainWindow;
+
+class Application {
+public:
+    static Application& Instance() noexcept;
+
+    // Runs the interactive app. Returns the process exit code.
+    int RunInteractive();
+    // Runs the headless development recording entry point (T040).
+    int RunDevRecord(int seconds, const std::wstring& presetName,
+                     const std::wstring& outputDir);
+
+    Coordinator& GetCoordinator() noexcept { return *coordinator_; }
+
+    bool WantsMinimizeToTray() const noexcept { return minimizeToTray_; }
+    void SetMinimizeToTray(bool v) noexcept { minimizeToTray_ = v; }
+    std::wstring OutputDirectory() const { return outputDirectory_; }
+    void SetOutputDirectory(const std::wstring& dir) { outputDirectory_ = dir; }
+
+private:
+    Application();
+
+    bool InitRuntime();
+    void ShutdownRuntime();
+    bool EnsureSingleInstance();
+
+    std::shared_ptr<IClock> clock_;
+    std::unique_ptr<Coordinator> coordinator_;
+    std::unique_ptr<MainWindow> mainWindow_;
+    bool minimizeToTray_ = true;
+    std::wstring outputDirectory_;
+};
+
+} // namespace vsr::app

@@ -1,0 +1,43 @@
+# Build outputs
+artifacts/
+!artifacts/.gitkeep
+*.user
+*.suo
+.vs/
+ipch/
+*.pdb
+*.ilk
+*.obj
+*.pch
+*.idb
+*.log
+
+# Generated driver packages and catalogs
+*.cat
+*.cer
+*.pfx
+*.pvk
+*.spc
+*.stl
+
+# Test certificates and keys (never commit)
+*.key
+*.snk
+signing/
+
+# Recordings and diagnostics output
+*.mp4
+*.partial.mp4
+recordings/
+diagnostics/
+
+# Local logs
+Logs/
+
+# Installer artifacts
+installer/Output/
+*.exe.setup
+
+# OS noise
+Thumbs.db
+desktop.ini

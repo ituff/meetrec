@@ -1,0 +1,65 @@
+#pragma once
+
+// Virtual Screen Recorder - native controller window (FR-070, FR-075..FR-077,
+// NFR-040..NFR-044; T070, T072).
+
+#include <memory>
+#include <vector>
+
+#include <Application/Coordinator.h>
+#include <WindowManagement/WindowEnumerator.h>
+#include "TrayIcon.h"
+
+namespace vsr::app {
+
+class PreviewPanel;
+
+class MainWindow {
+public:
+    explicit MainWindow(Coordinator& coordinator);
+    ~MainWindow();
+
+    MainWindow(const MainWindow&) = delete;
+    MainWindow& operator=(const MainWindow&) = delete;
+
+    // Creates the window (hidden until ShowAndActivate).
+    bool Create();
+    void ShowAndActivate();
+    HWND Hwnd() const noexcept { return hwnd_; }
+
+    // Forces a status refresh (also used by tray commands).
+    void RefreshUi();
+
+private:
+    static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+
+    void OnCreate();
+    void OnTimer();
+    void OnDpiChanged(UINT newDpi);
+    void LayoutControls(UINT dpi);
+    void ApplyCommandStates(const StatusSnapshot& snap);
+
+    void OnStartClicked();
+    void OnPauseResumeClicked();
+    void OnStopClicked();
+    void OnBrowseClicked();
+    void OnOpenOutputFolder();
+    void OnDiagnosticsClicked();
+    void RefreshWindowList();
+    void SaveSettings();
+
+    Coordinator& coordinator_;
+    TrayIcon tray_;
+    std::unique_ptr<PreviewPanel> preview_;
+    HWND hwnd_ = nullptr;
+    UINT dpi_ = 96;
+    UINT timerId_ = 1;
+    UINT activateMessage_ = 0;
+    UINT taskbarCreatedMessage_ = 0;
+    int pauseButtonMode_ = 0; // 0 = Pause, 1 = Resume
+    HFONT uiFont_ = nullptr;
+    std::vector<window::WindowInfo> windows_;
+};
+
+} // namespace vsr::app

@@ -1,0 +1,82 @@
+;
+; VirtualDisplayDriver.inf
+;
+; Virtual Screen Recorder indirect display driver.
+; Derived from the Microsoft IddSampleDriver.inf (Windows-driver-samples,
+; MIT license); identities changed to the product values shared with
+; src/DisplayControl/VirtualDisplayIdentity.h.
+;
+; Hardware IDs:
+;   Root\VirtualScreenRecorder - used when the device is created under the
+;       root enumerator (scripts/install-driver.ps1 testing path).
+;   VirtualScreenRecorder - used by the application's SwDeviceCreate path
+;       (SoftwareDisplayDevice::EnsureDisplayAvailable).
+
+[Version]
+PnpLockDown=1
+Signature="$Windows NT$"
+ClassGUID = {4D36E968-E325-11CE-BFC1-08002BE10318}
+Class = Display
+ClassVer = 2.0
+Provider=%ManufacturerName%
+CatalogFile=VirtualDisplayDriver.cat
+DriverVer=
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$.10.0...22000
+
+[Standard.NT$ARCH$.10.0...22000]
+%DeviceName%=VsrDevice_Install, Root\VirtualScreenRecorder
+%DeviceName%=VsrDevice_Install, VirtualScreenRecorder
+
+[SourceDisksFiles]
+VirtualDisplayDriver.dll=1
+
+[SourceDisksNames]
+1 = %DiskName%
+
+; =================== UMDF Device ==================================
+
+[VsrDevice_Install.NT]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT
+CopyFiles=UMDriverCopy
+
+[VsrDevice_Install.NT.hw]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT.HW
+AddReg = VsrDevice_HardwareDeviceSettings
+
+[VsrDevice_HardwareDeviceSettings]
+HKR,, "UpperFilters",  %REG_MULTI_SZ%, "IndirectKmd"
+HKR, "WUDF", "DeviceGroupId", %REG_SZ%, "VirtualScreenRecorderGroup" ; dedicated UMDF host process (sample README guidance)
+
+[VsrDevice_Install.NT.Services]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT.Services
+
+[VsrDevice_Install.NT.Wdf]
+UmdfService=VirtualScreenRecorder,VirtualScreenRecorder_Install
+UmdfServiceOrder=VirtualScreenRecorder
+UmdfKernelModeClientPolicy = AllowKernelModeClients
+
+[VirtualScreenRecorder_Install]
+UmdfLibraryVersion=$UMDFVERSION$
+ServiceBinary=%12%\UMDF\VirtualDisplayDriver.dll
+UmdfExtensions = IddCx0102
+
+[DestinationDirs]
+UMDriverCopy=12,UMDF ; copy to drivers\umdf
+
+[UMDriverCopy]
+VirtualDisplayDriver.dll
+
+; =================== Generic ==================================
+
+[Strings]
+ManufacturerName="VirtualScreenRecorder Project"
+DiskName = "Virtual Screen Recorder Driver Installation Disk"
+DeviceName="Virtual Screen Recorder Virtual Display"
+
+REG_MULTI_SZ  = 0x00010000
+REG_SZ        = 0x00000000

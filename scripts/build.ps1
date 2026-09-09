@@ -1,0 +1,56 @@
+# Virtual Screen Recorder - deterministic build script (T003, NFR-036).
+#
+# Usage:
+#   powershell -File scripts\build.ps1 [-Configuration Debug|Release] [-SkipDriver]
+#
+# Builds the whole solution for x64. With -SkipDriver only the application and
+# test projects build (useful on machines without the WDK). Driver builds fail
+# the script when the WDK is missing, with an actionable message.
+
+param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Debug",
+    [switch]$SkipDriver
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+$solution = Join-Path $root "VirtualScreenRecorder.sln"
+$solutionDirParam = "/p:SolutionDir=$root\"
+
+. (Join-Path $PSScriptRoot "common.ps1")
+
+Write-Host "== Virtual Screen Recorder build ($Configuration|x64) =="
+$msbuild = Get-MsBuildPath
+
+$extra = @{}
+$buildTargets = @($solution)
+if ($SkipDriver) {
+    $extra["driverSkipped"] = $true
+    # Project list mirrors the solution minus the driver.
+    $buildTargets = @(
+        (Join-Path $root "src\App\App.vcxproj"),
+        (Join-Path $root "tests\UnitTests\UnitTests.vcxproj"),
+        (Join-Path $root "tests\IntegrationTests\MediaValidator\MediaValidator.vcxproj")
+    )
+} else {
+    try {
+        Assert-WdkInstalled
+    } catch {
+        Write-Host $_.Message -ForegroundColor Red
+        exit 2
+    }
+}
+
+foreach ($target in $buildTargets) {
+    & $msbuild $target "/m" "/restore" "/p:Configuration=$Configuration" "/p:Platform=x64" `
+        $solutionDirParam "/v:m" "/nologo"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Build FAILED (msbuild exit $LASTEXITCODE) for $target." -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
+Write-BuildManifest -SolutionRoot $root -Configuration $Configuration -Extra $extra
+Write-Host "Build succeeded." -ForegroundColor Green
+exit 0

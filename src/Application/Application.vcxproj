@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{BF6A8B95-7AAD-4DC2-A4E5-D6C8BAF2A7B1}</ProjectGuid>
+    <RootNamespace>vsr</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)artifacts\obj\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(OutDir)</IntDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Include="AppState.cpp" />
+    <ClCompile Include="Coordinator.cpp" />
+    <ClCompile Include="Diagnostics.cpp" />
+    <ClCompile Include="DiskSpaceGuard.cpp" />
+    <ClCompile Include="OutputFile.cpp" />
+    <ClCompile Include="RecordingTimeline.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="AppState.h" />
+    <ClInclude Include="Coordinator.h" />
+    <ClInclude Include="Diagnostics.h" />
+    <ClInclude Include="DiskSpaceGuard.h" />
+    <ClInclude Include="OutputFile.h" />
+    <ClInclude Include="RecordingTimeline.h" />
+    <ClInclude Include="StatusSnapshot.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Capture\Capture.vcxproj" />
+    <ProjectReference Include="..\DisplayControl\DisplayControl.vcxproj" />
+    <ProjectReference Include="..\Encoder\Encoder.vcxproj" />
+    <ProjectReference Include="..\Infrastructure\Infrastructure.vcxproj" />
+    <ProjectReference Include="..\WindowManagement\WindowManagement.vcxproj" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
