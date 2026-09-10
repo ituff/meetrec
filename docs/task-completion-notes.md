@@ -468,3 +468,14 @@ Remaining (blocked on admin/reboot — the elevated script
 3. `pnputil /add-driver` staging
 After the reboot: launch the app; `SwDeviceCreate` + IddCx bring-up complete the T011/T012/
 T022/T040 evidence chain on real hardware.
+
+## Session 6 (21:xx-01:15): MFT behavior characterization + validator hardening
+
+- MFT stall is **intermittent per-session**: consecutive 600 s encode runs alternated between
+  instant watermark-detectable stall and full success (10-min continuous run: 450 MB MP4,
+  18,000/18,000 frames decoded, 599.999 s, VALID). The watermark defense handled both cases
+  correctly (fast safe stop vs full run).
+- MediaValidator gained `--expect-frames` (±15%) — verified with positive and negative cases.
+- Driver staging blocked only on UAC click; an elevated one-shot script
+  (`artifacts/elevate-driver-setup.ps1`) packages testsigning-on, WDK test cert trust, and
+  pnputil staging.
