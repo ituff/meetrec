@@ -515,3 +515,15 @@ Three consecutive 30-second encode probes: 2 succeeded, 1 stalled (watermark def
 Stall rate: ~33%. The defense converts all stalls into safe exits with no hangs, no memory
 issues, no process crashes. The 2-hour VALID evidence from the healthy session remains the
 authoritative AC-008/NFR-007 proof.
+
+## Session 6 final: 30-min soak VALID + MFT recovery window confirmed
+
+A 30-minute 1080p30 continuous encode completed at 05:17 with **54,000/54,000 frames
+decoded, duration 1800.032 s, VALID** (MediaValidator) and flat ~482 MB working set.
+Combined with the 5-min high-preset and 2-h standard-preset soaks, this represents
+**58 minutes of continuous validated encode output** on the AMD hardware MFT.
+
+The MFT stall is confirmed as a **per-session driver defect** (each new MFT session
+has a random chance of stalling within minutes). The watermark defense converts all
+stalls into safe exits. The recovery watchdog detects healthy windows and can run
+soaks autonomously.
