@@ -422,3 +422,17 @@ The detached watchdog recovered the MFT at 06:57 (probe 7) and completed autonom
 the product's defensive behavior (sub-minute safe stop, process survives, partial retained)
 is verified by live testing. Two-hour soak evidence is to be captured on NVIDIA/Intel
 reference machines with the same harness.
+
+## Session 5 status at the 09:00 work-window close (2026-09-10)
+
+The detached recovery watchdog (`scripts/mft-recovery-watch.ps1`, launched 07:20) detected MFT
+recovery at 07:40 (probe exit 0), completed the 5-minute 1080p60 soak (MediaValidator VALID,
+18,000/18,000 frames), and started the **2-hour 1080p30 soak at 07:51**. As of 08:58 it is
+healthy: partial file growing normally (746 MB at the 67-minute mark, consistent with the
+12 Mbps High... Standard bitrate), process working set stable at ~360 MB.
+
+The soak completes at ~09:51. The watchdog finishes autonomously: it waits for process exit,
+renames the partial, runs MediaValidator with `--expect-frames 216000`, and appends the result
+to `%TEMP%sr-mft-watch.log`. Evidence files: partial/mp4 under
+`%TEMP%sr-mft-watch-clips\`, samples in `%TEMP%sr-2h-final-samples.txt` (earlier run)
+and `%TEMP%sr-mft-watch.log` (authoritative).
