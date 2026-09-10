@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Virtual Screen Recorder UMDF 2 / IddCx driver project.
-  Structure derived from the Microsoft IddSampleDriver.vcxproj
-  (Windows-driver-samples, MIT license). x64-only configurations per the
-  product build design (NFR-030). Building requires the matching WDK.
--->
-<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
       <Configuration>Debug</Configuration>
@@ -32,73 +26,48 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{D18CADB7-9CCF-4FE4-A6A7-F8EADCB4C9D3}</ProjectGuid>
-    <TemplateGuid>{32909489-7be5-497b-aafa-db6669d9b44b}</TemplateGuid>
-    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
-    <Configuration>Debug</Configuration>
-    <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <RootNamespace>VirtualDisplayDriver</RootNamespace>
-  </PropertyGroup>
-  <PropertyGroup Label="PropertySheets">
-    <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <DriverTargetPlatform>Universal</DriverTargetPlatform>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries Condition="'$(Configuration)' == 'Debug'">true</UseDebugLibraries>
     <UseDebugLibraries Condition="'$(Configuration)' != 'Debug'">false</UseDebugLibraries>
-    <UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR>
-    <UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR>
-    <IndirectDisplayDriver>true</IndirectDisplayDriver>
-    <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
-    <IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR>
-    <IDDCX_VERSION_MINOR>10</IDDCX_VERSION_MINOR>
-    <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
-    <ApiValidator_Enable>false</ApiValidator_Enable>
-    <LanguageStandard>stdcpp17</LanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings">
-  </ImportGroup>
-  <ImportGroup Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <!-- Product artifact convention (design.md §7.3). -->
     <OutDir>$(SolutionDir)artifacts\$(Configuration)\driver\</OutDir>
     <IntDir>$(SolutionDir)artifacts\obj\$(Configuration)\$(ProjectName)\</IntDir>
+    <TargetName>VirtualDisplayDriver</TargetName>
+    <TargetExt>.dll</TargetExt>
+    <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
   <PropertyGroup>
-    <UseLocalTime>true</UseLocalTime>
-    <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
+    <WDKRoot Condition="'$(WDKRoot)' == ''">C:\Program Files (x86)\Windows Kits\10</WDKRoot>
+    <WDKVer Condition="'$(WDKVer)' == ''">10.0.26100.0</WDKVer>
+    <WdfUmdfVer>2.25</WdfUmdfVer>
+    <IddcxVer>1.10</IddcxVer>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <WppEnabled>false</WppEnabled>
-      <WppRecorderEnabled>false</WppRecorderEnabled>
-      <WppScanConfigurationData Condition="'%(ClCompile.ScanConfigurationData)' == ''">trace.h</WppScanConfigurationData>
+      <AdditionalIncludeDirectories>$(WDKRoot)\Include\wdf\umdf\$(WdfUmdfVer);$(WDKRoot)\Include\$(WDKVer)\um;$(WDKRoot)\Include\$(WDKVer)\shared;$(WDKRoot)\Include\$(WDKVer)\um\iddcx\$(IddcxVer);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WIN64;_AMD64_;AMD64;_ATL_NO_WIN_SUPPORT;UMDF_DRIVER;IDDCX_VERSION_MAJOR=1;IDDCX_VERSION_MINOR=10;IDDCX_MINIMUM_VERSION_REQUIRED=4;_WDF_USER_MODE_DRIVER_;WIN32_LEAN_AND_MEAN=1;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ExceptionHandling>Sync</ExceptionHandling>
-      <EnablePREfast>true</EnablePREfast>
-      <PreprocessorDefinitions>_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalOptions>/D_ATL_NO_WIN_SUPPORT /DUMDF_DRIVER /DIDDCX_VERSION_MAJOR=1 /DIDDCX_VERSION_MINOR=10 /DIDDCX_MINIMUM_VERSION_REQUIRED=4 /wd4005 /utf-8 /std:c++17 %(AdditionalOptions)</AdditionalOptions>
-      <!-- /wd4005: WDK shared+umdf ntstatus.h copies trigger benign C4005 (NFR-032 documented exception) -->
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <DisableSpecificWarnings>4005;4100;4189;4101;4324</DisableSpecificWarnings>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>%(AdditionalDependencies);OneCoreUAP.lib;avrt.lib</AdditionalDependencies>
+      <AdditionalDependencies>OneCoreUAP.lib;advapi32.lib;ntdll.lib;avrt.lib;iddcxstub.lib;WdfDriverStubUm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVer)\um\x64\iddcx\$(IddcxVer);$(WDKRoot)\Lib\wdf\umdf\x64\$(WdfUmdfVer);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Windows</SubSystem>
     </Link>
-    <DriverSign>
-      <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-    </DriverSign>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <FilesToPackage Include="$(TargetPath)" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-  </ImportGroup>
 </Project>
