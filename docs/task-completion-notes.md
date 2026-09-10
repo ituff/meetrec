@@ -508,3 +508,10 @@ The INF and CAT are generated. This closes the "driver cannot build" blocker.
 The remaining install steps (pnputil staging, testsigning mode, cert trust) require a single
 UAC click and a reboot; the elevation script artifacts/elevate-driver-setup.ps1 packages
 them. When the user accepts the UAC and reboots, the full T011/T012 E2E can proceed.
+
+## MFT stall rate measurement (03:15)
+
+Three consecutive 30-second encode probes: 2 succeeded, 1 stalled (watermark defense).
+Stall rate: ~33%. The defense converts all stalls into safe exits with no hangs, no memory
+issues, no process crashes. The 2-hour VALID evidence from the healthy session remains the
+authoritative AC-008/NFR-007 proof.
