@@ -1,7 +1,7 @@
 #include "Application.h"
 
-#include <chrono>
-#include <cstdio>
+#include <chrono>
+#include <cstdio>
 #include <thread>
 #include <vector>
 
@@ -557,6 +557,13 @@ int wmain(int argc, wchar_t* argv[]) {
         const int code = Application::Instance().RunEncodeTest(seconds, preset, outputDir);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
+        wprintf(L"Virtual Screen Recorder 1.0.0.0 (MVP)
+");
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return 0;
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--dev-record") == 0) {
