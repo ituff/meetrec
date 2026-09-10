@@ -436,3 +436,35 @@ renames the partial, runs MediaValidator with `--expect-frames 216000`, and appe
 to `%TEMP%sr-mft-watch.log`. Evidence files: partial/mp4 under
 `%TEMP%sr-mft-watch-clips\`, samples in `%TEMP%sr-2h-final-samples.txt` (earlier run)
 and `%TEMP%sr-mft-watch.log` (authoritative).
+
+## Session 5 addendum (late evening): WDK installed, driver BUILDS on this machine, AC-008 evidence closed
+
+Major milestone unlocked: **the Windows Driver Kit 10.0.26100 was installed via winget and the
+VirtualDisplayDriver now builds end-to-end on this machine** — DLL linked, INF stamped, catalog
+generated and test-signed (DLL + CAT signed with the auto-created `WDKTestCert`).
+
+Because WDK 10.0.26100 no longer ships the legacy VSIX platform toolset
+(`WindowsUserModeDriver10.0`) for BuildTools instances, a **shadow platform toolset** was
+created at `%LOCALAPPDATA%\Microsoft\MSBuild\Microsoft.Cpp170\PlatformsdPlatformToolsets\WindowsUserModeDriver10.0\` (Toolset.props/targets + v143 Platform
+props/targets copies + `ImportAfter/ZZ.VsrWdk.props`) which explicitly imports the WDK
+`WindowsDriver.Default.props -> Shared.Props -> UserMode.* -> Common.targets` chain and defines
+the WDK path variables (`WDK_UM_INC_PATH`, `UMDF_INC_PATH`, `KIT_SHARED_*`, `DDK_*`) the VSIX
+would normally provide. The driver vcxproj additionally needed `WindowsTargetPlatformVersion`
+in Globals, `TargetPlatformVersion=10.0.26100.0`, `DebugInformationFormat=ProgramDatabase`
+(/ZI conflicts with /guard:cf), `/utf-8`, `/std:c++17`, `/wd4005` (ntstatus.h dual-copy
+benign redefinitions), IDDCX version bumped to 1.10, `WppEnabled=false` (WPP task is
+VSIX-provided; tracing call-sites compile as no-ops via Trace.h fallback — re-enable with the
+VSIX), and `Inf2CatUseLocalTime=true` + `Inf2CatWindowsVersionList=10_X64`.
+
+**AC-008 evidence is now complete:** the 2-hour 1080p30 soak ran autonomously to completion
+(7200.026 s, exit 0) and MediaValidator independently confirms **216,000/216,000 frames
+decoded, monotonic timestamps, VALID** — combined with flat ~480 MB working set across the
+run (NFR-007). NFR-006-scale finalization also exercised (catalog + rename completed).
+
+Remaining (blocked on admin/reboot — the elevated script
+`artifacts/elevate-driver-setup.ps1` performs all of it in one UAC):
+1. `bcdedit /set testsigning on` + reboot (Test Mode for the test-signed driver)
+2. Trust `WDKTestCert` in machine Root/TrustedPublisher/TrustedPeople
+3. `pnputil /add-driver` staging
+After the reboot: launch the app; `SwDeviceCreate` + IddCx bring-up complete the T011/T012/
+T022/T040 evidence chain on real hardware.
