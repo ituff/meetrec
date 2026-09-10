@@ -493,3 +493,18 @@ T011/T012/T022/T040 evidence chain.
 
 Note: a UAC prompt left pending overnight remains clickable; if dismissed, rerun
 `powershell -File artifacts\elevate-driver-setup.ps1` from an elevated shell.
+## Session 6 addendum: WDK installed, driver builds with v143 toolset
+
+WDK 10.0.26100 was installed via winget (admin UAC accepted). The legacy
+WindowsUserModeDriver10.0 VSIX toolset is absent in this winget install, so the driver
+vcxproj was rewritten to use the standard v143 toolset with explicit WDK include/lib paths:
+- Include: WDKRoot/Include/wdf/umdf/2.25, WDKRoot/Include/10.0.26100.0/um, shared, iddcx/1.10
+- Lib: OneCoreUAP.lib + iddcxstub.lib + WdfDriverStubUm.lib from the WDK lib dirs
+- No WPP (Trace.h no-op fallback) since WPP task requires the VSIX targets
+
+**The driver now produces VirtualDisplayDriver.dll (138 KB) signed with the WDK test cert.**
+The INF and CAT are generated. This closes the "driver cannot build" blocker.
+
+The remaining install steps (pnputil staging, testsigning mode, cert trust) require a single
+UAC click and a reboot; the elevation script artifacts/elevate-driver-setup.ps1 packages
+them. When the user accepts the UAC and reboots, the full T011/T012 E2E can proceed.
