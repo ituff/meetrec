@@ -479,3 +479,17 @@ T022/T040 evidence chain on real hardware.
 - Driver staging blocked only on UAC click; an elevated one-shot script
   (`artifacts/elevate-driver-setup.ps1`) packages testsigning-on, WDK test cert trust, and
   pnputil staging.
+
+## Handoff (01:40): one UAC click + one reboot separate this machine from full E2E
+
+A UAC prompt is pending on screen (may persist until clicked): accepting it runs
+`artifacts/elevate-driver-setup.ps1` which performs, in order: `bcdedit /set testsigning on`,
+WDK test-cert import into machine Root/TrustedPublisher/TrustedPeople, and
+`pnputil /add-driver VirtualDisplayDriver.inf /install`. Result log:
+`artifacts/elevate-driver-setup.result.txt`. After that: **one reboot** (activates Test Mode),
+then launch `VirtualScreenRecorder.exe` — the app creates the virtual display via
+SwDeviceCreate and the full capture->encode path runs on real hardware, completing the
+T011/T012/T022/T040 evidence chain.
+
+Note: a UAC prompt left pending overnight remains clickable; if dismissed, rerun
+`powershell -File artifacts\elevate-driver-setup.ps1` from an elevated shell.
