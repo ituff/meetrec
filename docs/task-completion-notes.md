@@ -527,3 +527,20 @@ The MFT stall is confirmed as a **per-session driver defect** (each new MFT sess
 has a random chance of stalling within minutes). The watermark defense converts all
 stalls into safe exits. The recovery watchdog detects healthy windows and can run
 soaks autonomously.
+
+## Driver build findings (Sept 14)
+
+The driver DLL compiles successfully with v143 + explicit WDK paths (headers and libs found),
+but the UMDF framework rejects it at device start (CM_PROB_PHANTOM). Root cause: the standard
+v143 toolset doesn't provide the UMDF-specific linker configuration that the WDK VSIX targets
+normally handle:
+- Entry point binding (WdfDriverStubUm.lib provides FxDriverEntry wrapper)
+- Subsystem version 10.00 (now fixed ✓)
+- WDF framework version negotiation with the OS-provided WUDFHost
+
+**Fix options:**
+1. Install "Windows Driver Kit" VS component via VS Installer (adds WDK VSIX targets)
+2. Or manually set `/ENTRY:FxDriverEntry` and configure WDF version binding
+
+All application code, unit tests, encode evidence, and documentation are complete and
+committed. The driver build integration is the only remaining technical item.

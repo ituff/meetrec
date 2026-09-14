@@ -67,6 +67,7 @@
       <AdditionalDependencies>OneCoreUAP.lib;advapi32.lib;ntdll.lib;avrt.lib;iddcxstub.lib;WdfDriverStubUm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVer)\um\x64\iddcx\$(IddcxVer);$(WDKRoot)\Lib\wdf\umdf\x64\$(WdfUmdfVer);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Windows</SubSystem>
+      <MinimumRequiredVersion>10.00</MinimumRequiredVersion>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
