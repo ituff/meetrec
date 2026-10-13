@@ -36,6 +36,31 @@ function Add-Report {
     Write-Host ("{0,-8} {1}: {2}" -f $Step.result, $Step.name, $Step.detail)
 }
 
+# Runs the app under a hard timeout. Known AMD MFT per-session stalls can hang
+# the sink writer indefinitely; the harness must degrade to a TIMEOUT FAIL and
+# move on instead of wedging the whole run.
+function Invoke-AppWithTimeout {
+    param([string]$Arguments, [int]$TimeoutSec = 150)
+    $outFile = Join-Path $env:TEMP ("vsr-harness-" + [guid]::NewGuid().ToString("N") + ".out")
+    # Run through cmd so the app's exit code propagates reliably to cmd's own
+    # exit code; PS 5.1 Start-Process can return a null ExitCode.
+    $cmd = '/c ""' + $app + '" ' + $Arguments + ' > "' + $outFile + '" 2>&1& exit %ERRORLEVEL%"'
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "$env:windir\System32\cmd.exe"
+    $psi.Arguments = $cmd
+    $psi.UseShellExecute = $false
+    $p = [System.Diagnostics.Process]::Start($psi)
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+        & "$env:windir\System32\taskkill.exe" /F /T /PID $p.Id | Out-Null
+        $p.WaitForExit() | Out-Null
+        return @{ exit = -999; output = @("TIMEOUT: app did not exit within $TimeoutSec s (known MFT stall); process tree killed") }
+    }
+    $output = @()
+    if (Test-Path $outFile) { $output = (Get-Content $outFile | Select-Object -Last 4) }
+    Remove-Item $outFile -Force -ErrorAction SilentlyContinue
+    return @{ exit = $p.ExitCode; output = $output }
+}
+
 # ---- Step 1: unit tests ------------------------------------------------------
 & (Join-Path $PSScriptRoot "..\..\scripts\test.ps1") -Configuration $Configuration
 if ($LASTEXITCODE -eq 0) {
@@ -66,8 +91,9 @@ $encodeExpect = @{
 foreach ($preset in @("low", "standard", "high")) {
     Write-Host "== Encoder pipeline $preset for $ClipSeconds s =="
     $e = $encodeExpect[$preset]
-    $out = & $app --encode-test --seconds $ClipSeconds --preset $preset --output $clipDir 2>&1
-    $exit = $LASTEXITCODE
+    $r = Invoke-AppWithTimeout "--encode-test --seconds $ClipSeconds --preset $preset --output `"$clipDir`""
+    $exit = $r.exit
+    $out = $r.output
     if ($exit -ne 0) {
         Add-Report @{ name = "encode-$preset"; result = "FAIL"
                       detail = "encode-test exit $exit :: $($out -join ' | ')" }
@@ -75,9 +101,9 @@ foreach ($preset in @("low", "standard", "high")) {
         continue
     }
     $clip = Get-ChildItem -Path $clipDir -Filter "*.mp4" |
+        Where-Object { $_.Name -notmatch '\.partial\.mp4$' } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    & $validator $clip.FullName `
-        --expect-width $e.w --expect-height $e.h --expect-fps $e.fps `
+    & $validator $clip.FullName --expect-width $e.w --expect-height $e.h --expect-fps $e.fps `
         --expect-duration-sec $ClipSeconds --tolerance-sec 2 `
         --expect-frames ($e.fps * $ClipSeconds) | Out-Null
     $vExit = $LASTEXITCODE
@@ -90,11 +116,46 @@ foreach ($preset in @("low", "standard", "high")) {
     }
 }
 
-# ---- Step 3: per-preset record + media validation ----------------------------
+# ---- Step 2c: driverless window recording (no driver needed) ----------------
+# Records a self-contained animated test window through the real capture ->
+# encode pipeline. The virtual display and its driver are not involved. The
+# synthetic source's presentation rate is environment-bound (an RDP
+# composition cadence caps it well below the preset), so frame rate is not
+# asserted; a frame-count floor proves frames actually flowed.
 $expect = @{
     "low"      = @{ w = 1280; h = 720;  fps = 30 };
     "standard" = @{ w = 1920; h = 1080; fps = 30 };
     "high"     = @{ w = 1920; h = 1080; fps = 60 };
+}
+foreach ($preset in @("low", "standard", "high")) {
+    Write-Host "== Recording window $preset for $ClipSeconds s =="
+    $r = Invoke-AppWithTimeout "--dev-record-window --seconds $ClipSeconds --preset $preset --output `"$clipDir`""
+    $exit = $r.exit
+    $out = $r.output
+    if ($exit -ne 0) {
+        Add-Report @{ name = "record-window-$preset"; result = "FAIL"
+                      detail = "dev-record-window exit $exit :: $($out -join ' | ')" }
+        $failed = $true
+        continue
+    }
+    $clip = Get-ChildItem -Path $clipDir -Filter "*.mp4" |
+        Where-Object { $_.Name -notmatch '\.partial\.mp4$' } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $e = $expect[$preset]
+    $vout = & $validator $clip.FullName --expect-width $e.w --expect-height $e.h `
+        --expect-duration-sec $ClipSeconds --tolerance-sec 3 2>&1
+    $vExit = $LASTEXITCODE
+    $decoded = 0
+    if ("$vout" -match "decoded frames: (\d+)") { $decoded = [int]$Matches[1] }
+    $floor = 5 * $ClipSeconds
+    if ($vExit -eq 0 -and $decoded -ge $floor) {
+        Add-Report @{ name = "record-window-$preset"; result = "PASS"
+                      detail = "$($clip.Name): decoded=$decoded" }
+    } else {
+        Add-Report @{ name = "record-window-$preset"; result = "FAIL"
+                      detail = "validator exit $vExit decoded=$decoded floor=$floor ($($clip.Name))" }
+        $failed = $true
+    }
 }
 
 foreach ($preset in @("low", "standard", "high")) {
@@ -105,8 +166,9 @@ foreach ($preset in @("low", "standard", "high")) {
     }
 
     Write-Host "== Recording $preset for $ClipSeconds s =="
-    $out = & $app --dev-record --seconds $ClipSeconds --preset $preset --output $clipDir 2>&1
-    $exit = $LASTEXITCODE
+    $r = Invoke-AppWithTimeout "--dev-record --seconds $ClipSeconds --preset $preset --output `"$clipDir`""
+    $exit = $r.exit
+    $out = $r.output
 
     if ($exit -ne 0) {
         Add-Report @{ name = "record-$preset"; result = "FAIL"
@@ -117,6 +179,7 @@ foreach ($preset in @("low", "standard", "high")) {
 
     # Locate the newest mp4 for this run.
     $clip = Get-ChildItem -Path $clipDir -Filter "*.mp4" |
+        Where-Object { $_.Name -notmatch '\.partial\.mp4$' } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $clip) {
         Add-Report @{ name = "record-$preset"; result = "FAIL"; detail = "no output file produced" }

@@ -36,14 +36,16 @@
   <ItemGroup>
     <ClCompile Include="BoundedFrameQueue.cpp" />
     <ClCompile Include="CaptureInterop.cpp" />
+    <ClCompile Include="GdiCaptureSession.cpp" />
     <ClCompile Include="GraphicsDevice.cpp" />
-    <ClCompile Include="MonitorCaptureSession.cpp" />
+    <ClCompile Include="CaptureSession.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BoundedFrameQueue.h" />
     <ClInclude Include="CaptureInterop.h" />
+    <ClInclude Include="GdiCaptureSession.h" />
     <ClInclude Include="GraphicsDevice.h" />
-    <ClInclude Include="MonitorCaptureSession.h" />
+    <ClInclude Include="CaptureSession.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Infrastructure\Infrastructure.vcxproj" />

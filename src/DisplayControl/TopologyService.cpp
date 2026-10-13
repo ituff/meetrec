@@ -109,7 +109,6 @@ std::vector<MonitorDescriptor> TopologyService::EnumerateMonitors(Error* error) 
     EnumContext ctx{&monitors, error};
     if (error != nullptr) {
         *error = Error{};
-        error->code = ErrorCode::None;
     }
     if (!EnumDisplayMonitors(nullptr, nullptr, MonitorEnumProc,
                              reinterpret_cast<LPARAM>(&ctx))) {

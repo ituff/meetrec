@@ -45,9 +45,14 @@ constexpr int ID_TXT_OUTPUT = 218;
 constexpr int ID_TXT_TARGET = 219;
 constexpr int ID_BTN_DISPLAY = 220;
 constexpr int ID_TXT_DISPLAY = 221;
+constexpr int ID_COMBO_ENCODER = 222;
+constexpr int ID_CHK_AUDIO = 223;
 
 constexpr UINT WM_APP_ACTIVATE = WM_APP + 1;
 constexpr UINT WM_APP_TRAY = WM_APP + 2;
+// Carries a std::wstring* (heap) in lParam: the folder picked by the STA
+// browse thread; may be an empty string when the dialog was cancelled.
+constexpr UINT WM_APP_BROWSE_RESULT = WM_APP + 3;
 
 // Tray menu commands (FR-082).
 constexpr int TRAY_OPEN = 3001;
@@ -89,7 +94,24 @@ bool MainWindow::Create() {
     hwnd_ = CreateWindowExW(0, kMainWindowClassName, L"Virtual Screen Recorder",
                             WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, w,
                             h, nullptr, nullptr, GetModuleHandleW(nullptr), this);
-    return hwnd_ != nullptr;
+    if (hwnd_ == nullptr) {
+        return false;
+    }
+    // Child controls need a valid hwnd_, which only exists after
+    // CreateWindowExW returns; WM_CREATE runs too early (all children would
+    // fail with ERROR_TLW_WITH_WSCHILD).
+    OnCreate();
+
+    // The window itself was sized before it existed, using the system DPI,
+    // while OnCreate lays out children with GetDpiForWindow; reconcile once
+    // here (afterwards WM_DPICHANGED keeps them in sync).
+    const UINT windowDpi = GetDpiForWindow(hwnd_);
+    if (windowDpi != 0 && windowDpi != dpi_) {
+        OnDpiChanged(windowDpi);
+        SetWindowPos(hwnd_, nullptr, 0, 0, Scale(760, windowDpi), Scale(640, windowDpi),
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    return true;
 }
 
 void MainWindow::ShowAndActivate() {
@@ -114,9 +136,6 @@ LRESULT CALLBACK MainWindow::WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM
 
 LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-        case WM_CREATE:
-            OnCreate();
-            return 0;
         case WM_TIMER:
             if (wp == timerId_) OnTimer();
             return 0;
@@ -161,9 +180,13 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     if (code == BN_CLICKED && preview_ != nullptr) {
                         // Live preview toggle; disabling releases panel state
                         // and never touches capture (FR-048).
-                        preview_->SetEnabled(IsDlgButtonChecked(hwnd, ID_PREVIEW_TOGGLE) ==
-                                             BST_CHECKED);
+                        const bool show =
+                            IsDlgButtonChecked(hwnd, ID_PREVIEW_TOGGLE) == BST_CHECKED;
+                        preview_->SetEnabled(show);
                         if (!preview_->IsEnabled()) preview_->Clear();
+                        if (preview_->Hwnd() != nullptr) {
+                            ShowWindow(preview_->Hwnd(), show ? SW_SHOW : SW_HIDE);
+                        }
                     }
                     return 0;
                 case ID_LIST_WINDOWS:
@@ -224,6 +247,17 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 DrawFocusRect(dis->hDC, &focus);
             }
             return TRUE;
+        }
+        case WM_APP_BROWSE_RESULT: {
+            auto* picked = reinterpret_cast<std::wstring*>(lp);
+            EnableWindow(GetDlgItem(hwnd, ID_BTN_BROWSE), TRUE);
+            if (picked != nullptr) {
+                if (!picked->empty()) {
+                    SetWindowTextW(GetDlgItem(hwnd, ID_EDIT_OUTDIR), picked->c_str());
+                }
+                delete picked;
+            }
+            return 0;
         }
         case WM_APP_ACTIVATE:
             ShowAndActivate();
@@ -357,8 +391,10 @@ void MainWindow::OnCreate() {
     makeControl(L"BUTTON", L"Open folder", BS_PUSHBUTTON, ID_BTN_OPENFOLDER);
     makeControl(L"BUTTON", L"Quality:", BS_GROUPBOX, 0);
     makeControl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | CBS_HASSTRINGS, ID_COMBO_PRESET);
+    makeControl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | CBS_HASSTRINGS, ID_COMBO_ENCODER);
     makeControl(L"BUTTON", L"Capture mouse cursor (when supported)", BS_AUTOCHECKBOX,
                 ID_CHK_CURSOR);
+    makeControl(L"BUTTON", L"Record system audio", BS_AUTOCHECKBOX, ID_CHK_AUDIO);
     makeControl(L"BUTTON", L"Show preview", BS_AUTOCHECKBOX, ID_PREVIEW_TOGGLE);
     makeControl(L"BUTTON", L"Start Recording", BS_DEFPUSHBUTTON, ID_BTN_START);
     makeControl(L"BUTTON", L"Pause", BS_PUSHBUTTON, ID_BTN_PAUSE);
@@ -381,6 +417,13 @@ void MainWindow::OnCreate() {
     ComboBox_AddString(combo, L"High - 1920x1080 @ 60 FPS");
     ComboBox_SetCurSel(combo, 1);
 
+    // Encoder preference combo (auto / hardware / software).
+    HWND encoderCombo = GetDlgItem(hwnd_, ID_COMBO_ENCODER);
+    ComboBox_AddString(encoderCombo, L"Encoder: Auto (hardware first)");
+    ComboBox_AddString(encoderCombo, L"Encoder: Hardware only");
+    ComboBox_AddString(encoderCombo, L"Encoder: Software (slower, most compatible)");
+    ComboBox_SetCurSel(encoderCombo, 0);
+
     // Preview panel (T072).
     preview_ = std::make_unique<PreviewPanel>(coordinator_);
     preview_->Create(hwnd_, inst);
@@ -397,9 +440,17 @@ void MainWindow::OnCreate() {
     ComboBox_SetCurSel(combo, settings.preset == QualityPresetName::Low      ? 0
                                   : settings.preset == QualityPresetName::High ? 2
                                                                                : 1);
+    ComboBox_SetCurSel(encoderCombo, settings.encoderPreference == "hardware" ? 1
+                                      : settings.encoderPreference == "software" ? 2
+                                      : 0);
     CheckDlgButton(hwnd_, ID_CHK_CURSOR, settings.captureCursor ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hwnd_, ID_CHK_AUDIO,
+                   settings.recordSystemAudio ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hwnd_, ID_PREVIEW_TOGGLE, settings.showPreview ? BST_CHECKED : BST_UNCHECKED);
     preview_->SetEnabled(settings.showPreview);
+    if (preview_->Hwnd() != nullptr) {
+        ShowWindow(preview_->Hwnd(), settings.showPreview ? SW_SHOW : SW_HIDE);
+    }
 
     LayoutControls(dpi_);
     RefreshWindowList();
@@ -441,18 +492,17 @@ void MainWindow::LayoutControls(UINT dpi) {
     y += 34;
 
     PlaceControl(GetDlgItem(hwnd_, ID_COMBO_PRESET), margin, y, 240, 24, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_COMBO_ENCODER), 290, y, 240, 24, dpi);
     y += 34;
 
     PlaceControl(GetDlgItem(hwnd_, ID_CHK_CURSOR), margin, y, 260, 22, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_CHK_AUDIO), margin, y + 26, 260, 22, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_PREVIEW_TOGGLE), 290, y, 120, 22, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_DIAG), 290, y + 30, 120, 24, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_DISPLAY), 420, y + 30, 150, 24, dpi);
-    y += 36;
-
-    // Preview occupies the right side lower area.
-    if (preview_ != nullptr && preview_->Hwnd() != nullptr) {
-        PlaceControl(preview_->Hwnd(), 480, 232, 260, 150, dpi);
-    }
+    // 66 clears the Diagnostics/display row above; 36 would overlap it with
+    // the command row (Diagnostics is covered by the Stop button).
+    y += 66;
 
     // Command row.
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_START), margin, y, 150, 36, dpi);
@@ -460,18 +510,26 @@ void MainWindow::LayoutControls(UINT dpi) {
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_STOP), 292, y, 110, 36, dpi);
     y += 46;
 
+    // Preview occupies the right side of the command/status block (x>=480,
+    // clear of every other control). Hidden entirely when preview is off.
+    if (preview_ != nullptr && preview_->Hwnd() != nullptr) {
+        PlaceControl(preview_->Hwnd(), 480, y, 260, 150, dpi);
+    }
+
+    // Status rows stay left of the preview area.
     PlaceControl(GetDlgItem(hwnd_, ID_TXT_STATE), margin, y, 300, 20, dpi);
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DURATION), 320, y, 130, 20, dpi);
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_FPS), 460, y, 80, 20, dpi);
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DROPPED), 545, y, 110, 20, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DURATION), 320, y, 140, 20, dpi);
     y += 24;
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DISPLAY), margin, y, 700, 20, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_FPS), margin, y, 220, 20, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DROPPED), 240, y, 220, 20, dpi);
+    y += 24;
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_DISPLAY), margin, y, 460, 20, dpi);
     y += 22;
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_TARGET), margin, y, 700, 20, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_TARGET), margin, y, 460, 20, dpi);
     y += 22;
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_OUTPUT), margin, y, 700, 20, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_OUTPUT), margin, y, 460, 20, dpi);
     y += 22;
-    PlaceControl(GetDlgItem(hwnd_, ID_TXT_ERROR), margin, y, 700, 40, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_TXT_ERROR), margin, y, 460, 40, dpi);
 }
 
 void MainWindow::ApplyCommandStates(const StatusSnapshot& snap) {
@@ -588,8 +646,14 @@ void MainWindow::OnStartClicked() {
     request.preset = preset == 0   ? QualityPreset::Low
                      : preset == 2 ? QualityPreset::High
                                    : QualityPreset::Standard;
+    const int encoderPref = ComboBox_GetCurSel(GetDlgItem(hwnd_, ID_COMBO_ENCODER));
+    request.encoderPreference = encoderPref == 1   ? encoder::EncoderPreference::Hardware
+                                : encoderPref == 2 ? encoder::EncoderPreference::Software
+                                                   : encoder::EncoderPreference::Auto;
     request.captureCursor =
         IsDlgButtonChecked(hwnd_, ID_CHK_CURSOR) == BST_CHECKED;
+    request.captureAudio =
+        IsDlgButtonChecked(hwnd_, ID_CHK_AUDIO) == BST_CHECKED;
 
     auto result = coordinator_.Start(request);
     if (!result) {
@@ -646,25 +710,38 @@ void MainWindow::ReapStopOperation() {
 }
 
 void MainWindow::OnBrowseClicked() {
-    IFileDialog* dialog = nullptr;
-    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                   IID_PPV_ARGS(&dialog)))) {
-        DWORD options = 0;
-        dialog->GetOptions(&options);
-        dialog->SetOptions(options | FOS_PICKFOLDERS);
-        if (SUCCEEDED(dialog->Show(hwnd_))) {
-            IShellItem* item = nullptr;
-            if (SUCCEEDED(dialog->GetResult(&item)) && item != nullptr) {
-                PWSTR path = nullptr;
-                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
-                    SetWindowTextW(GetDlgItem(hwnd_, ID_EDIT_OUTDIR), path);
-                    CoTaskMemFree(path);
+    // The common file dialog requires an STA thread; the UI thread is MTA
+    // (wmain initializes COINIT_MULTITHREADED for the media stack) and
+    // IFileDialog::Show deadlocks there. Run the dialog on a short-lived STA
+    // thread and post the picked folder back as a message.
+    EnableWindow(GetDlgItem(hwnd_, ID_BTN_BROWSE), FALSE);
+    std::thread([this] {
+        std::wstring picked;
+        const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        IFileDialog* dialog = nullptr;
+        if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                       IID_PPV_ARGS(&dialog)))) {
+            DWORD options = 0;
+            dialog->GetOptions(&options);
+            dialog->SetOptions(options | FOS_PICKFOLDERS);
+            if (SUCCEEDED(dialog->Show(nullptr))) {
+                IShellItem* item = nullptr;
+                if (SUCCEEDED(dialog->GetResult(&item)) && item != nullptr) {
+                    PWSTR path = nullptr;
+                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) &&
+                        path != nullptr) {
+                        picked.assign(path);
+                        CoTaskMemFree(path);
+                    }
+                    item->Release();
                 }
-                item->Release();
             }
+            dialog->Release();
         }
-        dialog->Release();
-    }
+        if (hrInit == S_OK || hrInit == S_FALSE) CoUninitialize();
+        PostMessageW(hwnd_, WM_APP_BROWSE_RESULT, 0,
+                     reinterpret_cast<LPARAM>(new std::wstring(std::move(picked))));
+    }).detach();
 }
 
 void MainWindow::OnOpenOutputFolder() {
@@ -772,6 +849,12 @@ void MainWindow::SaveSettings() {
     settings.preset = preset == 0   ? QualityPresetName::Low
                       : preset == 2 ? QualityPresetName::High
                                     : QualityPresetName::Standard;
+    const int encoderPrefSave = ComboBox_GetCurSel(GetDlgItem(hwnd_, ID_COMBO_ENCODER));
+    settings.encoderPreference = encoderPrefSave == 1   ? "hardware"
+                                : encoderPrefSave == 2 ? "software"
+                                                       : "auto";
+    settings.recordSystemAudio =
+        IsDlgButtonChecked(hwnd_, ID_CHK_AUDIO) == BST_CHECKED;
     settings.showPreview = IsDlgButtonChecked(hwnd_, ID_PREVIEW_TOGGLE) == BST_CHECKED;
     settings.captureCursor = IsDlgButtonChecked(hwnd_, ID_CHK_CURSOR) == BST_CHECKED;
     settings.minimizeToTray = Application::Instance().WantsMinimizeToTray();

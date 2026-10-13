@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -24,13 +25,16 @@
 #include "DiskSpaceGuard.h"
 #include "RecordingTimeline.h"
 #include "StatusSnapshot.h"
+#include <Encoder/AudioCapture.h>
+#include <Encoder/EncoderProbe.h>
 #include <Encoder/VideoPreset.h>
 #include <WindowManagement/PopupTracker.h>
 
 namespace vsr::capture {
 class BoundedFrameQueue;
-class MonitorCaptureSession;
+class CaptureSession;
 class GraphicsDevice;
+class ICaptureSession;
 } // namespace vsr::capture
 namespace vsr::encoder {
 class H264Mp4Writer;
@@ -50,7 +54,9 @@ struct StartRecordingRequest {
     HWND targetWindow = nullptr; // null => record the virtual display only (dev CLI)
     std::filesystem::path outputDirectory;
     QualityPreset preset = QualityPreset::Standard;
+    encoder::EncoderPreference encoderPreference = encoder::EncoderPreference::Auto;
     bool captureCursor = false;
+    bool captureAudio = false;
 };
 
 enum class StopReason { User, TargetLost, DisplayLost, DeviceLost, DiskLow, WriteFailed, Shutdown };
@@ -99,6 +105,8 @@ private:
     void SetState(AppState next);
     void PublishError(const Error& error);
     void SetStopRequested(StopReason reason);
+    // Drains queued audio chunks into the writer (pause/watermark aware).
+    void DrainAudio();
     Result<void> WaitForWorkerExit(std::chrono::milliseconds bounded);
     void ReleaseRecordingMutex();
     // Wedged-worker containment: when the bounded stop deadline expires the
@@ -135,7 +143,17 @@ private:
     // Session objects (owned by the worker between Preparing and Stopping).
     std::unique_ptr<capture::BoundedFrameQueue> queue_;
     std::unique_ptr<capture::GraphicsDevice> device_;
-    std::unique_ptr<capture::MonitorCaptureSession> session_;
+    std::unique_ptr<capture::ICaptureSession> session_;
+    std::unique_ptr<encoder::AudioCapture> audioCapture_;
+    std::mutex audioMutex_;
+    std::deque<encoder::AudioChunk> audioQueue_;
+    std::atomic<bool> audioReceived_{false};
+    std::uint32_t audioRate_ = 48000;
+    std::uint32_t audioChannels_ = 2;
+    // Output-time cursor for the audio stream (100ns). Audio timestamps must
+    // advance by sample count, not wall clock: AAC artifacts (speed-warp
+    // garble) appear when chunk timestamps jitter relative to sample counts.
+    std::int64_t audioCursor100Ns_ = -1;
     std::unique_ptr<encoder::VideoConverter> converter_;
     std::unique_ptr<encoder::H264Mp4Writer> writer_;
     std::unique_ptr<window::SavedPlacement> savedPlacement_;

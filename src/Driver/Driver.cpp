@@ -14,6 +14,7 @@ Environment:
 --*/
 
 #include "Driver.h"
+#include "Driver.tmh"
 
 using namespace std;
 using namespace vsr::driver;
@@ -132,7 +133,7 @@ extern "C" NTSTATUS DriverEntry(
     Attributes.EvtCleanupCallback = [](WDFOBJECT Object)
     {
         UNREFERENCED_PARAMETER(Object);
-        // WPP tracing is provided by the official WDK VSIX toolset (re-enable there).
+        WPP_CLEANUP(WdfDriverWdmGetDriverObject((WDFDRIVER)Object));
     };
 
     WDF_DRIVER_CONFIG_INIT(&Config,
@@ -145,7 +146,8 @@ extern "C" NTSTATUS DriverEntry(
         return Status;
     }
 
-    // VSR: WPP tracing for lifecycle diagnostics (NFR-034). The WPP task is
+    // VSR: WPP tracing for lifecycle diagnostics (NFR-034).
+    WPP_INIT_TRACING(pDriverObject, pRegistryPath);
     TraceEvents(TRACE_LEVEL_INFORMATION, TRACE_DRIVER, "Virtual Screen Recorder display driver loaded.");
 
     return Status;

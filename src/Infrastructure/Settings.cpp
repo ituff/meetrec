@@ -74,6 +74,24 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         }
     }
     {
+        const json::Value& v = root.Find("encoderPreference");
+        if (v.GetType() == json::Type::String) {
+            const std::string value = v.AsString();
+            if (value == "auto" || value == "hardware" || value == "software") {
+                settings.encoderPreference = value;
+            } else {
+                anyFallback = true;
+            }
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("recordSystemAudio");
+        if (v.GetType() == json::Type::Boolean) settings.recordSystemAudio = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
         const json::Value& v = root.Find("showPreview");
         if (v.GetType() == json::Type::Boolean) settings.showPreview = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
@@ -102,9 +120,11 @@ Settings SettingsStore::Load(bool* usedDefaults) {
     // Preserve unknown fields verbatim (FR-091).
     for (const auto& kv : root.AsObject()) {
         const bool known = kv.first == "schemaVersion" || kv.first == "outputDirectory" ||
+                           kv.first == "encoderPreference" ||
                            kv.first == "qualityPreset" || kv.first == "showPreview" ||
                            kv.first == "captureCursor" || kv.first == "minimizeToTray" ||
                            kv.first == "restoreTargetWindow" ||
+                           kv.first == "recordSystemAudio" ||
                            kv.first == "enableCrashDumps";
         if (!known) {
             unknown_.Set(kv.first, kv.second);
@@ -122,10 +142,12 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("schemaVersion", json::Value(settings.schemaVersion));
     root.Set("outputDirectory", json::Value(WideToUtf8(settings.outputDirectory)));
     root.Set("qualityPreset", json::Value(ToString(settings.preset)));
+    root.Set("encoderPreference", json::Value(settings.encoderPreference));
     root.Set("showPreview", json::Value(settings.showPreview));
     root.Set("captureCursor", json::Value(settings.captureCursor));
     root.Set("minimizeToTray", json::Value(settings.minimizeToTray));
     root.Set("restoreTargetWindow", json::Value(settings.restoreTargetWindow));
+    root.Set("recordSystemAudio", json::Value(settings.recordSystemAudio));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
 
     // Re-attach preserved unknown keys verbatim (FR-091).

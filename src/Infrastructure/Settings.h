@@ -18,10 +18,19 @@ struct Settings {
     int schemaVersion = 1;
     std::wstring outputDirectory;      // empty = default Videos folder
     QualityPresetName preset = QualityPresetName::Standard;
+    // Encoder class preference: "auto" / "hardware" / "software". Default is
+    // SOFTWARE: the OS-shipped encoder avoids vendor MFT reliability issues
+    // (observed AMD MFT stalls + driver degradation under repeated sessions).
+    // (validated on
+    // load; anything else falls back to "auto"). Interpreted by the Encoder lib.
+    std::string encoderPreference = "software";
     bool showPreview = true;
     bool captureCursor = false;
     bool minimizeToTray = true;
     bool restoreTargetWindow = true;
+    // System audio (WASAPI loopback) mixed into the recording. Opt-in: the
+    // AAC encoder finalize hangs on some Insider builds (26200 observed).
+    bool recordSystemAudio = false;
     // T103: local crash dumps are strictly opt-in and never uploaded.
     bool enableCrashDumps = false;
 };

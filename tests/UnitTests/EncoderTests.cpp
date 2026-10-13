@@ -83,3 +83,77 @@ VSR_TEST(EncoderPolicy, EmptyCandidateListFails) {
     VSR_CHECK(!pick.IsOk());
     VSR_CHECK(pick.GetError().code == ErrorCode::EncoderUnavailable);
 }
+
+
+// --- Encoder preference (user-selectable hardware/software) -----------------
+
+VSR_TEST(EncoderPolicy, SoftwarePreferencePicksSoftwareEvenWhenHardwareExists) {
+    EncoderCapability sw{};
+    sw.name = L"sw-ms";
+    sw.acceptsNv12 = true;
+
+    EncoderCapability hw{};
+    hw.name = L"hw-amd";
+    hw.hardware = true;
+    hw.d3d11Aware = true;
+    hw.acceptsNv12 = true;
+
+    auto pick = SelectEncoder({sw, hw}, EncoderPreference::Software);
+    VSR_CHECK(pick.IsOk());
+    VSR_CHECK(pick.Value().name == L"sw-ms");
+}
+
+VSR_TEST(EncoderPolicy, HardwarePreferencePicksHardwareEvenWhenSwRanksFirst) {
+    EncoderCapability sw{};
+    sw.name = L"sw-ms";
+    sw.acceptsNv12 = true;
+
+    EncoderCapability hw{};
+    hw.name = L"hw-amd";
+    hw.hardware = true;
+    hw.acceptsNv12 = true;
+
+    auto pick = SelectEncoder({sw, hw}, EncoderPreference::Hardware);
+    VSR_CHECK(pick.IsOk());
+    VSR_CHECK(pick.Value().name == L"hw-amd");
+}
+
+VSR_TEST(EncoderPolicy, SoftwarePreferenceFailsWhenOnlyHardwareExists) {
+    EncoderCapability hw{};
+    hw.name = L"hw-amd";
+    hw.hardware = true;
+    hw.acceptsNv12 = true;
+
+    auto pick = SelectEncoder({hw}, EncoderPreference::Software);
+    VSR_CHECK(!pick.IsOk());
+    VSR_CHECK(pick.GetError().code == ErrorCode::EncoderUnavailable);
+}
+
+VSR_TEST(EncoderPolicy, HardwarePreferenceIgnoresNonNv12Hardware) {
+    EncoderCapability hw{};
+    hw.name = L"hw-nonv12";
+    hw.hardware = true;
+    hw.acceptsNv12 = false;
+
+    auto pick = SelectEncoder({hw}, EncoderPreference::Hardware);
+    VSR_CHECK(!pick.IsOk());
+}
+
+VSR_TEST(EncoderPolicy, AutoPreferenceKeepsHardwareFirstOrder) {
+    EncoderCapability sw{};
+    sw.name = L"sw-ms";
+    sw.acceptsNv12 = true;
+
+    EncoderCapability hw{};
+    hw.name = L"hw-amd";
+    hw.hardware = true;
+    hw.acceptsNv12 = true;
+
+    auto pick = SelectEncoder({sw, hw}, EncoderPreference::Auto);
+    VSR_CHECK(pick.IsOk());
+    VSR_CHECK(pick.Value().name == L"hw-amd");
+
+    VSR_CHECK(EncoderPreferenceFromString("software") == EncoderPreference::Software);
+    VSR_CHECK(EncoderPreferenceFromString("garbage") == EncoderPreference::Auto);
+    VSR_CHECK(std::string(ToString(EncoderPreference::Hardware)) == "hardware");
+}

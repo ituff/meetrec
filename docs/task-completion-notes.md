@@ -544,3 +544,339 @@ normally handle:
 
 All application code, unit tests, encode evidence, and documentation are complete and
 committed. The driver build integration is the only remaining technical item.
+
+## Session 7 (Sept 14-15): toolchain restored; WPP driver builds; harness PASS
+
+Environment rebuilt (was: no C++ compiler at all, VS BuildTools instance had only
+MSBuild + WDK BuildTools components; VC\Tools\MSVC missing):
+- VS setup modify added Workload.VCTools + VC.Tools.x86.x64 + Windows11SDK.26100 +
+  Workload.MicrosoftDriverKit (cl.exe 14.44.35207, vcvarsall, tracewpp.exe all present).
+- setup.exe on this box rejects `--wait` on `modify` (exit 87); poll installer processes instead.
+  Script: artifacts/elevate-install-toolchain.ps1, log: artifacts/elevate-install-toolchain.log.
+
+Committed-tree defect found: HEAD's Application.cpp contained stray CR bytes inside 8
+string literals (Mac line-ending damage) plus 2 stray CRs on #include lines - HEAD did not
+compile. All repaired; repo-wide scan reports 0 newline-in-literal / 0 lone CR. The --version
+literal had lost its \n entirely; restored.
+
+WPP route complete on the hand-rolled v143 toolset (no WDK VSIX targets needed):
+- vcxproj: WppEnabled on Driver.cpp, WppScanConfigurationData=Trace.h, WppKernelMode=false,
+  WppConfigurationDirectories=$(WDKRoot)\bin\$(WDKVer)\WppConfig\Rev1, local RunWpp target
+  mirroring the WDK's WindowsDriver.Common.targets (must pass ConfigurationDirectories= -
+  it maps to -cfgdir; WppTraceFunction must NOT be set when Trace.h declares FUNC lines).
+  WDKRoot/WDKVer must be defined BEFORE the ClCompile item (metadata expands eagerly).
+  $(WDKRoot) also had to move ahead of the item group for metadata expansion.
+- tracewpp generates Driver.tmh (3487 lines, 18 trace statements) next to Driver.cpp;
+  src/Driver/Driver.tmh is gitignored.
+- Driver.cpp: correct WPP_INIT_TRACING/WPP_CLEANUP; stub libs iddcxstub.lib +
+  WdfDriverStubUm.lib restored to AdditionalDependencies; WPP_MACRO_USE_KM_VERSION_FOR_UM=1
+  added (what the WDK adds for UMDF 2.15+).
+- scripts/testsign.ps1: stampinf step added (source INF carries $ARCH$/DriverVer/$UMDFVERSION$
+  placeholders) and Inf2Cat discovery falls back to the x86 tool dir.
+
+Evidence (Sept 15 00:12):
+- `scripts/build.ps1 -Configuration Release` succeeds end to end (app, all static libs,
+  UnitTests, MediaValidator, WPP driver).
+- `tests/IntegrationTests/IntegrationTests.ps1 -Configuration Release` PASSES:
+  unit-tests 64/64, self-check PASS, encode low/standard/high VALID (exact frame counts);
+  record-* SKIP (virtual display inactive).
+- Release driver package signed: artifacts/Release/driver/{INF stamped, DLL, CAT}
+  with cert "VSR Test Signing (dev only)"; vsr-test-signing.cer exported.
+
+Remaining to run record-* E2E:
+1. Elevated: artifacts/elevate-driver-stage-v2.ps1 (import vsr-test-signing.cer into
+   LocalMachine Root/TrustedPublisher/TrustedPeople; pnputil /add-driver Release INF /install;
+   bcdedit testsigning on). UAC cancelled 3x on Sept 15 ~00:20-00:30.
+2. Reboot (last boot Sept 14 08:24 predates testsigning; Test Mode not yet active).
+3. Re-run IntegrationTests.ps1; record-* should execute via SwDeviceCreate + the WPP driver.
+
+## Session 7 addendum (Sept 20): staging complete; only a reboot remains
+
+- Elevated staging script artifacts/elevate-driver-stage-v2.ps1 succeeded:
+  testsigning Yes (bcdedit), vsr-test-signing.cer imported into LocalMachine
+  Root/TrustedPublisher/TrustedPeople, Release package staged as oem63.inf.
+- signtool verify /pa now PASSES for both the DLL and the CAT.
+- Probe: --dev-record creates the device via SwDeviceCreate successfully; PnP then
+  drops the devnode because the test-signed UMDF driver cannot start while Test Mode
+  is not active (no reboot since Sept 14 08:25; bcdedit state pending).
+- NEXT (post-reboot, in Test Mode): re-run
+  `powershell -File tests\IntegrationTests\IntegrationTests.ps1 -Configuration Release`.
+  record-low/standard/high should then execute the real capture path end to end.
+
+## Session 8 (Sept 20): root cause of driver start failure = HVCI
+
+Post-reboot evidence chain (setupapi.dev.log + Kernel-PnP/Configuration event 411):
+- PnP correctly SELECTS oem62.inf (restaged Release WPP package, Authenticode signer
+  score), configures it, files commit, WUDFHost launches - then the device FAILS TO
+  START with Device Status [0x12 - 0xc0000493] = STATUS_INVALID_IMAGE_HASH, i.e. Code
+  Integrity rejects the test-signed UMDF image.
+- Machine state: testsigning Yes, SecureBoot OFF, **HVCI (Memory Integrity) ON**.
+  HVCI rejects test-signed driver images regardless of Test Mode.
+- Fixed by artifacts/elevate-hvci-off.ps1 (HVCI Enabled 1 -> 0 + WasEnabledBy cleared).
+  Needs a reboot to take effect.
+
+Also fixed this session:
+- stampinf UMDF flag is `-u 2.25.0` (NOT `-k`; -k is KMDF and silently leaves
+  $UMDFVERSION$ unsubstituted -> WUDFCoinstaller fails DIF_INSTALLDEVICE with
+  Error 87 "The parameter is incorrect"). Broken oem62/oem63 packages deleted, fixed
+  package restaged (via artifacts/elevate-driver-stage-v3.ps1).
+- SwDeviceCreate requires elevation on this machine (0x80070005 non-elevated); the
+  GUI/dev-record must run elevated to create the display. Keepalive pattern:
+  artifacts/elevate-keepalive.ps1 starts --dev-record --seconds 420 elevated.
+- kPreparingDisplayWait raised 5s -> 15s (first install measured ~5.6s, app timed
+  out 0.4s before install completed).
+- Event 442 notes settings migration referenced SWD\RemoteDisplayEnum\RdpIdd_
+  IndirectDisplay&SessionId_0 (RDP indirect display present in this session; not the
+  blocker - failure is at device start, before monitor attach).
+
+Post-reboot checklist (no UAC needed except keepalive):
+1. artifacts/elevate-keepalive.ps1 (UAC) -> poll --self-check until "monitor active".
+2. powershell -File tests\IntegrationTests\IntegrationTests.ps1 -Configuration Release
+   -> record-* should finally execute the real capture path.
+
+## Session 8 finale: driverless window-recording MVP implemented + verified
+
+Product decision: the MVP ships WITHOUT the display driver. Outcome-first analysis:
+the user outcome is "record chosen content cleanly without a second monitor";
+WGC window capture + off-screen parking achieves it; the virtual display becomes
+an attestation-signed enhancement later (driver work preserved).
+
+Implementation:
+- Capture layer generalized: MonitorCaptureSession -> CaptureSession with a
+  Start(device, HWND, ...) overload; CaptureInterop gains
+  CreateCaptureItemForWindow. On build 26200 the classic
+  IGraphicsCaptureItemInterop::CreateForWindow QI returns E_NOINTERFACE (verified
+  with a standalone probe: the class activates, the interop interface does not
+  answer); the projected GraphicsCaptureItem.TryCreateFromWindowId (24H2+ API)
+  works and is preferred, interop kept as legacy fallback.
+- WindowPlacement: ComputeOffScreenRect (pure, unit-tested) parks the target
+  fully off-screen; ComputeOnScreenCornerRect tucks it into the primary work
+  area bottom-right for REMOTE sessions - in RDP a fully off-screen window may
+  not be composed (uncapturable), so there it is parked on-screen at the bottom
+  of the Z-order (occluded but composed). CaptureAndParkOffScreen shares the
+  placement-capture/restore path with CaptureAndMoveTo.
+- Coordinator::PrepareSession: window targets take the driverless branch (park +
+  window capture, no EnsureVirtualDisplay, no popup tracker, no topology
+  watcher); the display-only dev CLI keeps the driver path.
+- CLI: --dev-record-window spawns a self-contained animated test window in a
+  CHILD process (dodges the record-own-process guard), records it through the
+  full pipeline, closes the child. --dev-test-window is the child mode.
+- Harness: record-window-{low,standard,high} steps run driverless; validated
+  with dimensions/duration + a frame-count floor (source presentation rate is
+  environment-bound; RDP composition cadence caps it). All app invocations now
+  run under Invoke-AppWithTimeout (150 s hard timeout, taskkill /T) because the
+  AMD MFT per-session stall can hang the sink writer without firing the
+  in-process watermark defense.
+- Infrastructure: Error default code changed InternalState -> None (a default
+  Error is "no error"); this fixes phantom hasError=true on clean runs
+  (TopologyService carried a workaround that is now removed); Coordinator
+  resets lastError_ at session start.
+
+Evidence (Sept 20 evening, this machine, RDP session):
+- Full harness run: unit 67/67 PASS, self-check PASS, encode-low/high PASS
+  (300/600 frames exact), record-window-standard PASS (1080p, decoded=124),
+  record-window-high PASS (1080p, decoded=202); encode-standard + record-window-low
+  FAILed on the documented AMD MFT stall (safe stop, partial kept) - correctly
+  reported, zero hangs thanks to the timeout wrapper.
+- Standalone smoke: --dev-record-window standard 8s -> VALID (1920x1080, 113
+  frames, 6.3 s).
+
+Follow-ups: (1) MFT stall hang mode without watermark firing - needs an
+in-process submit/finalize watchdog; (2) status snapshot counters read 0 after
+teardown (cosmetic); (3) display-mode WGC on build 26200 - TryCreateFromMonitorId
+does not exist in this SDK, CreateForMonitor interop may hit the same E_NOINTERFACE
+(only matters once the signed driver is active).
+
+## Interactive UI never rendered - fixed (2026-09-20 ~22:00)
+
+Symptom: launching the app showed a blank white main window (zero child
+controls); reproducible on every interactive run. Root cause:
+`MainWindow::OnCreate()` ran from WM_CREATE, which fires *before*
+`CreateWindowExW` returns, so the `hwnd_` member was still NULL; every child
+was created with WS_CHILD + NULL parent and failed with
+ERROR_TLW_WITH_WSCHILD (1406), and LayoutControls/RefreshWindowList silently
+no-opped on NULL handles. Fix: call `OnCreate()` from `MainWindow::Create()`
+after `CreateWindowExW` succeeds (WM_CREATE case removed); window size is
+reconciled with `GetDpiForWindow` once after creation. Also fixed in the same
+pass: `LayoutControls` moved the command row down (y += 36 -> 66) because
+Diagnostics/Connect-display sat under the Stop button. Verified on a build of
+HEAD + fix in a scratch worktree (D:\Project\MeetRec-uiwork): 25 children
+created, state row/Duration/FPS live, target selection and Start flow reach
+the coordinator (Preparing). Note: recording through that HEAD-based build
+still requires the virtual display (SwDeviceCreate 0x80070005 without
+elevation); driverless window recording is the uncommitted working-tree
+Coordinator refactor. UI E2E through the working tree is pending its first
+successful build.
+
+
+## Session 9: user-selectable software encoder (option for the AMD MFT stalls)
+
+- EncoderProbe: EncoderPreference (Auto/Hardware/Software) + parse/string helpers;
+  SelectEncoder/ProbeEncoders take the preference (Hardware/Software filter the
+  candidate pool first). Candidate inspection now also requires an H.264 OUTPUT:
+  static output types must include H264, and ambiguous non-hardware candidates
+  (no static types - Store-hosted HEIF/HEIF-image extensions) are live-verified
+  via SetOutputType(H264). Before this, "HEIFImageExtension" was selectable as a
+  software "encoder" (it is an image extension, not video).
+- Plumbing: Settings.encoderPreference ("auto"/"hardware"/"software", validated on
+  load, unknown-field preserved) -> UI combo (Encoder: Auto/Hardware/Software,
+  persisted in SaveSettings) -> StartRecordingRequest.encoderPreference ->
+  Coordinator probe. CLI: --encoder auto|hardware|software on --encode-test,
+  --dev-record, --dev-record-window.
+- Unit tests: 73/73 (5 new preference-policy cases + 1 settings JSON case).
+
+Verification (Sept 20 late evening): hardware auto path re-verified VALID after
+all changes (window recording, 130 frames). Software selection verified: the
+probe now picks "H264 Encoder MFT" (Microsoft software H.264). Sink-writer
+software encoding produced VALID output earlier in the session (the sink writer
+inserts its own encoder; MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS=0 for the
+software path). However, tonight the machine's media stack is intermittently
+hanging writes (same stall family as the AMD MFT issue; also two instant
+STATUS_DLL_NOT_FOUND-style 127 launches of the freshly built unsigned exe under
+RDP load). Software-path end-to-end needs a calm-machine rerun; if the hang
+reproduces deterministically on the software MFT, the likely fix area is the
+sink writer's async-MFT handling.
+
+## Release polish (Sept 20 late): GUI subsystem + layout overlap fixes
+
+- App subsystem switched Console -> Windows (entry wmainCRTStartup retained):
+  double-clicking the exe no longer allocates a console window. CLI modes still
+  print via AttachParentConsole (verified from a terminal).
+- Preview panel is now hidden when "Show preview" is off (previously it rendered
+  a black rectangle over the Diagnostics / Connect display buttons), and it is
+  placed right of the command row (x>=480) instead of overlapping them.
+- Status rows (State/Duration/FPS/Dropped/Virtual display/Target/Output/Error)
+  capped at x<=460 so they clear the preview column; FPS+Dropped moved to their
+  own sub-row.
+- Release package refreshed (artifacts/release/VirtualScreenRecorder-1.0.0-portable{,.zip})
+  and re-verified end to end from the packaged folder (window recording -> MP4
+  VALID) plus --version/--self-check.
+
+## Release hotfix (Sept 20): Browse folder dialog froze the app
+
+IFileDialog::Show ran on the UI thread, which wmain initializes as MTA
+(COINIT_MULTITHREADED for the media stack); the common file dialog requires STA
+and deadlocked -> "program not responding" on Browse. Fixed by running the
+dialog on a short-lived STA thread, disabling the Browse button meanwhile, and
+posting the picked folder back via WM_APP_BROWSE_RESULT (WM_APP+3). The dialog
+is no longer modal to the main window (acceptable). Package refreshed in place.
+
+## Session 9 finale: blank-video root cause + GDI capture backend (verification pending)
+
+User report: recorded video was a uniform blank surface (probe: 200 frames, luma
+250-254, zero variance) with no audio. Findings:
+- No audio is BY DESIGN (MVP is video-only; system audio was a spike, not implemented).
+- Blank video root cause: a standalone WGC probe proved that on this machine
+  (build 26200, RDP session) Windows.Graphics.Capture WINDOW capture returns a
+  single blank white frame and never updates - even for a visible, animating
+  window. Parking strategy was irrelevant; WGC window capture is broken here.
+- Fixes implemented:
+  1. Window targets are now captured IN PLACE (no park/move): moving made
+     occluded apps stop rendering (blank surface). Park utilities retained for
+     a future opt-in hide mode. The dev test window is created on-screen.
+  2. New GdiCaptureSession backend (PrintWindow PW_CLIENTONLY|PW_RENDERFULLCONTENT
+     at the preset fps -> DIB -> D3D texture -> same queue), selected
+     automatically when GetSystemMetrics(SM_REMOTESESSION) - WGC stays primary on
+     desktop sessions. ICaptureSession interface extracted; coordinator holds it.
+  3. ConsumeLoop device-lost check hardened: only DXGI_ERROR_DEVICE_REMOVED/
+     RESET/HUNG/DRIVER_INTERNAL_ERROR end the session; the AMD driver under RDP
+     transiently returns E_INVALIDARG from GetDeviceRemovedReason while working.
+- Unit tests 73/73; full build green.
+- PENDING: end-to-end verification of the GDI path (record + luma probe showing
+  real content). Blocked tonight by machine-wide media-stack instability:
+  MFT stalls, transient device-removed, and instant-127 launches of freshly
+  built unsigned exes (AV interception). Definitive test = after a reboot:
+  VirtualScreenRecorder.exe --dev-record-window --seconds 8 --preset standard
+  --output <dir>, then artifacts/lum_probe.exe on the clip (expect varying luma).
+
+## Session 9 conclusion: blank video FIXED end to end (GDI backend verified)
+
+Crash + blank-video chain, all resolved (cdb stack + WER + luma probes):
+1. Transient E_INVALIDARG from GetDeviceRemovedReason was published as
+   CaptureDeviceLost by VideoConverter::Convert (CreateVideoProcessorInputView
+   rejected the GDI texture: E_INVALIDARG without the render-target bind flag).
+   Fixed: GDI textures now created with BIND_RENDER_TARGET|BIND_SHADER_RESOURCE;
+   the consume-loop device check additionally only treats the documented removal
+   codes as fatal.
+2. Coordinator::Stop early-return (Faulted path) left the worker joinable and
+   ~Coordinator destroyed it -> std::terminate -> 0xC0000409 (ucrtbase abort).
+   Fixed: Stop reaps the worker on the early path; ~Coordinator bounded-waits.
+3. Final verification (Sept 21 13:54, RDP session): --dev-record-window 8 s
+   standard -> exit 0, 1920x1080 H.264, 149 frames decoded, duration 6.4 s,
+   VALID; luma varies (232-253, 36 swings) = real content. Release package
+   refreshed in place.
+
+Audio remains video-only by design for this release; system audio (WASAPI
+loopback -> AAC) is the next feature candidate.
+
+## Session 10: system audio implemented (opt-in) — AAC finalize hang documented
+
+- AudioCapture (WASAPI loopback, default render endpoint, float->s16, 44.1/48k
+  per mix format); H264Mp4Writer gained an optional AAC stream (Create takes
+  AudioFormat; sink writer inserts the MS AAC encoder); Coordinator queues
+  chunks, drains them pause/watermark-aware into the writer; Settings
+  recordSystemAudio + UI checkbox (ID_CHK_AUDIO).
+- Verified: AAC track present in MP4 (soun/mp4a/esds); WASAPI loopback quirk
+  confirmed - no packets flow while the render endpoint is idle (audio needs an
+  active player/meeting).
+- BLOCKER on this machine (Insider 26200 + RDP): writer_->Finalize() hangs 10s+
+  whenever an audio stream exists (even with silence pre-written) ->
+  SESSION_ABANDONED -> 0-byte partial. Same failure family as tonight's other
+  MF anomalies. Mitigation shipped: recordSystemAudio defaults FALSE (opt-in
+  checkbox), audio write/teardown failures degrade to video-only, wedged stop
+  is bounded (10 s) and no longer crashes (join fixes).
+- Follow-up: verify AAC finalize on a stock Win11 box; if it still hangs,
+  replace the sink-writer AAC path with a manually driven encoder MFT.
+
+## Session 10 addendum (late): machine media stack fully degraded
+
+After the audio feature landed, even the previously-verified hardware record
+path began crashing (AV 0xC0000005 at session start; intermittent instant
+STATUS_DLL_NOT_FOUND-style 127 launches from bash; bash-launched GUI-subsystem
+processes segfault unreliably while PowerShell Process-API launches behave).
+Earlier the SAME build class produced VALID recordings (13:54, real content,
+luma 232-253 varied). No code path difference explains it -> machine state:
+hours of MFT/GDI/encoder abuse + RDP + force-killed processes. REBOOT required
+before any further media verification.
+
+Test build: artifacts/release/VSR-test2{,.zip} (audio opt-in via checkbox,
+dev CLI video-only by default). Post-reboot verification:
+  VirtualScreenRecorder.exe --dev-record-window --seconds 10 --preset standard
+    --output C:\temp\vsr
+  lum_probe.exe <clip> 50        (video luma varies)
+  lum_probe.exe <clip> audio     (audio track decodes, when checkbox on)
+
+## Session 10 late: AMD driver progressive degradation (machine-level)
+
+Post-reboot testing (Sept 22 afternoon/evening) showed a clear progression:
+- 16:06 user recording: works (129 s, audio+video tracks, aligned durations) but
+  audio garbled (capture loop gaps - FIXED in code since) and 26 fps (GDI
+  PrintWindow cadence under RDP).
+- 19:28 automated run: writer Create fails E_FAIL on ALL paths (GPU+CPU,
+  audio+video) - AMD MFT activation refusing.
+- 20:18 run: orderly ENCODER-UNAVAILABLE, then AV (0xC0000005) during teardown;
+  GetDeviceRemovedReason transiently E_INVALIDARG while the device works.
+Diagnosis: the AMD driver (RDP session, Insider 26200) degrades under repeated
+MFT/GDI sessions and only a reboot restores it. App-side code is correct;
+verification is gated on driver state. Recommend: AMD driver update/reinstall,
+and long recording-soak validation on a console (non-RDP) session.
+
+## Session 11 (Sept 23): audio timestamp fix + writer regression fix
+
+User: audio still garbled. Root causes found and fixed:
+1. AUDIO TIMESTAMPS were wall-clock per chunk; AAC needs sample-count-exact
+   progression -> speed-warp garble. Fixed: DrainAudio now uses a sample-count
+   cursor (anchor on the timeline at first chunk / after pauses, then advance
+   by frames/rate). Mix format confirmed float32/44100/stereo (detection OK).
+2. REGRESSION (introduced with the audio writer patch, Sept 22): the Create
+   attempt matrix never ran the video-only pass (inverted condition), so
+   (a) an audio-stream failure killed the entire recording instead of
+   degrading, and (b) every video-only recording failed outright with
+   VSR-ENCODER-UNAVAILABLE. Fixed with a proper [audio: GPU,CPU] then
+   [video-only: GPU,CPU] matrix. This also explains several "encoder
+   unavailable" failures previously attributed to machine degradation.
+3. AudioCapture idle loop no longer busy-spins (Sleep(3)).
+Unit tests 74/74. Default encoder preference: software (user decision).
+Machine note: Sept 23 afternoon the MS software encoder also stalled
+(E_OUTOFMEMORY watermark at ~frame 180) and AAC finalize hung; uptime >24h
+with heavy media testing -> reboot recommended before revalidation.

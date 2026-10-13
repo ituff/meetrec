@@ -32,6 +32,9 @@
 
 namespace vsr::capture {
 
+// Capture-backend interface shared by the WGC session and the GDI fallback
+// session. The coordinator owns sessions through this interface.
+
 struct FramePoolStats {
     std::uint64_t captured = 0;
     std::uint64_t dropped = 0;
@@ -39,19 +42,41 @@ struct FramePoolStats {
     std::uint32_t lastHeight = 0;
 };
 
-class MonitorCaptureSession {
+class ICaptureSession {
+public:
+    virtual ~ICaptureSession() = default;
+
+    virtual void Stop() noexcept = 0;
+    virtual FramePoolStats Stats() const noexcept = 0;
+    virtual void SetCursorCaptureEnabled(bool enabled) noexcept = 0;
+    virtual bool IsCursorCaptureEnabled() const noexcept = 0;
+    virtual bool TryGetLatestFrame(ID3D11Texture2D* destination) = 0;
+    virtual bool CopyLatestToCpu(std::vector<std::uint8_t>& outBgra, UINT& width,
+                                 UINT& height) = 0;
+};
+
+class CaptureSession final : public ICaptureSession {
 public:
     // Starts capture of `monitor` at the display's current content size.
     // Queue-capacity + 2 pooled BGRA textures are preallocated on demand.
-    static Result<std::unique_ptr<MonitorCaptureSession>> Start(const GraphicsDevice& device,
+    static Result<std::unique_ptr<CaptureSession>> Start(const GraphicsDevice& device,
                                                                 HMONITOR monitor,
                                                                 BoundedFrameQueue& queue,
                                                                 IClock& clock);
 
-    ~MonitorCaptureSession();
+    // Starts capture of a top-level window's content. The window may be
+    // occluded or parked off-screen while being captured (DWM composes its
+    // content regardless of position); a minimized window stops presenting
+    // frames. Frame size follows the window until Stop.
+    static Result<std::unique_ptr<CaptureSession>> Start(const GraphicsDevice& device,
+                                                                HWND window,
+                                                                BoundedFrameQueue& queue,
+                                                                IClock& clock);
 
-    MonitorCaptureSession(const MonitorCaptureSession&) = delete;
-    MonitorCaptureSession& operator=(const MonitorCaptureSession&) = delete;
+    ~CaptureSession();
+
+    CaptureSession(const CaptureSession&) = delete;
+    CaptureSession& operator=(const CaptureSession&) = delete;
 
     // Stops the capture session. Idempotent and safe to call from any thread.
     // The caller must keep the session alive until the queue is fully drained.
@@ -75,7 +100,14 @@ public:
     bool CopyLatestToCpu(std::vector<std::uint8_t>& outBgra, UINT& width, UINT& height);
 
 private:
-    MonitorCaptureSession(const GraphicsDevice& device, BoundedFrameQueue& queue, IClock& clock);
+    CaptureSession(const GraphicsDevice& device, BoundedFrameQueue& queue, IClock& clock);
+
+    // Shared tail of both Start overloads: WinRT device creation, pool setup,
+    // event wiring, session start. `targetLabel` feeds the structured log.
+    static Result<std::unique_ptr<CaptureSession>> StartInternal(
+        const GraphicsDevice& device,
+        winrt::Windows::Graphics::Capture::GraphicsCaptureItem item, BoundedFrameQueue& queue,
+        IClock& clock, const wchar_t* targetLabel);
 
     void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const&
                             sender,

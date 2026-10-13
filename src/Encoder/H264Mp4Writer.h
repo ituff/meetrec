@@ -30,6 +30,7 @@
 #include <Infrastructure/Result.h>
 #include "EncoderProbe.h"
 #include <Capture/GraphicsDevice.h>
+#include "AudioCapture.h"
 #include "VideoPreset.h"
 
 namespace vsr::encoder {
@@ -39,10 +40,10 @@ public:
     // Creates the writer for a `.partial.mp4` path. Fails BEFORE creating any
     // usable recording when no compliant encoder path can be activated
     // (FR-063). The chosen path (GPU/CPU) is logged as ENCODER_PATH.
-    static Result<std::unique_ptr<H264Mp4Writer>> Create(const capture::GraphicsDevice& device,
-                                                         const EncoderCapability& encoder,
-                                                         const PresetParams& preset,
-                                                         const std::filesystem::path& partialPath);
+    static Result<std::unique_ptr<H264Mp4Writer>> Create(
+        const capture::GraphicsDevice& device, const EncoderCapability& encoder,
+        const PresetParams& preset, const std::filesystem::path& partialPath,
+        const AudioFormat* audioFormat = nullptr);
 
     ~H264Mp4Writer();
 
@@ -57,6 +58,11 @@ public:
     // (FR-073): a second call reports the first result without side effects.
     Result<void> Finalize();
 
+    // Submits interleaved 16-bit PCM for the audio stream enabled at Create.
+    Result<void> WriteAudioSample(const std::int16_t* pcm, std::size_t frames,
+                                  std::int64_t time100Ns, std::int64_t duration100Ns);
+
+    bool HasAudio() const noexcept { return audioEnabled_; }
     bool IsFinalized() const noexcept { return finalized_.load(); }
     std::uint64_t WrittenFrames() const noexcept { return writtenFrames_.load(); }
     bool UsingGpuSamples() const noexcept { return useGpuSamples_; }
@@ -75,7 +81,8 @@ private:
     static Result<std::unique_ptr<H264Mp4Writer>>
     AttemptCreate(const capture::GraphicsDevice& device, const EncoderCapability& encoder,
                   const PresetParams& preset, const std::filesystem::path& partialPath,
-                  bool gpuSamples, const wchar_t** failStep, HRESULT* failHr);
+                  bool gpuSamples, const AudioFormat* audioFormat, const wchar_t** failStep,
+                  HRESULT* failHr);
 
     Result<void> ProbeSubmission(const capture::GraphicsDevice& device, const PresetParams& preset);
     Result<void> SubmitFrameGpu(ID3D11Texture2D* nv12Frame, std::int64_t time100Ns,
@@ -89,6 +96,10 @@ private:
     Microsoft::WRL::ComPtr<IMFDXGIDeviceManager> deviceManager_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> staging_;
     DWORD streamIndex_ = 0;
+    DWORD audioStreamIndex_ = 0;
+    std::uint32_t audioChannels_ = 2;
+    bool audioEnabled_ = false;
+    std::atomic<bool> audioWriteBroken_{false};
     EncoderCapability encoder_{};
     PresetParams preset_{};
     std::filesystem::path partialPath_;

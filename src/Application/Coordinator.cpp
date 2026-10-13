@@ -2,7 +2,9 @@
 
 #include <Capture/BoundedFrameQueue.h>
 #include <Capture/GraphicsDevice.h>
-#include <Capture/MonitorCaptureSession.h>
+#include <Capture/CaptureSession.h>
+#include <Capture/GdiCaptureSession.h>
+#include <shlobj.h>
 #include <Encoder/EncoderProbe.h>
 #include <Encoder/H264Mp4Writer.h>
 #include <Encoder/VideoConverter.h>
@@ -19,7 +21,7 @@ namespace vsr::app {
 using capture::BoundedFrameQueue;
 using capture::CapturedFrame;
 using capture::GraphicsDevice;
-using capture::MonitorCaptureSession;
+using capture::CaptureSession;
 using encoder::EncoderCapability;
 using encoder::H264Mp4Writer;
 using encoder::PresetParams;
@@ -29,9 +31,11 @@ using window::WindowPlacementManager;
 
 namespace {
 
-constexpr auto kQueueCapacity = std::size_t{3};
+constexpr auto kQueueCapacity = std::size_t{8};
 constexpr auto kStopWait = std::chrono::milliseconds(10'000);
-constexpr auto kPreparingDisplayWait = std::chrono::milliseconds(5'000);
+// First-time install of the UMDF driver (PnP configure + WUDFHost cold
+// start) measurably exceeds 5 s, so the display wait must budget for it.
+constexpr auto kPreparingDisplayWait = std::chrono::milliseconds(15'000);
 
 Error StateError(const char* what) {
     return Error(ErrorCode::InternalState, L"This command is not available in the current state.",
@@ -65,6 +69,11 @@ Coordinator::Coordinator(std::shared_ptr<IClock> clock) : clock_(std::move(clock
 
 Coordinator::~Coordinator() {
     (void)Shutdown();
+    // A joinable worker thread at destruction terminates the process
+    // (std::terminate); bounded-wait for it even on unusual teardown paths.
+    if (worker_.joinable()) {
+        (void)WaitForWorkerExit(kStopWait);
+    }
 }
 
 void Coordinator::SetState(AppState next) {
@@ -155,6 +164,7 @@ Result<void> Coordinator::Start(const StartRecordingRequest& request) {
         snapshot_ = StatusSnapshot{};
         snapshot_.state = AppState::Preparing;
         snapshot_.correlationId = correlationId_;
+        lastError_ = Error{}; // fresh session, fresh error state
         snapshot_.targetHwnd = request.targetWindow;
         snapshot_.targetPid = targetPid;
         if (request.targetWindow != nullptr) {
@@ -226,7 +236,13 @@ Result<void> Coordinator::Stop(StopReason reason) {
         std::lock_guard<std::mutex> lock(stateMutex_);
         if (state_ == AppState::Ready || state_ == AppState::Faulted ||
             state_ == AppState::ShuttingDown) {
-            // Idempotent no-op outside an active session (FR-073).
+            // Idempotent no-op outside an active session (FR-073) - but the
+            // worker thread must still be reaped (e.g. a Faulted worker exits
+            // on its own right after this check); destroying a joinable
+            // std::thread terminates the process.
+            if (worker_.joinable()) {
+                (void)WaitForWorkerExit(kStopWait);
+            }
             return Result<void>{};
         }
     }
@@ -258,6 +274,7 @@ Result<void> Coordinator::WaitForWorkerExit(std::chrono::milliseconds bounded) {
                 state_ = AppState::Faulted;
             }
             AbandonSessionResources();
+    audioCapture_.release(); // bounded queue; the thread self-terminates on Stop
             ReleaseRecordingMutex(); // wedged worker will never release it
             log::Error("Coordinator", "WORKER_ABANDONED", correlationId_,
                        L"Recording worker did not exit in time; abandoned with its session "
@@ -408,24 +425,41 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     const PresetParams preset = GetPresetParams(request.preset);
     auto stopNow = [this] { return stopRequested_.load(); };
 
-    // 1. Virtual display (FR-013, FR-014).
-    auto monitorResult = EnsureVirtualDisplay();
-    if (!monitorResult || stopNow()) {
-        if (!monitorResult) PublishError(monitorResult.TakeError());
-        return false;
+    // 1. Target surface. Window targets record driverless: the window is
+    // parked off-screen and captured directly, with no virtual display and no
+    // display driver. Only the display-only dev CLI (--dev-record) still
+    // brings up the virtual display.
+    const bool windowTarget = request.targetWindow != nullptr;
+    display::MonitorDescriptor monitor{};
+    if (!windowTarget) {
+        auto monitorResult = EnsureVirtualDisplay();
+        if (!monitorResult || stopNow()) {
+            if (!monitorResult) PublishError(monitorResult.TakeError());
+            return false;
+        }
+        monitor = monitorResult.Value();
     }
-    const display::MonitorDescriptor monitor = monitorResult.Value();
 
     // 2. Output validation and naming (FR-052, FR-053, FR-059).
     const std::uintmax_t requiredBytes =
         DiskSpaceGuard::RequiredBytes(preset.bitrateBps, 60.0) +
         DiskSpaceGuard::kMinimumReserveBytes;
-    auto dirResult = ValidateOutputDirectory(request.outputDirectory, requiredBytes);
+    std::filesystem::path outputDir = request.outputDirectory;
+    if (outputDir.empty()) {
+        PWSTR videos = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Videos, 0, nullptr, &videos))) {
+            outputDir = std::filesystem::path(videos) / L"Virtual Screen Recorder";
+            CoTaskMemFree(videos);
+            std::error_code mkEc;
+            std::filesystem::create_directories(outputDir, mkEc);
+        }
+    }
+    auto dirResult = ValidateOutputDirectory(outputDir, requiredBytes);
     if (!dirResult || stopNow()) {
         if (!dirResult) PublishError(dirResult.TakeError());
         return false;
     }
-    auto plan = PlanOutputFile(request.outputDirectory, *clock_);
+    auto plan = PlanOutputFile(outputDir, *clock_);
     if (!plan || stopNow()) {
         if (!plan) PublishError(plan.TakeError());
         return false;
@@ -434,7 +468,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     finalPath_ = plan.Value().finalPath;
 
     // 3. Encoder availability BEFORE any capture or file creation (FR-063).
-    auto probe = encoder::ProbeEncoders();
+    auto probe = encoder::ProbeEncoders(request.encoderPreference);
     if (!probe || stopNow()) {
         if (!probe) PublishError(probe.TakeError());
         return false;
@@ -449,21 +483,35 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     device_ = std::make_unique<GraphicsDevice>(deviceResult.Value());
 
-    // 5. Move the target window (FR-023..FR-025; skipped in dev-CLI mode).
-    if (request.targetWindow != nullptr) {
-        WindowPlacementManager placement;
-        auto moved =
-            placement.CaptureAndMoveTo(request.targetWindow, monitor.workRect, monitor.handle);
-        if (!moved || stopNow()) {
-            if (!moved) PublishError(moved.TakeError());
-            return false;
+    encoder::AudioFormat audioFormat_{};
+    // 4b. System audio format: probed up front so the writer is created with
+    // its AAC stream (best effort - failures degrade to video-only).
+    if (request.captureAudio) {
+        auto fmt = encoder::AudioCapture::QueryLoopbackFormat();
+        if (fmt.IsOk()) {
+            audioFormat_ = fmt.Value();
+            audioRate_ = fmt.Value().sampleRate;
+            audioChannels_ = fmt.Value().channels;
+        } else {
+            log::Warning("Coordinator", "AUDIO_CAPTURE_UNAVAILABLE", correlationId_,
+                         fmt.TakeError().technicalMessage);
+        audioFormat_ = encoder::AudioFormat{};
+        audioRate_ = 0;
         }
-        savedPlacement_ = std::make_unique<SavedPlacement>(moved.Value());
     }
 
+    // 5. Target placement. Window targets are captured IN PLACE: moving the
+    // target (park or virtual display) made occluded apps stop rendering and
+    // the capture record a blank surface. Capture keeps working when other
+    // windows cover the target; only minimizing it freezes the frames.
+    // The display-only dev path still moves the target onto the virtual
+    // display (FR-023..FR-025).
+
     // 5b. Track new windows of the target process and relocate them onto the
-    // virtual display (FR-029 / T100). Display-only dev mode skips this.
-    if (request.targetWindow != nullptr) {
+    // virtual display (FR-029 / T100). Display-only dev mode skips this, and
+    // window capture cannot include owned popups (they are separate windows),
+    // so parked sessions skip it too.
+    if (request.targetWindow != nullptr && !windowTarget) {
         auto tracking = popupTracker_.Start(request.targetWindow, monitor.workRect);
         if (!tracking) {
             // Non-fatal (SHOULD requirement): log and continue recording.
@@ -472,9 +520,42 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         }
     }
 
-    // 6. Queue + capture session (FR-040..FR-046).
+    // 6. Queue + capture session (FR-040..FR-046). Window targets capture
+    // through the WGC backend on desktop sessions; inside a remote (RDP)
+    // session WGC window capture returns a blank surface, so the GDI
+    // PrintWindow backend is used there instead.
     queue_ = std::make_unique<BoundedFrameQueue>(kQueueCapacity);
-    auto sessionResult = MonitorCaptureSession::Start(*device_, monitor.handle, *queue_, *clock_);
+    const bool remoteSession = GetSystemMetrics(SM_REMOTESESSION) != 0;
+    using SessionResult = Result<std::unique_ptr<capture::ICaptureSession>>;
+    SessionResult sessionResult = SessionResult{Error{ErrorCode::CaptureInitFailed,
+                                                      L"", L"capture session not started"}};
+    if (windowTarget) {
+        if (remoteSession) {
+            auto gdi = capture::GdiCaptureSession::Start(*device_, request.targetWindow,
+                                                         preset.fps, *queue_, *clock_);
+            if (gdi) {
+                sessionResult = SessionResult{std::move(gdi.Value())};
+            } else {
+                sessionResult = SessionResult{gdi.TakeError()};
+            }
+        } else {
+            auto wgc = capture::CaptureSession::Start(*device_, request.targetWindow,
+                                                      *queue_, *clock_);
+            if (wgc) {
+                sessionResult = SessionResult{std::move(wgc.Value())};
+            } else {
+                sessionResult = SessionResult{wgc.TakeError()};
+            }
+        }
+    } else {
+        auto disp = capture::CaptureSession::Start(*device_, monitor.handle, *queue_,
+                                                   *clock_);
+        if (disp) {
+            sessionResult = SessionResult{std::move(disp.Value())};
+        } else {
+            sessionResult = SessionResult{disp.TakeError()};
+        }
+    }
     if (!sessionResult) {
         Error e = RollbackError(sessionResult.TakeError(), "capture start");
         if (savedPlacement_ != nullptr) {
@@ -501,7 +582,11 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     converter_ = std::move(converterResult.Value());
 
-    auto writerResult = H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_);
+    auto writerResult = H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_,
+                                              request.captureAudio &&
+                                                      audioRate_ > 0
+                                                  ? &audioFormat_
+                                                  : nullptr);
     if (!writerResult) {
         Error e = RollbackError(writerResult.TakeError(), "writer create");
         session_->Stop();
@@ -514,26 +599,60 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     writer_ = std::move(writerResult.Value());
 
-    // 8. Disk guard + topology watcher + timing anchors.
+    if (request.captureAudio && audioRate_ > 0) {
+        auto started = encoder::AudioCapture::Start(
+            *clock_, [this](encoder::AudioChunk&& chunk) {
+                audioReceived_.store(true, std::memory_order_relaxed);
+                std::lock_guard<std::mutex> lock(audioMutex_);
+                if (audioQueue_.size() >= 400) audioQueue_.pop_front();
+                audioQueue_.push_back(std::move(chunk));
+            });
+        if (started) {
+            audioCapture_ = std::move(started.Value());
+            log::Info("Coordinator", "AUDIO_STREAM_ENABLED", correlationId_,
+                      L"System audio will be recorded.",
+                      {{"sampleRate", std::to_string(audioRate_)},
+                       {"channels", std::to_string(audioChannels_)}});
+        } else {
+            log::Warning("Coordinator", "AUDIO_CAPTURE_UNAVAILABLE", correlationId_,
+                         L"System audio capture could not start; recording video only.");
+        }
+    }
+
+    // 8. Disk guard + topology watcher + timing anchors. The topology watcher
+    // guards the virtual display only; parked-window sessions end through the
+    // target-liveness poll instead.
     diskGuard_.Begin(partialPath_.parent_path(), preset.bitrateBps);
     {
         std::lock_guard<std::mutex> lock(timelineMutex_);
         timeline_.StartAt(Monotonic100Ns(*clock_));
+        audioCursor100Ns_ = -1; // fresh session: re-anchor the audio cursor
     }
-    auto watcherResult = topologyWatcher_.Start([this] { displayLost_ = true; });
-    if (!watcherResult) {
-        // Non-fatal: the consume loop still re-checks the display on events.
-        log::Warning("Coordinator", "TOPOLOGY_WATCHER_UNAVAILABLE", correlationId_,
-                     L"Topology watcher unavailable; falling back to event-only checks.");
+    if (!windowTarget) {
+        auto watcherResult = topologyWatcher_.Start([this] { displayLost_ = true; });
+        if (!watcherResult) {
+            // Non-fatal: the consume loop still re-checks the display on events.
+            log::Warning("Coordinator", "TOPOLOGY_WATCHER_UNAVAILABLE", correlationId_,
+                         L"Topology watcher unavailable; falling back to event-only checks.");
+        }
     }
 
     {
         std::lock_guard<std::mutex> lock(stateMutex_);
-        snapshot_.virtualMonitorActive = true;
-        snapshot_.monitorX = monitor.monitorRect.left;
-        snapshot_.monitorY = monitor.monitorRect.top;
-        snapshot_.monitorW = monitor.monitorRect.right - monitor.monitorRect.left;
-        snapshot_.monitorH = monitor.monitorRect.bottom - monitor.monitorRect.top;
+        snapshot_.virtualMonitorActive = !windowTarget;
+        if (windowTarget) {
+            RECT wr{};
+            GetWindowRect(request.targetWindow, &wr);
+            snapshot_.monitorX = wr.left;
+            snapshot_.monitorY = wr.top;
+            snapshot_.monitorW = wr.right - wr.left;
+            snapshot_.monitorH = wr.bottom - wr.top;
+        } else {
+            snapshot_.monitorX = monitor.monitorRect.left;
+            snapshot_.monitorY = monitor.monitorRect.top;
+            snapshot_.monitorW = monitor.monitorRect.right - monitor.monitorRect.left;
+            snapshot_.monitorH = monitor.monitorRect.bottom - monitor.monitorRect.top;
+        }
         snapshot_.partialPath = partialPath_.wstring();
         snapshot_.finalPath = finalPath_.wstring();
     }
@@ -559,6 +678,53 @@ double Coordinator::SampleFps() {
     fpsSampleEncoded_ = static_cast<std::int64_t>(encoded);
     fpsSampleTimeMs_ = nowMs;
     return lastFps_.load();
+}
+
+void Coordinator::DrainAudio() {
+    if (audioCapture_ == nullptr || writer_ == nullptr) return;
+    std::deque<encoder::AudioChunk> chunks;
+    {
+        std::lock_guard<std::mutex> lock(audioMutex_);
+        chunks.swap(audioQueue_);
+    }
+    static bool firstChunkLogged = false;
+    if (!chunks.empty() && !firstChunkLogged) {
+        firstChunkLogged = true;
+        log::Info("Coordinator", "AUDIO_FIRST_CHUNK", correlationId_, L"",
+                  {{"frames", std::to_string(chunks.front().frames)},
+                   {"tsUs", std::to_string(chunks.front().timestampUs)}});
+    }
+    while (!chunks.empty()) {
+        auto chunk = std::move(chunks.front());
+        chunks.pop_front();
+        const std::int64_t ts100 = static_cast<std::int64_t>(chunk.timestampUs) * 10;
+        std::int64_t out = 0;
+        {
+            std::lock_guard<std::mutex> lock(timelineMutex_);
+            if (paused_.load() || ts100 < timeline_.StaleFrameWatermark100Ns()) {
+                audioCursor100Ns_ = -1; // re-anchor on the next written chunk
+                continue;
+            }
+            if (audioCursor100Ns_ < 0) {
+                // Anchor the audio track on the timeline (pause-aware), then
+                // advance strictly by sample count from here on.
+                audioCursor100Ns_ = timeline_.OutputTimestamp100Ns(ts100);
+            }
+            out = audioCursor100Ns_;
+        }
+        const std::int64_t rate = audioRate_ > 0 ? static_cast<std::int64_t>(audioRate_) : 48000;
+        const std::int64_t dur100 =
+            static_cast<std::int64_t>(chunk.frames) * 10'000'000 / rate;
+        audioCursor100Ns_ = out + dur100;
+        auto written =
+            writer_->WriteAudioSample(chunk.pcm.data(), chunk.frames, out, dur100);
+        if (!written.IsOk()) {
+            const Error e = written.TakeError();
+            log::Error("Coordinator", "AUDIO_WRITE_FAILED", correlationId_, e.technicalMessage,
+                      {{"hresult", WideToUtf8(FormatHresult(e.hresult))}});
+            break;
+        }
+    }
 }
 
 void Coordinator::ConsumeLoop() {
@@ -608,10 +774,17 @@ void Coordinator::ConsumeLoop() {
             }
         }
 
-        // Device loss (FR-012).
+        // Device loss (FR-012). Only the documented removal codes end the
+        // session: the AMD driver under RDP has been observed returning
+        // transient errors (e.g. E_INVALIDARG) from GetDeviceRemovedReason
+        // while the device keeps working, which is not a removal.
         if (device_ != nullptr && device_->IsValid()) {
             const HRESULT removed = device_->CheckDeviceRemoved();
-            if (FAILED(removed)) {
+            const bool deviceGone =
+                removed == DXGI_ERROR_DEVICE_REMOVED || removed == DXGI_ERROR_DEVICE_RESET ||
+                removed == DXGI_ERROR_DEVICE_HUNG ||
+                removed == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
+            if (FAILED(removed) && deviceGone) {
                 PublishError(ErrorFromHresult(removed, ErrorCode::CaptureDeviceLost,
                                               L"The GPU was reset or disconnected. The recording "
                                               L"was stopped and saved.",
@@ -636,6 +809,7 @@ void Coordinator::ConsumeLoop() {
         CapturedFrame raw;
         if (!queue_->Pop(raw, std::chrono::milliseconds(250))) {
             SampleFps();
+            DrainAudio();
             continue;
         }
 
@@ -655,6 +829,8 @@ void Coordinator::ConsumeLoop() {
             }
             outputTime = timeline_.OutputTimestamp100Ns(frameCapture100Ns);
         }
+
+        DrainAudio();
 
         // Convert BGRA -> NV12 and submit with timeline-derived timestamps.
         auto converted = converter_->Convert(payload);
@@ -706,6 +882,31 @@ void Coordinator::TeardownSession() {
         }
     }
 
+    // Stop audio first and flush its last chunks into the writer before the
+    // MP4 is finalized (finalize closes every stream).
+    log::Info("Coordinator", "TEARDOWN_AUDIO_STOP", correlationId_, L"");
+    if (audioCapture_ != nullptr) audioCapture_->Stop();
+    log::Info("Coordinator", "TEARDOWN_AUDIO_DRAIN", correlationId_, L"");
+    DrainAudio();
+    // WASAPI loopback yields no packets while the render endpoint is idle;
+    // a zero-input AAC stream can wedge Finalize, so feed minimal silence
+    // when nothing was captured.
+    if (writer_->HasAudio() && !audioReceived_.load(std::memory_order_relaxed)) {
+        const std::int64_t silenceFrames = static_cast<std::int64_t>(audioRate_) / 10;
+        std::vector<std::int16_t> silence(
+            static_cast<std::size_t>(silenceFrames) * audioChannels_, 0);
+        const std::int64_t now100 = static_cast<std::int64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(clock_->MonotonicNow())
+                .count()) *
+            10;
+        (void)writer_->WriteAudioSample(silence.data(),
+                                        static_cast<std::size_t>(silenceFrames), now100,
+                                        silenceFrames * 10 * 1000);
+        log::Warning("Coordinator", "AUDIO_IDLE_SILENCE", correlationId_,
+                     L"No system audio was active; wrote a silent audio track.");
+    }
+    log::Info("Coordinator", "TEARDOWN_BEFORE_FINALIZE", correlationId_, L"");
+
     if (writer_ != nullptr) {
         auto finalized = writer_->Finalize();
         if (finalized.IsOk()) {
@@ -739,6 +940,7 @@ void Coordinator::TeardownSession() {
 
     // Release pipeline objects in reverse creation order.
     writer_.reset();
+    audioCapture_.reset();
     converter_.reset();
     session_.reset();
     queue_.reset();

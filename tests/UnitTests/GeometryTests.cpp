@@ -45,3 +45,28 @@ VSR_TEST(Geometry, DegenerateWorkAreaPinsToOrigin) {
     VSR_CHECK_EQ(dest.left, 10);
     VSR_CHECK_EQ(dest.top, 20);
 }
+
+// --- Driverless off-screen parking geometry (T-E2E-WINDOW) ------------------
+
+VSR_TEST(OffScreenPark, PlacesWindowLeftOfDesktopUnion) {
+    using vsr::window::ComputeOffScreenRect;
+    const RECT park = ComputeOffScreenRect(Rect(100, 100, 256, 156), Rect(0, 0, 1920, 1080));
+    VSR_CHECK(park.right <= 0);
+    VSR_CHECK_EQ(park.right - park.left, 256L);
+    VSR_CHECK_EQ(park.bottom - park.top, 156L);
+}
+
+VSR_TEST(OffScreenPark, CoversDesktopsWithNegativeOrigin) {
+    // Multi-monitor union may start left of the origin; parking must still be
+    // fully outside the union, not just off the primary monitor.
+    using vsr::window::ComputeOffScreenRect;
+    const RECT park = ComputeOffScreenRect(Rect(0, 0, 1920, 1080), Rect(-1920, -500, 3840, 2160));
+    VSR_CHECK(park.right < -1920);
+}
+
+VSR_TEST(OffScreenPark, KeepsOversizedWindowOutside) {
+    using vsr::window::ComputeOffScreenRect;
+    const RECT park = ComputeOffScreenRect(Rect(0, 0, 5000, 3000), Rect(0, 0, 1920, 1080));
+    VSR_CHECK(park.right <= 0);
+    VSR_CHECK_EQ(park.right - park.left, 5000L);
+}

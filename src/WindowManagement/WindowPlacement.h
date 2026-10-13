@@ -23,6 +23,20 @@ namespace vsr::window {
 // Unit-testable without a display stack.
 RECT ComputeDestinationRect(const RECT& windowRect, const RECT& workArea);
 
+// Pure geometry: places `windowRect` entirely outside the union of all
+// monitor rects (`virtualDesktop`, i.e. SM_XVIRTUALSCREEN..SM_XVIRTUALSCREEN +
+// SM_CXVIRTUALSCREEN) on its left side, with a safety margin. Driverless
+// window recording parks the target here so it stays composed (capturable)
+// while invisible. Unit-testable without a display stack.
+RECT ComputeOffScreenRect(const RECT& windowRect, const RECT& virtualDesktop);
+
+// Pure geometry: tucks `windowRect` into the bottom-right corner of `workArea`
+// (size preserved, wholly inside). Used for remote (RDP) sessions, where DWM
+// may not compose fully off-screen windows: the target stays on-screen but is
+// sent to the bottom of the Z-order so everything else occludes it. The
+// capture reads the window content regardless of occlusion. Unit-testable.
+RECT ComputeOnScreenCornerRect(const RECT& windowRect, const RECT& workArea);
+
 struct SavedPlacement {
     HWND hwnd = nullptr;
     DWORD pid = 0;
@@ -38,6 +52,12 @@ public:
     // monitor work area (FR-023..FR-025).
     Result<SavedPlacement> CaptureAndMoveTo(HWND hwnd, const RECT& virtualWorkArea,
                                             HMONITOR virtualMonitor);
+
+    // Captures the original placement and parks the window entirely off-screen
+    // (driverless window recording): invisible on every monitor, still
+    // composed, so the window capture keeps receiving frames. Restoration uses
+    // the same SavedPlacement/Restore path as CaptureAndMoveTo.
+    Result<SavedPlacement> CaptureAndParkOffScreen(HWND hwnd);
 
     // Restores the original placement, or a visible primary-monitor fallback
     // (FR-026, FR-027, NFR-013). Best effort: returns an error only when even

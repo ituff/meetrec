@@ -12,6 +12,10 @@ ipch/
 *.idb
 *.log
 
+# WPP-generated trace header (produced by tracewpp next to Driver.cpp)
+src/Driver/Driver.tmh
+src/Driver/tracewpp.*.tlog
+
 # Generated driver packages and catalogs
 *.cat
 *.cer

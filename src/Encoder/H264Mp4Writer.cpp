@@ -31,6 +31,23 @@ Error FinalizeError(const char* what, HRESULT hr) {
                             true);
 }
 
+Microsoft::WRL::ComPtr<IMFMediaType> MakeAudioType(const AudioFormat& f, bool aac) {
+    Microsoft::WRL::ComPtr<IMFMediaType> type;
+    MFCreateMediaType(&type);
+    type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+    type->SetGUID(MF_MT_SUBTYPE, aac ? MFAudioFormat_AAC : MFAudioFormat_PCM);
+    type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, f.sampleRate);
+    type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, f.channels);
+    type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+    if (aac) {
+        type->SetUINT32(MF_MT_AVG_BITRATE, 128000);
+    } else {
+        type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, f.channels * 2);
+        type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, f.sampleRate * f.channels * 2);
+    }
+    return type;
+}
+
 Microsoft::WRL::ComPtr<IMFMediaType> MakeVideoType(GUID subtype, const PresetParams& p,
                                                    bool output) {
     Microsoft::WRL::ComPtr<IMFMediaType> type;
@@ -71,7 +88,8 @@ Result<std::unique_ptr<H264Mp4Writer>> H264Mp4Writer::Create(const capture::Grap
                                                              const EncoderCapability& encoder,
                                                              const PresetParams& preset,
                                                              const std::filesystem::path&
-                                                                 partialPath) {
+                                                                 partialPath,
+                                                             const AudioFormat* audioFormatIn) {
     auto mfStarted = MFLifetime::EnsureStarted();
     if (!mfStarted) return mfStarted.TakeError();
 
@@ -90,30 +108,44 @@ Result<std::unique_ptr<H264Mp4Writer>> H264Mp4Writer::Create(const capture::Grap
     Error lastError = Error(ErrorCode::EncoderUnavailable,
                             L"No compatible H.264 encoder path could be activated.",
                             L"All writer creation attempts failed");
-    // Attempt 0: GPU samples (preferred). Attempt 1: CPU staging fallback.
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        const bool gpu = allowGpu && attempt == 0;
-        const wchar_t* failStep = L"unknown";
-        HRESULT failHr = E_FAIL;
-
-        auto writer = AttemptCreate(device, encoder, preset, partialPath, gpu, &failStep,
-                                    &failHr);
-        if (writer.IsOk()) {
-            if (!gpu) {
-                log::Warning("Encoder", "ENCODER_CPU_FALLBACK", L"",
-                             L"GPU sample submission rejected by the driver; using the "
-                             L"documented CPU staging fallback.",
-                             {{"path", WideToUtf8(partialPath.wstring())}});
+    // Attempt matrix: [with audio] GPU -> CPU, then on audio failure the
+    // same two WITHOUT audio (degrade to video-only, never fail the whole
+    // recording because the AAC stream was rejected). Video-only callers
+    // run the matrix once.
+    bool wantAudio = audioFormatIn != nullptr;
+    AudioFormat audioFmt = wantAudio ? *audioFormatIn : AudioFormat{};
+    for (int audioPass = 0; audioPass < 2; ++audioPass) {
+        const AudioFormat* fmt = (audioPass == 0 && wantAudio) ? &audioFmt : nullptr;
+        if (audioPass == 1 && !wantAudio) break; // video-only caller: one pass
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const bool gpu = allowGpu && attempt == 0;
+            const wchar_t* failStep = L"unknown";
+            HRESULT failHr = E_FAIL;
+            auto writer = AttemptCreate(device, encoder, preset, partialPath, gpu, fmt,
+                                        &failStep, &failHr);
+            if (writer.IsOk()) {
+                if (!gpu) {
+                    log::Warning("Encoder", "ENCODER_CPU_FALLBACK", L"",
+                                 L"GPU sample submission rejected by the driver; using the "
+                                 L"documented CPU staging fallback.",
+                                 {{"path", WideToUtf8(partialPath.wstring())}});
+                }
+                return writer;
             }
-            return writer;
+            lastError = writer.TakeError();
+            if (!gpu) break;
+            log::Warning("Encoder", "ENCODER_GPU_PATH_REJECTED", L"",
+                         L"GPU submission probe failed; retrying with CPU staging.",
+                         {{"step", WideToUtf8(failStep)},
+                          {"hresult", WideToUtf8(FormatHresult(failHr))}});
+            DeleteFileW(partialPath.c_str());
         }
-        lastError = writer.TakeError();
-        if (!gpu) break;
-        log::Warning("Encoder", "ENCODER_GPU_PATH_REJECTED", L"",
-                     L"GPU submission probe failed; retrying with CPU staging.",
-                     {{"step", WideToUtf8(failStep)},
-                      {"hresult", WideToUtf8(FormatHresult(failHr))}});
-        DeleteFileW(partialPath.c_str());
+        if (audioPass == 0 && wantAudio) {
+            log::Warning("Encoder", "ENCODER_AUDIO_DISABLED", L"",
+                         L"Audio stream setup failed; retrying video-only.",
+                         {{"hresult", WideToUtf8(FormatHresult(lastError.hresult))}});
+            DeleteFileW(partialPath.c_str());
+        }
     }
     return lastError;
 }
@@ -121,7 +153,8 @@ Result<std::unique_ptr<H264Mp4Writer>> H264Mp4Writer::Create(const capture::Grap
 Result<std::unique_ptr<H264Mp4Writer>>
 H264Mp4Writer::AttemptCreate(const capture::GraphicsDevice& device, const EncoderCapability& encoder,
                              const PresetParams& preset, const std::filesystem::path& partialPath,
-                             bool gpuSamples, const wchar_t** failStep, HRESULT* failHr) {
+                             bool gpuSamples, const AudioFormat* audioFormat,
+                             const wchar_t** failStep, HRESULT* failHr) {
     auto writer = std::unique_ptr<H264Mp4Writer>(new H264Mp4Writer());
     writer->encoder_ = encoder;
     writer->preset_ = preset;
@@ -191,6 +224,28 @@ H264Mp4Writer::AttemptCreate(const capture::GraphicsDevice& device, const Encode
         return ErrorFromHresult(hr, ErrorCode::EncoderUnavailable,
                                 L"The selected encoder rejected the recording configuration.",
                                 L"SetInputMediaType(NV12) failed");
+    }
+    if (audioFormat != nullptr) {
+        Microsoft::WRL::ComPtr<IMFMediaType> aOut = MakeAudioType(*audioFormat, true);
+        Microsoft::WRL::ComPtr<IMFMediaType> aIn = MakeAudioType(*audioFormat, false);
+        HRESULT hrA = writer->writer_->AddStream(aOut.Get(), &writer->audioStreamIndex_);
+        if (FAILED(hrA)) {
+            *failStep = L"AddStream(audio)";
+            *failHr = hrA;
+            return ErrorFromHresult(hrA, ErrorCode::EncoderUnavailable,
+                                    L"Windows could not configure the audio stream.",
+                                    L"AddStream(audio) failed");
+        }
+        hrA = writer->writer_->SetInputMediaType(writer->audioStreamIndex_, aIn.Get(), nullptr);
+        if (FAILED(hrA)) {
+            *failStep = L"SetInputMediaType(audio)";
+            *failHr = hrA;
+            return ErrorFromHresult(hrA, ErrorCode::EncoderUnavailable,
+                                    L"The audio encoder rejected the recording configuration.",
+                                    L"SetInputMediaType(PCM) failed");
+        }
+        writer->audioChannels_ = audioFormat->channels;
+        writer->audioEnabled_ = true;
     }
     hr = writer->writer_->BeginWriting();
     if (FAILED(hr)) {
@@ -399,6 +454,40 @@ Result<void> H264Mp4Writer::SubmitFrame(ID3D11Texture2D* nv12Frame, std::int64_t
                                  : SubmitFrameCpu(nv12Frame, time100Ns, duration100Ns);
     if (result.IsOk()) lastTimestamp_ = time100Ns;
     return result;
+}
+
+Result<void> H264Mp4Writer::WriteAudioSample(const std::int16_t* pcm, std::size_t frames,
+                                             std::int64_t time100Ns,
+                                             std::int64_t duration100Ns) {
+    if (!audioEnabled_ || finalized_.load(std::memory_order_acquire)) return Result<void>{};
+    if (audioWriteBroken_.load(std::memory_order_relaxed)) return Result<void>{};
+
+    Microsoft::WRL::ComPtr<IMFSample> sample;
+    Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
+    const DWORD bytes = static_cast<DWORD>(frames * audioChannels_ * sizeof(std::int16_t));
+    HRESULT hr = MFCreateSample(&sample);
+    if (SUCCEEDED(hr)) hr = MFCreateMemoryBuffer(bytes, &buffer);
+    if (SUCCEEDED(hr)) {
+        BYTE* dst = nullptr;
+        hr = buffer->Lock(&dst, nullptr, nullptr);
+        if (SUCCEEDED(hr)) {
+            memcpy(dst, pcm, bytes);
+            buffer->Unlock();
+            buffer->SetCurrentLength(bytes);
+            sample->AddBuffer(buffer.Get());
+            sample->SetSampleTime(time100Ns);
+            sample->SetSampleDuration(duration100Ns);
+            hr = writer_->WriteSample(audioStreamIndex_, sample.Get());
+        }
+    }
+    if (FAILED(hr)) {
+        // One broken audio write stops audio (logged once); video continues.
+        audioWriteBroken_.store(true, std::memory_order_relaxed);
+        return ErrorFromHresult(hr, ErrorCode::EncoderWriteFailed,
+                                L"The audio track could not be written and was dropped.",
+                                L"WriteSample(audio) failed", true);
+    }
+    return Result<void>{};
 }
 
 Result<void> H264Mp4Writer::QueueHealth() {

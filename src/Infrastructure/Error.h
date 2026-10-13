@@ -32,7 +32,7 @@ enum class ErrorCode {
 const char* ToString(ErrorCode code) noexcept;
 
 struct Error {
-    ErrorCode code = ErrorCode::InternalState;
+    ErrorCode code = ErrorCode::None;   // default-constructed Error = no error
     HRESULT hresult = E_FAIL;
     std::wstring userMessage;        // concise, actionable (NFR-043)
     std::wstring technicalMessage;   // context for the log

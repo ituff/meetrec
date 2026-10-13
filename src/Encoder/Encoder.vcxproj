@@ -28,12 +28,14 @@
   <ItemGroup>
     <ClCompile Include="EncoderProbe.cpp" />
     <ClCompile Include="H264Mp4Writer.cpp" />
+    <ClCompile Include="AudioCapture.cpp" />
     <ClCompile Include="VideoConverter.cpp" />
     <ClCompile Include="VideoPreset.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EncoderProbe.h" />
     <ClInclude Include="H264Mp4Writer.h" />
+    <ClInclude Include="AudioCapture.h" />
     <ClInclude Include="VideoConverter.h" />
     <ClInclude Include="VideoPreset.h" />
   </ItemGroup>

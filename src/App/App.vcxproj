@@ -34,7 +34,7 @@
     <Link>
       <!-- Console subsystem with wmain: enables the dev-record CLI (T040)
            while normal launches show only the UI. -->
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
       <AdditionalDependencies>windowsapp.lib;dwmapi.lib;shcore.lib;mfplat.lib;mfuuid.lib;mfreadwrite.lib;mfsrcsnk.lib;d3d11.lib;dxgi.lib;dxguid.lib;SwDevice.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>

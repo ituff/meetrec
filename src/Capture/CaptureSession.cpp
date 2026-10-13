@@ -1,4 +1,4 @@
-#include "MonitorCaptureSession.h"
+#include "CaptureSession.h"
 #include "CaptureInterop.h"
 
 #include <cstring>
@@ -23,24 +23,24 @@ constexpr std::size_t kPoolSlack = 2;
 
 } // namespace
 
-MonitorCaptureSession::MonitorCaptureSession(const GraphicsDevice& device,
+CaptureSession::CaptureSession(const GraphicsDevice& device,
                                              BoundedFrameQueue& queue, IClock& clock)
     : device_(device), queue_(queue), clock_(clock), pool_(std::make_shared<PoolState>()) {}
 
-MonitorCaptureSession::~MonitorCaptureSession() {
+CaptureSession::~CaptureSession() {
     Stop();
 }
 
-Result<std::unique_ptr<MonitorCaptureSession>> MonitorCaptureSession::Start(
-    const GraphicsDevice& device, HMONITOR monitor, BoundedFrameQueue& queue, IClock& clock) {
+
+// Shared tail of both Start overloads: pool creation, event wiring, session
+// start. `targetLabel` only feeds the structured log line.
+Result<std::unique_ptr<CaptureSession>> CaptureSession::StartInternal(
+    const GraphicsDevice& device, const GraphicsCaptureItem item, BoundedFrameQueue& queue,
+    IClock& clock, const wchar_t* targetLabel) {
     auto winrtDeviceResult = CreateWinrtDevice(device.Device());
     if (!winrtDeviceResult) return winrtDeviceResult.TakeError();
 
-    auto itemResult = CreateCaptureItemForMonitor(monitor);
-    if (!itemResult) return itemResult.TakeError();
-    const GraphicsCaptureItem item = itemResult.Value();
-
-    auto* session = new MonitorCaptureSession(device, queue, clock);
+    auto* session = new CaptureSession(device, queue, clock);
     session->winrtDevice_ = winrtDeviceResult.Value();
     session->item_ = item;
     {
@@ -55,7 +55,7 @@ Result<std::unique_ptr<MonitorCaptureSession>> MonitorCaptureSession::Start(
         session->framePool_ = Direct3D11CaptureFramePool::CreateFreeThreaded(
             session->winrtDevice_, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, item.Size());
         session->frameArrivedRevoker_ = session->framePool_.FrameArrived(
-            winrt::auto_revoke, {session, &MonitorCaptureSession::OnFrameArrived});
+            winrt::auto_revoke, {session, &CaptureSession::OnFrameArrived});
         session->session_ = session->framePool_.CreateCaptureSession(item);
         // Cursor capture default off (FR-049); ignore when the API is absent.
         try {
@@ -64,17 +64,23 @@ Result<std::unique_ptr<MonitorCaptureSession>> MonitorCaptureSession::Start(
         } catch (...) {
             session->cursorCapture_.store(false);
         }
+        // Best effort: drop the yellow capture border on builds that expose the
+        // toggle (unpackaged apps may be denied; the border is cosmetic only).
+        try {
+            session->session_.IsBorderRequired(false);
+        } catch (...) {
+        }
         session->session_.StartCapture();
     } catch (const winrt::hresult_error& e) {
         delete session;
         return ErrorFromHresult(static_cast<HRESULT>(e.code().value), ErrorCode::CaptureInitFailed,
-                                L"Capture could not start on the virtual display.",
+                                L"Capture could not start on the selected target.",
                                 L"WinRT capture start failed: " + std::wstring(e.message().c_str()),
                                 true);
     } catch (...) {
         delete session;
         return Error(ErrorCode::CaptureInitFailed,
-                     L"Capture could not start on the virtual display.",
+                     L"Capture could not start on the selected target.",
                      L"Unknown error starting capture", E_FAIL, true);
     }
 
@@ -84,14 +90,31 @@ Result<std::unique_ptr<MonitorCaptureSession>> MonitorCaptureSession::Start(
         w = session->pool_->width;
         h = session->pool_->height;
     }
-    log::Info("Capture", "CAPTURE_STARTED", L"", L"Monitor capture session started.",
+    log::Info("Capture", "CAPTURE_STARTED", L"", targetLabel,
               {{"width", std::to_string(w)},
                {"height", std::to_string(h)},
                {"format", "B8G8R8A8"}});
-    return std::unique_ptr<MonitorCaptureSession>(session);
+    return std::unique_ptr<CaptureSession>(session);
 }
 
-void MonitorCaptureSession::Stop() noexcept {
+
+Result<std::unique_ptr<CaptureSession>> CaptureSession::Start(
+    const GraphicsDevice& device, HMONITOR monitor, BoundedFrameQueue& queue, IClock& clock) {
+    auto itemResult = CreateCaptureItemForMonitor(monitor);
+    if (!itemResult) return itemResult.TakeError();
+    return StartInternal(device, itemResult.Value(), queue, clock,
+                         L"Monitor capture session started.");
+}
+
+Result<std::unique_ptr<CaptureSession>> CaptureSession::Start(
+    const GraphicsDevice& device, HWND window, BoundedFrameQueue& queue, IClock& clock) {
+    auto itemResult = CreateCaptureItemForWindow(window);
+    if (!itemResult) return itemResult.TakeError();
+    return StartInternal(device, itemResult.Value(), queue, clock,
+                         L"Window capture session started.");
+}
+
+void CaptureSession::Stop() noexcept {
     bool expected = false;
     if (!stopped_.compare_exchange_strong(expected, true)) return;
     try {
@@ -114,7 +137,7 @@ void MonitorCaptureSession::Stop() noexcept {
     log::Info("Capture", "CAPTURE_STOPPED", L"", L"Monitor capture session stopped.");
 }
 
-FramePoolStats MonitorCaptureSession::Stats() const noexcept {
+FramePoolStats CaptureSession::Stats() const noexcept {
     FramePoolStats s;
     const auto counters = queue_.Counters();
     s.captured = counters.captured;
@@ -124,7 +147,7 @@ FramePoolStats MonitorCaptureSession::Stats() const noexcept {
     return s;
 }
 
-void MonitorCaptureSession::SetCursorCaptureEnabled(bool enabled) noexcept {
+void CaptureSession::SetCursorCaptureEnabled(bool enabled) noexcept {
     cursorCapture_.store(enabled);
     try {
         if (session_) session_.IsCursorCaptureEnabled(enabled);
@@ -133,7 +156,7 @@ void MonitorCaptureSession::SetCursorCaptureEnabled(bool enabled) noexcept {
     }
 }
 
-bool MonitorCaptureSession::AcquirePooledTexture(UINT width, UINT height, ID3D11Texture2D** out,
+bool CaptureSession::AcquirePooledTexture(UINT width, UINT height, ID3D11Texture2D** out,
                                                  std::size_t* slot) {
     std::lock_guard<std::mutex> lock(pool_->mutex);
     if (pool_->width != width || pool_->height != height) {
@@ -172,7 +195,7 @@ bool MonitorCaptureSession::AcquirePooledTexture(UINT width, UINT height, ID3D11
     return false; // all pooled textures outstanding -> drop this frame
 }
 
-void MonitorCaptureSession::OnFrameArrived(Direct3D11CaptureFramePool const& sender,
+void CaptureSession::OnFrameArrived(Direct3D11CaptureFramePool const& sender,
                                            winrt::Windows::Foundation::IInspectable const&) {
     if (stopped_.load(std::memory_order_acquire)) return;
 
@@ -234,7 +257,7 @@ void MonitorCaptureSession::OnFrameArrived(Direct3D11CaptureFramePool const& sen
     queue_.Push(std::move(captured));
 }
 
-bool MonitorCaptureSession::TryGetLatestFrame(ID3D11Texture2D* destination) {
+bool CaptureSession::TryGetLatestFrame(ID3D11Texture2D* destination) {
     if (destination == nullptr) return false;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> latest;
     {
@@ -254,7 +277,7 @@ bool MonitorCaptureSession::TryGetLatestFrame(ID3D11Texture2D* destination) {
     return true;
 }
 
-bool MonitorCaptureSession::CopyLatestToCpu(std::vector<std::uint8_t>& outBgra, UINT& width,
+bool CaptureSession::CopyLatestToCpu(std::vector<std::uint8_t>& outBgra, UINT& width,
                                             UINT& height) {
     Microsoft::WRL::ComPtr<ID3D11Texture2D> latest;
     {

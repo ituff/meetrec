@@ -1,7 +1,11 @@
 #include "Application.h"
 
-#include <chrono>
-#include <cstdio>
+#include <WindowManagement/WindowPlacement.h>
+
+#include <chrono>
+
+#include <cstdio>
+
 #include <thread>
 #include <vector>
 
@@ -251,7 +255,8 @@ int Application::RunSelfCheck() {
 }
 
 int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
-                               const std::wstring& outputDir) {
+                               const std::wstring& outputDir,
+                               encoder::EncoderPreference encoderPreference) {
     // T031 verification: encode synthetic GPU frames through the production
     // conversion + encoder + MP4 sink path without any display dependency.
     AttachParentConsole();
@@ -260,7 +265,7 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
     const encoder::PresetParams params = encoder::GetPresetParams(preset);
 
     // 1. Encoder probe (FR-063: fail before any file exists).
-    auto probe = encoder::ProbeEncoders();
+    auto probe = encoder::ProbeEncoders(encoderPreference);
     if (!probe) {
         const Error e = probe.TakeError();
         wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
@@ -326,7 +331,7 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
         desc.SampleDesc.Count = 1;
         desc.Usage = D3D11_USAGE_DEFAULT;
         if (FAILED(device.Device()->CreateTexture2D(&desc, nullptr, source.GetAddressOf()))) {
-            wprintf(L"[encode-test] FAILED: BGRA source texture creation\n");
+            wprintf(L"[encode-test] FAILED: BGRA source texture creation\n");
             return 7;
         }
     }
@@ -335,7 +340,7 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
     const std::int64_t frameDuration = encoder::FrameDuration100Ns(params.fps);
     std::vector<std::uint8_t> pixels(static_cast<size_t>(params.width) * params.height * 4);
 
-    wprintf(L"[encode-test] encoding %u synthetic frames (%ux%u@%u) via %s\n", frameCount,
+    wprintf(L"[encode-test] encoding %u synthetic frames (%ux%u@%u) via %s\n", frameCount,
             params.width, params.height, params.fps, probe.Value().selected.name.c_str());
 
     // Real-time pacing: the sink writer's WriteSample provides no backpressure,
@@ -375,7 +380,7 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
         auto converted = converter.Value()->Convert(source.Get());
         if (!converted) {
             const Error e = converted.TakeError();
-            wprintf(L"[encode-test] FAILED at frame %u: %s\n", f, e.technicalMessage.c_str());
+            wprintf(L"[encode-test] FAILED at frame %u: %s\n", f, e.technicalMessage.c_str());
             return 8;
         }
         auto submitted = writer.Value()->SubmitFrame(converted.Value(),
@@ -397,19 +402,19 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
     }
 
     if (!writer.Value()->Finalize().IsOk()) {
-        wprintf(L"[encode-test] FAILED: finalization\n");
+        wprintf(L"[encode-test] FAILED: finalization\n");
         return 10;
     }
     std::error_code ec;
     std::filesystem::rename(plan.Value().partialPath, plan.Value().finalPath, ec);
     if (ec) {
-        wprintf(L"[encode-test] FAILED: rename (%hs)\n", ec.message().c_str());
+        wprintf(L"[encode-test] FAILED: rename (%hs)\n", ec.message().c_str());
         return 11;
     }
 
-    wprintf(L"[encode-test] wrote %u frames to %s\n", frameCount,
+    wprintf(L"[encode-test] wrote %u frames to %s\n", frameCount,
             plan.Value().finalPath.wstring().c_str());
-    wprintf(L"[encode-test] encoder=%s hardware=%d writtenFrames=%llu\n",
+    wprintf(L"[encode-test] encoder=%s hardware=%d writtenFrames=%llu\n",
             probe.Value().selected.name.c_str(), probe.Value().selected.hardware ? 1 : 0,
             static_cast<unsigned long long>(writer.Value()->WrittenFrames()));
     return 0;
@@ -448,7 +453,8 @@ int Application::RunInteractive() {
 }
 
 int Application::RunDevRecord(int seconds, const std::wstring& presetName,
-                              const std::wstring& outputDir) {
+                              const std::wstring& outputDir, HWND targetWindow,
+                              encoder::EncoderPreference encoderPreference) {
     // T040: command-line development entry point recording the virtual
     // display for a fixed duration, without UI or window movement.
     AttachParentConsole();
@@ -462,22 +468,31 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
             Utf8ToWide(encoder::ToString(preset)).c_str(), params.width, params.height,
             params.fps, params.bitrateBps, seconds);
 
-    auto display = coordinator_->EnsureVirtualDisplay();
-    if (!display) {
-        const Error e = display.TakeError();
-        wprintf(L"[dev-record] FAILED: %s (code %hs)\n", e.userMessage.c_str(), ToString(e.code));
-        ShutdownRuntime();
-        return 2;
+    // Window targets record driverless; only the display-only dev path needs
+    // the virtual display to be up.
+    if (targetWindow == nullptr) {
+        auto display = coordinator_->EnsureVirtualDisplay();
+        if (!display) {
+            const Error e = display.TakeError();
+            wprintf(L"[dev-record] FAILED: %s (code %hs)\n", e.userMessage.c_str(),
+                    ToString(e.code));
+            ShutdownRuntime();
+            return 2;
+        }
+        wprintf(L"[dev-record] virtual display active at %ld,%ld %ldx%ld\n",
+                display.Value().monitorRect.left,
+                display.Value().monitorRect.top,
+                display.Value().monitorRect.right - display.Value().monitorRect.left,
+                display.Value().monitorRect.bottom - display.Value().monitorRect.top);
     }
-    wprintf(L"[dev-record] virtual display active at %ld,%ld %ldx%ld\n", display.Value().monitorRect.left,
-            display.Value().monitorRect.top,
-            display.Value().monitorRect.right - display.Value().monitorRect.left,
-            display.Value().monitorRect.bottom - display.Value().monitorRect.top);
 
     StartRecordingRequest request;
-    request.targetWindow = nullptr; // display-only; no window move in dev mode
+    request.targetWindow = targetWindow; // null => display-only dev mode
     request.outputDirectory = outputDir;
     request.preset = preset;
+    request.encoderPreference = encoderPreference;
+    // Audio is opt-in (GUI checkbox): the MS AAC encoder finalize hangs on
+    // some Insider builds, so automated runs stay video-only by default.
     auto started = coordinator_->Start(request);
     if (!started) {
         const Error e = started.TakeError();
@@ -523,6 +538,168 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
 
 } // namespace vsr::app
 
+namespace vsr::app {
+
+// --- Driverless dev test window (T-E2E-WINDOW) ------------------------------
+//
+// A self-contained animated window owned by a CHILD process so the recorder
+// can capture a real, cross-process window without violating the
+// "never record our own process" guard. The window is created parked
+// off-screen (invisible on every monitor, still composed) and invalidates at
+// the preset frame rate, so WGC delivers ~fps frames for media validation.
+
+namespace {
+
+constexpr wchar_t kDevTestWindowClass[] = L"VsrDevTestWindow";
+
+LRESULT CALLBACK DevTestWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE:
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        return 0;
+    case WM_TIMER: {
+        const auto n = reinterpret_cast<std::uint64_t*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (n != nullptr) ++*n;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+        const auto* counter =
+            reinterpret_cast<const std::uint64_t*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        const std::uint64_t n = counter != nullptr ? *counter : 0;
+        const COLORREF color = RGB((n * 37) & 0xFF, (n * 89) & 0xFF, (n * 151) & 0xFF);
+        HBRUSH brush = CreateSolidBrush(color);
+        FillRect(dc, &rc, brush);
+        DeleteObject(brush);
+        wchar_t text[32] = {};
+        swprintf(text, 32, L"frame %llu", static_cast<unsigned long long>(n));
+        SetTextColor(dc, RGB(255, 255, 255));
+        SetBkMode(dc, TRANSPARENT);
+        DrawTextW(dc, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    default:
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+}
+
+int RunDevTestWindow(unsigned fps, int seconds, const std::wstring& title) {
+    const HINSTANCE instance = GetModuleHandleW(nullptr);
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = DevTestWindowProc;
+    wc.hInstance = instance;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpszClassName = kDevTestWindowClass;
+    if (!RegisterClassExW(&wc)) return 30;
+
+    // In-place capture: the test window stays visible on-screen (bottom-right
+    // of the work area) so the recorded content is real.
+    RECT work = {};
+    const HMONITOR primary = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO info = {};
+    info.cbSize = sizeof(info);
+    if (GetMonitorInfoW(primary, &info)) work = info.rcWork;
+    const RECT park = window::ComputeOnScreenCornerRect(RECT{0, 0, 960, 540}, work);
+
+    const HWND hwnd = CreateWindowExW(
+        WS_EX_NOACTIVATE, kDevTestWindowClass, title.c_str(), WS_OVERLAPPEDWINDOW,
+        park.left, park.top, park.right - park.left, park.bottom - park.top,
+        nullptr, nullptr, instance, nullptr);
+    if (hwnd == nullptr) return 31;
+    // Frame counter storage rides in GWLP_USERDATA (set on WM_CREATE).
+    static std::uint64_t frameCounter = 0;
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&frameCounter));
+    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+
+    const UINT interval = fps > 0 ? static_cast<UINT>(1000 / fps) : 33u;
+    SetTimer(hwnd, 1, interval, nullptr);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+    MSG msg = {};
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                KillTimer(hwnd, 1);
+                return 0;
+            }
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        Sleep(5);
+    }
+    KillTimer(hwnd, 1);
+    return 0;
+}
+
+} // namespace
+
+int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
+                                    const std::wstring& outputDir,
+                                    encoder::EncoderPreference encoderPreference) {
+    wprintf(L"[dev-record-window] starting\n");
+    fflush(stdout);
+    AttachParentConsole();
+    wprintf(L"[dev-record-window] console attached\n");
+    fflush(stdout);
+    const encoder::QualityPreset preset = encoder::FromString(WideToUtf8(presetName).c_str());
+    const encoder::PresetParams params = encoder::GetPresetParams(preset);
+
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    wprintf(L"[dev-record-window] exe resolved\n");
+    fflush(stdout);
+    const std::wstring title =
+        std::wstring(kDevTestWindowClass) + L"-" + std::to_wstring(GetCurrentProcessId());
+    std::wstring cmd = std::wstring(L"\"") + exePath + L"\" --dev-test-window --fps " +
+                       std::to_wstring(params.fps) + L" --seconds " +
+                       std::to_wstring(seconds + 10) + L" --title \"" + title + L"\"";
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si,
+                        &pi)) {
+        wprintf(L"[dev-record-window] FAILED: could not spawn the test window process "
+                L"(error %lu)\n",
+                GetLastError());
+        return 20;
+    }
+    wprintf(L"[dev-record-window] child spawned (pid %lu)\n", pi.dwProcessId);
+    fflush(stdout);
+    CloseHandle(pi.hThread);
+    const HANDLE child = pi.hProcess;
+
+    HWND hwnd = nullptr;
+    for (int i = 0; i < 100 && hwnd == nullptr; ++i) {
+        hwnd = FindWindowW(nullptr, title.c_str());
+        if (hwnd == nullptr) Sleep(100);
+    }
+    if (hwnd == nullptr) {
+        wprintf(L"[dev-record-window] FAILED: the test window never appeared\n");
+        TerminateProcess(child, 1);
+        CloseHandle(child);
+        return 21;
+    }
+
+    const int code = RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference);
+
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    WaitForSingleObject(child, 5000);
+    CloseHandle(child);
+    return code;
+}
+
+} // namespace vsr::app
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -554,14 +731,22 @@ int wmain(int argc, wchar_t* argv[]) {
             else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
             else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
         }
-        const int code = Application::Instance().RunEncodeTest(seconds, preset, outputDir);
+        vsr::encoder::EncoderPreference encoder =
+            vsr::encoder::EncoderPreference::Auto;
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--encoder") == 0) {
+                encoder = vsr::encoder::EncoderPreferenceFromString(
+                    vsr::WideToUtf8(argv[i + 1]));
+            }
+        }
+        const int code = Application::Instance().RunEncodeTest(seconds, preset, outputDir,
+                                                               encoder);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
-        wprintf(L"Virtual Screen Recorder 1.0.0.0 (MVP)
-");
+        wprintf(L"Virtual Screen Recorder 1.0.0.0 (MVP)\n");
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return 0;
     }
@@ -575,7 +760,55 @@ int wmain(int argc, wchar_t* argv[]) {
             else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
             else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
         }
-        const int code = Application::Instance().RunDevRecord(seconds, preset, outputDir);
+        vsr::encoder::EncoderPreference encoder =
+            vsr::encoder::EncoderPreference::Auto;
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--encoder") == 0) {
+                encoder = vsr::encoder::EncoderPreferenceFromString(
+                    vsr::WideToUtf8(argv[i + 1]));
+            }
+        }
+        const int code = Application::Instance().RunDevRecord(seconds, preset, outputDir,
+                                                              nullptr, encoder);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    // Child helper for --dev-record-window: renders the animated test window
+    // and exits when the parent closes it (or after its own timeout).
+    if (argc >= 2 && wcscmp(argv[1], L"--dev-test-window") == 0) {
+        unsigned fps = 30;
+        int seconds = 30;
+        std::wstring title = L"VsrDevTestWindow";
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--fps") == 0) fps = static_cast<unsigned>(_wtoi(argv[i + 1]));
+            else if (wcscmp(argv[i], L"--seconds") == 0) seconds = _wtoi(argv[i + 1]);
+            else if (wcscmp(argv[i], L"--title") == 0) title = argv[i + 1];
+        }
+        const int code = vsr::app::RunDevTestWindow(fps, seconds, title);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--dev-record-window") == 0) {
+        int seconds = 10;
+        std::wstring preset = L"standard";
+        std::wstring outputDir;
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--seconds") == 0) seconds = _wtoi(argv[i + 1]);
+            else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
+            else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
+        }
+        vsr::encoder::EncoderPreference encoder =
+            vsr::encoder::EncoderPreference::Auto;
+        for (int i = 2; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--encoder") == 0) {
+                encoder = vsr::encoder::EncoderPreferenceFromString(
+                    vsr::WideToUtf8(argv[i + 1]));
+            }
+        }
+        const int code =
+            Application::Instance().RunDevRecordWindow(seconds, preset, outputDir, encoder);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }

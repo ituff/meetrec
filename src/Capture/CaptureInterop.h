@@ -26,11 +26,17 @@ Microsoft::WRL::ComPtr<ID3D11Texture2D>
 GetTextureFromSurface(winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DSurface const&
                           surface);
 
-// Creates a GraphicsCaptureItem for a monitor handle (never for a window —
-// FR-040). Returns CaptureInitFailed when the monitor has disappeared or the
-// API is unavailable.
+// Creates a GraphicsCaptureItem for a monitor handle. Returns
+// CaptureInitFailed when the monitor has disappeared or the API is unavailable.
 Result<winrt::Windows::Graphics::Capture::GraphicsCaptureItem>
 CreateCaptureItemForMonitor(HMONITOR monitor);
+
+// Creates a GraphicsCaptureItem for a top-level window. The item tracks the
+// window's content even while it is occluded or parked off-screen; a minimized
+// window stops presenting frames. Returns CaptureInitFailed when the window is
+// gone or the API is unavailable.
+Result<winrt::Windows::Graphics::Capture::GraphicsCaptureItem>
+CreateCaptureItemForWindow(HWND window);
 
 // True when the OS supports monitor/window capture via Windows.Graphics.Capture
 // (Windows 10 1903+). Used for the startup capability check (FR-004).

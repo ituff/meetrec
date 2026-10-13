@@ -25,9 +25,18 @@ public:
 
     // Runs the interactive app. Returns the process exit code.
     int RunInteractive();
-    // Runs the headless development recording entry point (T040).
+    // Runs the headless development recording entry point (T040). With
+    // `targetWindow` set, records that window driverless (parked off-screen);
+    // with null, brings up the virtual display and records it (dev path).
     int RunDevRecord(int seconds, const std::wstring& presetName,
-                     const std::wstring& outputDir);
+                     const std::wstring& outputDir, HWND targetWindow = nullptr,
+                     encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto);
+    // Driverless E2E entry: spawns a self-contained animated test window in a
+    // child process, records it through the full capture pipeline, then closes
+    // the child. Exit 0 on a finalized MP4.
+    int RunDevRecordWindow(int seconds, const std::wstring& presetName,
+                           const std::wstring& outputDir,
+                           encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto);
     // Prints a capability report (OS, GPU, capture, encoder, virtual display,
     // topology, settings) and exits. Support/diagnostics tool; satisfies the
     // T020/T030 "diagnostic output" verification items. Never mutates state.
@@ -38,7 +47,8 @@ public:
     // chosen preset. No capture or driver involvement. Returns the output
     // path via the process exit log; exit 0 on a finalized MP4.
     int RunEncodeTest(int seconds, const std::wstring& presetName,
-                      const std::wstring& outputDir);
+                      const std::wstring& outputDir,
+                      encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto);
 
     // "Windows 11 build 26100" style string for diagnostics.
     static std::wstring OsBuildString();

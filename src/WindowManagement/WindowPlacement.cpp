@@ -38,6 +38,47 @@ RECT ComputeDestinationRect(const RECT& windowRect, const RECT& workArea) {
     return dest;
 }
 
+RECT ComputeOffScreenRect(const RECT& windowRect, const RECT& virtualDesktop) {
+    const long winW = windowRect.right - windowRect.left;
+    const long winH = windowRect.bottom - windowRect.top;
+    constexpr long kParkMargin = 64;
+
+    // Park left of the whole virtual desktop; the union bounds cover every
+    // monitor, so the rect is guaranteed invisible. The top coordinate only
+    // matters for tidiness — a fully off-screen x hides the window regardless.
+    const long x = virtualDesktop.left - winW - kParkMargin;
+
+    RECT out = windowRect;
+    out.left = x;
+    out.right = x + winW;
+    out.top = virtualDesktop.top;
+    out.bottom = virtualDesktop.top + winH;
+    return out;
+}
+
+RECT ComputeOnScreenCornerRect(const RECT& windowRect, const RECT& workArea) {
+    const long winW = windowRect.right - windowRect.left;
+    const long winH = windowRect.bottom - windowRect.top;
+
+    // Clamp into the work area, then tuck into the bottom-right corner.
+    long w = winW;
+    long h = winH;
+    const long areaW = workArea.right - workArea.left;
+    const long areaH = workArea.bottom - workArea.top;
+    if (areaW > 0 && w > areaW) w = areaW;
+    if (areaH > 0 && h > areaH) h = areaH;
+
+    long x = workArea.right - 8 - w;
+    long y = workArea.bottom - 8 - h;
+
+    RECT out = windowRect;
+    out.left = x;
+    out.top = y;
+    out.right = x + w;
+    out.bottom = y + h;
+    return out;
+}
+
 namespace {
 
 void GetMonitorRects(HMONITOR monitor, RECT* monitorRect, RECT* workRect) {
@@ -62,6 +103,54 @@ void MaximizeOnMonitor(HWND hwnd, const RECT& monitorRect) {
         placement.showCmd = SW_SHOWMAXIMIZED;
         SetWindowPlacement(hwnd, &placement);
     }
+}
+
+// Shared validation + placement capture for both move targets (virtual
+// display, off-screen park). Restores a maximized/minimized window to normal
+// state so SetWindowPos can position it, and reports the pre-move state.
+struct PlacementSnapshot {
+    SavedPlacement saved;
+    bool wasMaximized = false;
+    RECT normalRect = {};
+};
+
+Result<PlacementSnapshot> CapturePlacementForMove(HWND hwnd) {
+    PlacementSnapshot snap;
+    snap.saved.hwnd = hwnd;
+    snap.saved.placement.length = sizeof(WINDOWPLACEMENT);
+    if (!GetWindowPlacement(hwnd, &snap.saved.placement)) {
+        return ErrorFromWin32(GetLastError(), ErrorCode::TargetInvalid,
+                              L"The selected window could not be inspected.",
+                              L"GetWindowPlacement failed", true);
+    }
+    if (!GetWindowRect(hwnd, &snap.saved.windowRect)) {
+        return ErrorFromWin32(GetLastError(), ErrorCode::TargetInvalid,
+                              L"The selected window could not be inspected.",
+                              L"GetWindowRect failed", true);
+    }
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    snap.saved.pid = pid;
+    snap.saved.sourceMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    GetMonitorRects(snap.saved.sourceMonitor, &snap.saved.sourceMonitorRect, nullptr);
+
+    // Normal state must be sane before moving (maximized windows store the
+    // normal rect in rcNormalPosition).
+    snap.wasMaximized = snap.saved.placement.showCmd == SW_SHOWMAXIMIZED;
+    snap.normalRect = snap.saved.placement.rcNormalPosition;
+
+    if (snap.wasMaximized) {
+        ShowWindow(hwnd, SW_RESTORE);
+    } else if (snap.saved.placement.showCmd == SW_SHOWMINIMIZED) {
+        ShowWindow(hwnd, SW_RESTORE);
+        if (!GetWindowPlacement(hwnd, &snap.saved.placement)) {
+            return ErrorFromWin32(GetLastError(), ErrorCode::TargetInvalid,
+                                  L"The selected window could not be inspected.",
+                                  L"GetWindowPlacement failed", true);
+        }
+        snap.normalRect = snap.saved.placement.rcNormalPosition;
+    }
+    return snap;
 }
 
 } // namespace
@@ -102,41 +191,12 @@ Result<SavedPlacement> WindowPlacementManager::CaptureAndMoveTo(HWND hwnd,
                      L"IsHungAppWindow reported the target is hung", E_FAIL, true);
     }
 
-    SavedPlacement saved;
-    saved.hwnd = hwnd;
-    saved.placement.length = sizeof(WINDOWPLACEMENT);
-    if (!GetWindowPlacement(hwnd, &saved.placement)) {
-        return ErrorFromWin32(GetLastError(), ErrorCode::TargetInvalid,
-                              L"The selected window could not be inspected.",
-                              L"GetWindowPlacement failed", true);
-    }
-    if (!GetWindowRect(hwnd, &saved.windowRect)) {
-        return ErrorFromWin32(GetLastError(), ErrorCode::TargetInvalid,
-                              L"The selected window could not be inspected.",
-                              L"GetWindowRect failed", true);
-    }
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    saved.pid = pid;
-    saved.sourceMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    GetMonitorRects(saved.sourceMonitor, &saved.sourceMonitorRect, nullptr);
-
-    // Normal state must be sane before moving (maximized windows store the
-    // normal rect in rcNormalPosition).
-    const bool wasMaximized = saved.placement.showCmd == SW_SHOWMAXIMIZED;
-    RECT normalRect = saved.placement.rcNormalPosition;
-
-    if (wasMaximized) {
-        ShowWindow(hwnd, SW_RESTORE);
-    } else if (saved.placement.showCmd == SW_SHOWMINIMIZED) {
-        ShowWindow(hwnd, SW_RESTORE);
-        if (!GetWindowPlacement(hwnd, &saved.placement)) {
-            return ErrorFromWin32(GetLastError(), ErrorCode::TargetInvalid,
-                                  L"The selected window could not be inspected.",
-                                  L"GetWindowPlacement failed", true);
-        }
-        normalRect = saved.placement.rcNormalPosition;
-    }
+    auto snapResult = CapturePlacementForMove(hwnd);
+    if (!snapResult) return snapResult.TakeError();
+    PlacementSnapshot snap = snapResult.Value();
+    SavedPlacement& saved = snap.saved;
+    const bool wasMaximized = snap.wasMaximized;
+    RECT normalRect = snap.normalRect;
 
     RECT dest = ComputeDestinationRect(normalRect, virtualWorkArea);
     SetWindowPos(hwnd, nullptr, dest.left, dest.top, dest.right - dest.left,
@@ -168,7 +228,63 @@ Result<SavedPlacement> WindowPlacementManager::CaptureAndMoveTo(HWND hwnd,
     log::Info("WindowManagement", "TARGET_MOVED", L"",
               L"Target window moved to the virtual display.",
               {{"wasMaximized", wasMaximized ? "1" : "0"},
-               {"pid", std::to_string(pid)}});
+               {"pid", std::to_string(saved.pid)}});
+    return saved;
+}
+
+Result<SavedPlacement> WindowPlacementManager::CaptureAndParkOffScreen(HWND hwnd) {
+    if (hwnd == nullptr || !IsWindow(hwnd)) {
+        return Error(ErrorCode::TargetInvalid,
+                     L"The selected window is no longer available. Pick a window that is "
+                     L"still open.",
+                     L"CaptureAndParkOffScreen called with invalid hwnd", E_POINTER, true);
+    }
+    if (IsHungAppWindow(hwnd)) {
+        return Error(ErrorCode::TargetInvalid,
+                     L"The selected application is not responding. Close or restart it, then "
+                     L"pick it again.",
+                     L"IsHungAppWindow reported the target is hung", E_FAIL, true);
+    }
+
+    auto snapResult = CapturePlacementForMove(hwnd);
+    if (!snapResult) return snapResult.TakeError();
+    SavedPlacement saved = snapResult.Value().saved;
+
+    // Park the target. Local sessions park fully off-screen (invisible). In a
+    // remote (RDP) session DWM may not compose fully off-screen windows, which
+    // makes them uncapturable, so the target stays on-screen but is sent to
+    // the bottom of the Z-order — occluded, hence invisible in practice, and
+    // still composed for capture.
+    const bool remoteSession = GetSystemMetrics(SM_REMOTESESSION) != 0;
+    RECT park{};
+    HWND insertAfter = nullptr;
+    if (remoteSession) {
+        const HMONITOR primary = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+        RECT work{};
+        GetMonitorRects(primary, nullptr, &work);
+        park = ComputeOnScreenCornerRect(snapResult.Value().normalRect, work);
+        insertAfter = HWND_BOTTOM;
+    } else {
+        RECT virtualDesktop{};
+        virtualDesktop.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        virtualDesktop.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        virtualDesktop.right = virtualDesktop.left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        virtualDesktop.bottom = virtualDesktop.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if (virtualDesktop.right <= virtualDesktop.left) {
+            // Degenerate metrics: fall back to parking left of the origin.
+            virtualDesktop.right = virtualDesktop.left;
+        }
+        park = ComputeOffScreenRect(snapResult.Value().normalRect, virtualDesktop);
+    }
+    SetWindowPos(hwnd, insertAfter, park.left, park.top, park.right - park.left,
+                 park.bottom - park.top, SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+    log::Info("WindowManagement", "TARGET_PARKED", L"",
+              remoteSession ? L"Target window parked on-screen (remote session)."
+                            : L"Target window parked off-screen for driverless recording.",
+              {{"wasMaximized", snapResult.Value().wasMaximized ? "1" : "0"},
+               {"remoteSession", remoteSession ? "1" : "0"},
+               {"pid", std::to_string(saved.pid)}});
     return saved;
 }
 

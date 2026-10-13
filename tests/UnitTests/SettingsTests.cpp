@@ -127,3 +127,30 @@ VSR_TEST(Settings, SaveAndLoadRoundTripViaTempFile) {
 
     std::filesystem::remove_all(tempDir, ec);
 }
+
+
+VSR_TEST(Settings, EncoderPreferenceDefaultsToSoftware) {
+    Settings s;
+    VSR_CHECK_EQ(s.encoderPreference, std::string("software"));
+}
+
+VSR_TEST(Settings, EncoderPreferenceFieldParsesAndSerializes) {
+    std::filesystem::path tempDir = std::filesystem::temp_directory_path() /
+                                    L"vsr-settings-test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path file = tempDir / L"settings-encoder.json";
+    WriteFile(file, "{\"encoderPreference\":\"software\"}");
+
+    const std::string text = ReadFile(file);
+    bool ok = false;
+    const Value v = Parse(text, &ok);
+    VSR_CHECK(ok);
+    VSR_CHECK_EQ(v.Find("encoderPreference").AsString(), "software");
+
+    Value out{Object{}};
+    out.Set("encoderPreference", Value("hardware"));
+    VSR_CHECK(out.Find("encoderPreference").AsString() == std::string("hardware"));
+
+    std::filesystem::remove_all(tempDir, ec);
+}

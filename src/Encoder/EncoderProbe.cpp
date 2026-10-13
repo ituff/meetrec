@@ -14,10 +14,28 @@
 
 namespace vsr::encoder {
 
-Result<EncoderCapability> SelectEncoder(const std::vector<EncoderCapability>& candidates) {
+EncoderPreference EncoderPreferenceFromString(const std::string& s) noexcept {
+    if (s == "hardware") return EncoderPreference::Hardware;
+    if (s == "software") return EncoderPreference::Software;
+    return EncoderPreference::Auto;
+}
+
+const char* ToString(EncoderPreference preference) noexcept {
+    switch (preference) {
+        case EncoderPreference::Hardware: return "hardware";
+        case EncoderPreference::Software: return "software";
+        case EncoderPreference::Auto: return "auto";
+    }
+    return "auto";
+}
+
+Result<EncoderCapability> SelectEncoder(const std::vector<EncoderCapability>& candidates,
+                                        EncoderPreference preference) {
     const EncoderCapability* best = nullptr;
     for (const auto& c : candidates) {
-        if (!c.acceptsNv12) continue;
+        if (!c.acceptsNv12 || !c.producesH264) continue;
+        if (preference == EncoderPreference::Hardware && !c.hardware) continue;
+        if (preference == EncoderPreference::Software && c.hardware) continue;
         if (best == nullptr ||
             std::make_pair(c.hardware, c.d3d11Aware) >
                 std::make_pair(best->hardware, best->d3d11Aware)) {
@@ -25,6 +43,20 @@ Result<EncoderCapability> SelectEncoder(const std::vector<EncoderCapability>& ca
         }
     }
     if (best == nullptr) {
+        if (preference == EncoderPreference::Hardware) {
+            return Error(ErrorCode::EncoderUnavailable,
+                         L"No hardware H.264 encoder is available, but the encoder preference "
+                         L"is set to Hardware. Switch the encoder preference to Auto or "
+                         L"Software, then try again.",
+                         L"Hardware encoder preference matched no candidate MFT");
+        }
+        if (preference == EncoderPreference::Software) {
+            return Error(ErrorCode::EncoderUnavailable,
+                         L"No software H.264 encoder is available, but the encoder preference "
+                         L"is set to Software. Switch the encoder preference to Auto or "
+                         L"Hardware, then try again.",
+                         L"Software encoder preference matched no candidate MFT");
+        }
         return Error(ErrorCode::EncoderUnavailable,
                      L"No compatible H.264 encoder is available on this machine. Install a GPU "
                      L"driver with hardware video encoding, or enable the Microsoft software "
@@ -84,12 +116,48 @@ EncoderCapability InspectCandidate(IMFActivate* activate) {
         }
         cap.acceptsNv12 = sawNv12 || !sawAny;
     }
+
+    // Only transforms that produce an H.264 elementary stream qualify as
+    // video encoders for this pipeline; other registered "encoder" MFTs
+    // (e.g. image/HEIF extensions) would otherwise be selected.
+    if (transform) {
+        bool sawOutAny = false;
+        bool sawH264 = false;
+        for (DWORD index = 0; index < 64; ++index) {
+            IMFMediaType* type = nullptr;
+            const HRESULT hr = transform->GetOutputAvailableType(0, index, &type);
+            if (hr == MF_E_NO_MORE_TYPES) break;
+            if (FAILED(hr)) break;
+            sawOutAny = true;
+            GUID subtype{};
+            if (SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) &&
+                subtype == MFVideoFormat_H264) {
+                sawH264 = true;
+            }
+            type->Release();
+        }
+        if (sawOutAny) {
+            cap.producesH264 = sawH264;
+        } else if (!cap.hardware) {
+            // No static output types and not a known hardware MFT: verify
+            // H.264 by live negotiation, otherwise Store-hosted non-video
+            // "encoders" (HEIF image extensions and friends) pass.
+            IMFMediaType* outType = nullptr;
+            if (SUCCEEDED(MFCreateMediaType(&outType))) {
+                outType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+                outType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+                cap.producesH264 =
+                    SUCCEEDED(transform->SetOutputType(0, outType, 0));
+                outType->Release();
+            }
+        }
+    }
     return cap;
 }
 
 } // namespace
 
-Result<EncoderProbeResult> ProbeEncoders() {
+Result<EncoderProbeResult> ProbeEncoders(EncoderPreference preference) {
     EncoderProbeResult result;
 
     IMFActivate** activates = nullptr;
@@ -113,7 +181,7 @@ Result<EncoderProbeResult> ProbeEncoders() {
     }
     CoTaskMemFree(activates);
 
-    auto selected = SelectEncoder(result.candidates);
+    auto selected = SelectEncoder(result.candidates, preference);
     if (!selected) return selected.TakeError();
     result.selected = selected.Value();
     result.available = true;
@@ -122,6 +190,7 @@ Result<EncoderProbeResult> ProbeEncoders() {
                {"hardware", result.selected.hardware ? "1" : "0"},
                {"d3d11Aware", result.selected.d3d11Aware ? "1" : "0"},
                {"acceptsNv12", result.selected.acceptsNv12 ? "1" : "0"},
+               {"preference", ToString(preference)},
                {"discovered", std::to_string(result.discovered.size())}});
     return result;
 }

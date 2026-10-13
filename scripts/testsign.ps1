@@ -54,6 +54,21 @@ $cerPath = Join-Path $driverDir "vsr-test-signing.cer"
 Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
 Write-Host "Public certificate exported: $cerPath"
 
+# Stamp the INF (fills DriverVer, $ARCH$, $UMDFVERSION$) before cataloging.
+$stampinf = Get-ChildItem -Path $kitsRoot -Recurse -Filter "stampinf.exe" |
+    Where-Object { $_.FullName -match "x64" } |
+    Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+if (-not $stampinf) {
+    Write-Error "[VSR-SGN-004] stampinf.exe not found under $kitsRoot."
+    exit 1
+}
+& $stampinf -f (Join-Path $driverDir "VirtualDisplayDriver.inf") -d * -a amd64 `
+    -c "VirtualDisplayDriver.cat" -v "0.36.30.230" -u "2.25.0"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[VSR-SGN-005] stampinf failed with exit code $LASTEXITCODE."
+    exit $LASTEXITCODE
+}
+
 # Sign every payload file, then (re)generate the catalog via inf2cat and sign it.
 $cat = Join-Path $driverDir "VirtualDisplayDriver.cat"
 if (Test-Path $cat) { Remove-Item $cat -Force }
@@ -61,6 +76,11 @@ if (Test-Path $cat) { Remove-Item $cat -Force }
 $inf2cat = Get-ChildItem -Path $kitsRoot -Recurse -Filter "inf2cat.exe" |
     Where-Object { $_.FullName -match "x64" } |
     Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+if (-not $inf2cat) {
+    # Some SDK layouts ship Inf2Cat only in the x86 tool directory; it runs on x64.
+    $inf2cat = Get-ChildItem -Path $kitsRoot -Recurse -Filter "Inf2Cat.exe" |
+        Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+}
 if ($inf2cat) {
     & $inf2cat /driver:$driverDir /os:10_X64 /uselocaltime
     if ($LASTEXITCODE -ne 0) {
