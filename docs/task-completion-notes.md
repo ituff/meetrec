@@ -1015,6 +1015,16 @@ findings); the user's machine has ffmpeg at C:\ffmpeg.
   within tolerance); record-window standard/high PASS in the harness; audio E2E aligned.
 - Known cosmetic: CFR containers include a ~1-1.5 s frozen-frame tail (stop->finalize
   window); duration stays inside the harness ±3 s tolerance.
+- 30-minute meeting-scenario soak (standard 1080p30 + system audio + looping tone):
+  1800 s held, 37,970 frames captured / 0 dropped, valid aligned H.264+AAC output
+  (1818.6 s / 1818.7 s), 29 kbps average bitrate, 6.6 MB total. Exposed and fixed a
+  pacer rate drift: an integer-millisecond tick (33 ms vs the true 33.333 ms) ran the
+  schedule 1% fast, stretching the container 18 s over wall clock at 30 min (both
+  tracks equally - aligned, but the meeting length mismatched). Ticks are now anchored
+  to the absolute start + tick count in nanoseconds; a 120 s run lands at 120.7 s.
+  The soak's memory sampler script died early (Set-Content append misuse, fixed to
+  Add-Content), so the working-set curve was lost - the clean 30-minute run with exit 0
+  is the session-level stability evidence; re-run artifacts/soak30.ps1 for the curve.
 - encode-high duration overrun fixed: the synthetic generator repainted the full 1080p
   gradient per frame on the CPU and could not sustain 60 fps, so the paced feed fell
   behind wall time and the CFR container honestly recorded the overrun (17.5 s for a

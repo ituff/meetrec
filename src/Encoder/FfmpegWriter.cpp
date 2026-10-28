@@ -526,20 +526,26 @@ void FfmpegWriter::PacerLoop() {
     // the FIFO at real-time rate, padding silence. The two children are
     // independent, so neither input can stall the other. Any pipe failure
     // (ffmpeg wedged or dead) is latched and surfaced through QueueHealth.
-    DWORD tickMs = preset_.fps > 0 ? 1000 / preset_.fps : 33;
-    if (tickMs == 0) tickMs = 1;
+    //
+    // Tick schedule: anchored to the absolute start plus tick count in
+    // nanoseconds. An integer-millisecond cadence (1000/30 = 33 ms vs the
+    // true 33.333 ms) runs 1% fast and stretched a 30-minute recording by
+    // 18 s against wall clock - both tracks equally, but the meeting length
+    // must match the wall clock.
+    const std::int64_t tickPeriodNs =
+        preset_.fps > 0 ? 1'000'000'000LL / preset_.fps : 33'333'333LL;
     const std::size_t audioTickFrames =
         static_cast<std::size_t>(audioRate_ > 0 ? audioRate_ / preset_.fps : 1600);
     const std::size_t audioTickBytes = audioTickFrames * audioChannels_ * 2;
 
-    auto nextTick = std::chrono::steady_clock::now();
-    const auto startedAt = nextTick;
+    const auto startedAt = std::chrono::steady_clock::now();
     std::uint64_t ticks = 0;
     std::uint64_t videoTicks = 0;
     std::uint64_t videoBytes = 0;
     while (!pacerExit_.load(std::memory_order_relaxed)) {
-        nextTick += std::chrono::milliseconds(tickMs);
         ++ticks;
+        const auto nextTick =
+            startedAt + std::chrono::nanoseconds(tickPeriodNs * static_cast<std::int64_t>(ticks));
 
         bool haveFrame = false;
         {
@@ -597,7 +603,7 @@ void FfmpegWriter::PacerLoop() {
                {"videoTicks", std::to_string(videoTicks)},
                {"videoBytes", std::to_string(videoBytes)},
                {"aliveMs", std::to_string(aliveMs)},
-               {"tickMs", std::to_string(tickMs)}});
+               {"tickPeriodNs", std::to_string(tickPeriodNs)}});
 }
 
 Result<void> FfmpegWriter::QueueHealth() {
