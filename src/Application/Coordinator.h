@@ -29,6 +29,7 @@
 #include <Encoder/AudioCapture.h>
 #include <Encoder/EncoderProbe.h>
 #include <Encoder/VideoPreset.h>
+#include <Encoder/VideoWriterFactory.h>
 #include <WindowManagement/PopupTracker.h>
 
 namespace vsr::capture {
@@ -38,7 +39,6 @@ class GraphicsDevice;
 class ICaptureSession;
 } // namespace vsr::capture
 namespace vsr::encoder {
-class H264Mp4Writer;
 class VideoConverter;
 struct EncoderCapability;
 } // namespace vsr::encoder
@@ -56,6 +56,7 @@ struct StartRecordingRequest {
     std::filesystem::path outputDirectory;
     QualityPreset preset = QualityPreset::Standard;
     encoder::EncoderPreference encoderPreference = encoder::EncoderPreference::Auto;
+    encoder::WriterBackend backend = encoder::WriterBackend::Auto;
     bool captureCursor = false;
     bool captureAudio = false;
 };
@@ -167,7 +168,7 @@ private:
     // garble) appear when chunk timestamps jitter relative to sample counts.
     std::int64_t audioCursor100Ns_ = -1;
     std::unique_ptr<encoder::VideoConverter> converter_;
-    std::unique_ptr<encoder::H264Mp4Writer> writer_;
+    std::unique_ptr<encoder::IVideoWriter> writer_;
     std::unique_ptr<window::SavedPlacement> savedPlacement_;
     std::unique_ptr<encoder::EncoderCapability> encoderCap_;
     display::SoftwareDisplayDevice softwareDevice_;
@@ -194,6 +195,16 @@ private:
     std::int64_t nextDiskCheckMs_ = 0;
     std::int64_t nextQueueCheckMs_ = 0;
     std::int64_t nextTargetCheckMs_ = 0;
+
+    // WGC window-capture repair (Session-9 disease: the WGC frame pool
+    // delivers one blank frame or nothing and never updates). When the
+    // captured count is frozen past the start deadline, the session is
+    // rebuilt on the GDI PrintWindow backend; the queue is shared and
+    // recording continues.
+    bool usingWgcWindowCapture_ = false;
+    bool captureFallbackTried_ = false;
+    std::uint64_t lastSeenCapturedCount_ = 0;
+    std::int64_t lastCapturedChangeMs_ = 0;
 
     // Monitor liveness is queried on a slow cadence (NFR-001: the 100 ms UI
     // timer must not drive full topology queries).

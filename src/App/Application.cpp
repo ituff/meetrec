@@ -264,21 +264,40 @@ int Application::RunSelfCheck() {
 
 int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
                                const std::wstring& outputDir,
-                               encoder::EncoderPreference encoderPreference) {
+                               encoder::EncoderPreference encoderPreference,
+                               encoder::WriterBackend backend) {
     // T031 verification: encode synthetic GPU frames through the production
     // conversion + encoder + MP4 sink path without any display dependency.
     AttachParentConsole();
+    (void)setvbuf(stdout, nullptr, _IONBF, 0); // survive hard kills in diagnostics
 
     const encoder::QualityPreset preset = encoder::FromString(WideToUtf8(presetName).c_str());
     const encoder::PresetParams params = encoder::GetPresetParams(preset);
+    const encoder::WriterBackend resolvedBackend = encoder::ResolveBackend(backend);
 
-    // 1. Encoder probe (FR-063: fail before any file exists).
-    auto probe = encoder::ProbeEncoders(encoderPreference);
-    if (!probe) {
-        const Error e = probe.TakeError();
-        wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
-                ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
-        return 2;
+    // 1. Encoder probe (FR-063: fail before any file exists). The ffmpeg
+    // backend does not use OS encoder MFTs; its probe runs in the factory.
+    encoder::EncoderCapability cap;
+    if (resolvedBackend != encoder::WriterBackend::Ffmpeg) {
+        auto probe = encoder::ProbeEncoders(encoderPreference);
+        if (!probe) {
+            const Error e = probe.TakeError();
+            wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n",
+                    e.userMessage.c_str(), ToString(e.code),
+                    WideToUtf8(e.technicalMessage).c_str());
+            return 2;
+        }
+        cap = probe.Value().selected;
+        {
+            // BISECT: force the CPU staging path to isolate GPU sample submission.
+            wchar_t force[4] = {};
+            if (GetEnvironmentVariableW(L"VSR_FORCE_CPU_ENCODER", force, 4) > 0 &&
+                force[0] == L'1') {
+                cap.d3d11Aware = false;
+            }
+        }
+    } else {
+        cap.name = L"ffmpeg (libx264)";
     }
 
     // 2. GPU device.
@@ -309,16 +328,8 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
                 ToString(e.code), WideToUtf8(e.technicalMessage).c_str());
         return 5;
     }
-    encoder::EncoderCapability cap = probe.Value().selected;
-    {
-        // BISECT: force the CPU staging path to isolate GPU sample submission.
-        wchar_t force[4] = {};
-        if (GetEnvironmentVariableW(L"VSR_FORCE_CPU_ENCODER", force, 4) > 0 &&
-            force[0] == L'1') {
-            cap.d3d11Aware = false;
-        }
-    }
-    auto writer = encoder::H264Mp4Writer::Create(device, cap, params, plan.Value().partialPath);
+    auto writer = encoder::CreateWriter(backend, device, cap, params,
+                                        plan.Value().partialPath, nullptr);
     if (!writer) {
         const Error e = writer.TakeError();
         wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),
@@ -348,8 +359,24 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
     const std::int64_t frameDuration = encoder::FrameDuration100Ns(params.fps);
     std::vector<std::uint8_t> pixels(static_cast<size_t>(params.width) * params.height * 4);
 
-    wprintf(L"[encode-test] encoding %u synthetic frames (%ux%u@%u) via %s\n", frameCount,
-            params.width, params.height, params.fps, probe.Value().selected.name.c_str());
+    // Base gradient is rendered ONCE: regenerating 8 MB per frame on the CPU
+    // could not sustain the 60 fps presets, the paced feed fell behind wall
+    // time, and the CFR container honestly recorded the overrun as excess
+    // duration. Per frame only the moving block is repainted (temporal
+    // motion for the validator), then the texture is uploaded.
+    for (std::uint32_t y = 0; y < params.height; ++y) {
+        auto* row = pixels.data() + static_cast<size_t>(y) * params.width * 4;
+        for (std::uint32_t x = 0; x < params.width; ++x) {
+            row[x * 4 + 0] = static_cast<std::uint8_t>(x * 255 / params.width);      // B
+            row[x * 4 + 1] = static_cast<std::uint8_t>(y * 255 / params.height);     // G
+            row[x * 4 + 2] = 0x40;                                                   // R
+            row[x * 4 + 3] = 0xFF;                                                   // A
+        }
+    }
+
+    wprintf(L"[encode-test] encoding %u synthetic frames (%ux%u@%u) via %s (backend %hs)\n",
+            frameCount, params.width, params.height, params.fps, cap.name.c_str(),
+            encoder::ToString(resolvedBackend));
 
     // Real-time pacing: the sink writer's WriteSample provides no backpressure,
     // so feeding faster than the nominal rate grows the MFT queue without
@@ -357,25 +384,15 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
     // test paces identically so soak memory reflects production behavior.
     const auto pacingStart = std::chrono::steady_clock::now();
     for (std::uint32_t f = 0; f < frameCount; ++f) {
-        // CPU pattern (test-only path; production frames never touch the CPU).
-        const std::uint8_t phase = static_cast<std::uint8_t>(f * 255 / (frameCount ? frameCount : 1));
-        for (std::uint32_t y = 0; y < params.height; ++y) {
+        // Moving block repaint (test-only temporal motion).
+        const std::uint32_t bx = (f * 7) % (params.width - 160);
+        const std::uint32_t by = (f * 3) % (params.height - 90);
+        for (std::uint32_t y = by; y < std::min(by + 90u, params.height); ++y) {
             auto* row = pixels.data() + static_cast<size_t>(y) * params.width * 4;
-            for (std::uint32_t x = 0; x < params.width; ++x) {
-                row[x * 4 + 0] = static_cast<std::uint8_t>(x * 255 / params.width);      // B
-                row[x * 4 + 1] = static_cast<std::uint8_t>(y * 255 / params.height);     // G
-                row[x * 4 + 2] = phase;                                                  // R
-                row[x * 4 + 3] = 0xFF;                                                   // A
-            }
-            // Moving block every 30th frame boundary for temporal motion.
-            const std::uint32_t bx = (f * 7) % (params.width - 160);
-            const std::uint32_t by = (f * 3) % (params.height - 90);
-            if (y >= by && y < by + 90 && bx < params.width) {
-                for (std::uint32_t x = bx; x < std::min(bx + 160, params.width); ++x) {
-                    row[x * 4 + 0] = 0xFF;
-                    row[x * 4 + 1] = 0x40;
-                    row[x * 4 + 2] = 0x20;
-                }
+            for (std::uint32_t x = bx; x < std::min(bx + 160u, params.width); ++x) {
+                row[x * 4 + 0] = 0xFF;
+                row[x * 4 + 1] = 0x40;
+                row[x * 4 + 2] = 0x20;
             }
         }
 
@@ -422,8 +439,8 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
 
     wprintf(L"[encode-test] wrote %u frames to %s\n", frameCount,
             plan.Value().finalPath.wstring().c_str());
-    wprintf(L"[encode-test] encoder=%s hardware=%d writtenFrames=%llu\n",
-            probe.Value().selected.name.c_str(), probe.Value().selected.hardware ? 1 : 0,
+    wprintf(L"[encode-test] encoder=%s hardware=%d writtenFrames=%llu\n", cap.name.c_str(),
+            cap.hardware ? 1 : 0,
             static_cast<unsigned long long>(writer.Value()->WrittenFrames()));
     return 0;
 }
@@ -463,7 +480,7 @@ int Application::RunInteractive() {
 int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                               const std::wstring& outputDir, HWND targetWindow,
                               encoder::EncoderPreference encoderPreference,
-                              bool captureAudio) {
+                              bool captureAudio, encoder::WriterBackend backend) {
     // T040: command-line development entry point recording the virtual
     // display for a fixed duration, without UI or window movement.
     AttachParentConsole();
@@ -504,6 +521,7 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     // finalize hung on some Insider builds, so automated runs are video-only
     // by default and the failure mode degrades to video-only when present.
     request.captureAudio = captureAudio;
+    request.backend = backend;
     auto started = coordinator_->Start(request);
     if (!started) {
         const Error e = started.TakeError();
@@ -512,12 +530,22 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
         return 3;
     }
 
-    // Wait while polling status; NFR-005 expects Recording within 5 s.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
+    // Wait for the Recording state; the requested duration counts from the
+    // FIRST Recording sample, so pipeline start-up (encoder probe, writer
+    // activation, capture bring-up) does not eat into the recorded content.
+    // NFR-005 expects Recording within 5 s; the wait itself is bounded for
+    // wedged starts.
+    const auto startWait = std::chrono::steady_clock::now();
     bool reachedRecording = false;
-    while (std::chrono::steady_clock::now() < deadline) {
+    auto recordStart = startWait;
+    while (std::chrono::steady_clock::now() <
+           startWait + std::chrono::seconds(15 + seconds)) {
         const StatusSnapshot snap = coordinator_->GetStatus();
-        if (snap.state == AppState::Recording) reachedRecording = true;
+        if (snap.state == AppState::Recording) {
+            reachedRecording = true;
+            recordStart = std::chrono::steady_clock::now();
+            break;
+        }
         if (snap.state == AppState::Ready || snap.state == AppState::Faulted) break;
         Sleep(200);
     }
@@ -528,6 +556,14 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
         (void)coordinator_->Stop(StopReason::User);
         ShutdownRuntime();
         return 4;
+    }
+    wprintf(L"[dev-record] recording active; holding for %d s\n", seconds);
+    fflush(stdout);
+
+    while (std::chrono::steady_clock::now() < recordStart + std::chrono::seconds(seconds)) {
+        const StatusSnapshot snap = coordinator_->GetStatus();
+        if (snap.state == AppState::Ready || snap.state == AppState::Faulted) break;
+        Sleep(200);
     }
 
     (void)coordinator_->Stop(StopReason::User);
@@ -656,7 +692,7 @@ int RunDevTestWindow(unsigned fps, int seconds, const std::wstring& title) {
 int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
                                     const std::wstring& outputDir,
                                     encoder::EncoderPreference encoderPreference,
-                                    bool captureAudio) {
+                                    bool captureAudio, encoder::WriterBackend backend) {
     wprintf(L"[dev-record-window] starting\n");
     fflush(stdout);
     AttachParentConsole();
@@ -702,8 +738,8 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
         return 21;
     }
 
-    const int code =
-        RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference, captureAudio);
+    const int code = RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference,
+                                  captureAudio, backend);
 
     PostMessageW(hwnd, WM_CLOSE, 0, 0);
     WaitForSingleObject(child, 5000);
@@ -724,6 +760,7 @@ struct DevRecordOptions {
     std::wstring preset = L"standard";
     std::wstring outputDir;
     vsr::encoder::EncoderPreference encoder = vsr::encoder::EncoderPreference::Auto;
+    vsr::encoder::WriterBackend backend = vsr::encoder::WriterBackend::Auto;
     bool audio = false;
 };
 
@@ -748,6 +785,9 @@ DevRecordOptions ParseDevRecordOptions(int argc, wchar_t* argv[]) {
             ++i;
         } else if (wcscmp(argv[i], L"--encoder") == 0) {
             o.encoder = vsr::encoder::EncoderPreferenceFromString(vsr::WideToUtf8(argv[i + 1]));
+            ++i;
+        } else if (wcscmp(argv[i], L"--backend") == 0) {
+            o.backend = vsr::encoder::WriterBackendFromString(vsr::WideToUtf8(argv[i + 1]));
             ++i;
         }
     }
@@ -777,7 +817,7 @@ int wmain(int argc, wchar_t* argv[]) {
     if (argc >= 2 && wcscmp(argv[1], L"--encode-test") == 0) {
         const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
         const int code = Application::Instance().RunEncodeTest(o.seconds, o.preset, o.outputDir,
-                                                               o.encoder);
+                                                               o.encoder, o.backend);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -791,7 +831,8 @@ int wmain(int argc, wchar_t* argv[]) {
     if (argc >= 2 && wcscmp(argv[1], L"--dev-record") == 0) {
         const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
         const int code = Application::Instance().RunDevRecord(o.seconds, o.preset, o.outputDir,
-                                                              nullptr, o.encoder, o.audio);
+                                                              nullptr, o.encoder, o.audio,
+                                                              o.backend);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -816,7 +857,7 @@ int wmain(int argc, wchar_t* argv[]) {
         const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
         const int code = Application::Instance().RunDevRecordWindow(o.seconds, o.preset,
                                                                     o.outputDir, o.encoder,
-                                                                    o.audio);
+                                                                    o.audio, o.backend);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }

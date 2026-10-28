@@ -24,6 +24,10 @@ struct Settings {
     // (validated on
     // load; anything else falls back to "auto"). Interpreted by the Encoder lib.
     std::string encoderPreference = "software";
+    // Recording backend: "auto" (ffmpeg when available, else Media
+    // Foundation) / "ffmpeg" / "mf". The ffmpeg backend bypasses the OS
+    // media stack whose encoder MFTs are unreliable on Insider builds.
+    std::string encoderBackend = "auto";
     bool showPreview = true;
     bool captureCursor = false;
     bool minimizeToTray = true;

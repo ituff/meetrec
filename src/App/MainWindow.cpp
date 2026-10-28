@@ -654,6 +654,14 @@ void MainWindow::OnStartClicked() {
         IsDlgButtonChecked(hwnd_, ID_CHK_CURSOR) == BST_CHECKED;
     request.captureAudio =
         IsDlgButtonChecked(hwnd_, ID_CHK_AUDIO) == BST_CHECKED;
+    {
+        // Recording backend from settings (no dedicated control; "auto"
+        // picks ffmpeg when ffmpeg.exe is available). A stale/invalid value
+        // falls back to Auto inside WriterBackendFromString.
+        SettingsStore store;
+        bool usedDefaults = false;
+        request.backend = encoder::WriterBackendFromString(store.Load(&usedDefaults).encoderBackend);
+    }
 
     auto result = coordinator_.Start(request);
     if (!result) {

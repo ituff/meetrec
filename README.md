@@ -78,10 +78,24 @@ VirtualScreenRecorder.exe --encode-test --seconds 10 --preset high --output D:\C
 ```
 
 Common flags for the recording modes: `--seconds N`, `--preset low|standard|high`,
-`--output DIR`, `--encoder auto|hardware|software` (candidate filtering; the default
-`auto` prefers hardware and fails over to the next candidate when activation fails),
-and `--audio` (opt-in system audio via WASAPI loopback -> AAC; automated runs are
-video-only by default).
+`--output DIR`, `--encoder auto|hardware|software` (candidate filtering for the
+Media Foundation backend), `--backend ffmpeg|mf|auto` (recording backend; `auto`
+prefers ffmpeg and falls back to Media Foundation), and `--audio` (opt-in system
+audio via WASAPI loopback -> AAC; automated runs are video-only by default).
+
+### Recording backends
+
+The default (`--backend auto`) encodes through an **ffmpeg.exe child process** when
+ffmpeg is available (`VSR_FFMPEG_PATH`, the application directory, `PATH`, or
+`C:fmpegin`), and through the Media Foundation sink writer otherwise. The ffmpeg
+backend bypasses the OS media stack (whose encoder MFTs are unreliable on some Insider
+builds) and is contained end-to-end: bounded pipe writes, bounded finalize, degrade to
+video-only when audio muxing fails.
+
+**Meeting-recording recommendation:** use the **standard** preset (1920x1080@30 - 60 fps
+buys nothing for slides or talking heads) and turn on the system-audio checkbox. The
+x264 path encodes with capped-CRF rate control (constant quality, preset bitrate as the
+ceiling), so static slides spend few bits and text stays sharp.
 
 `--self-check` prints OS build, the D3D11 adapter + feature level, capture availability, the
 probed H.264 encoder MFTs (hardware vs software, D3D11-aware), virtual display driver/monitor

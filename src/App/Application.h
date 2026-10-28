@@ -33,14 +33,16 @@ public:
     int RunDevRecord(int seconds, const std::wstring& presetName,
                      const std::wstring& outputDir, HWND targetWindow = nullptr,
                      encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
-                     bool captureAudio = false);
+                     bool captureAudio = false,
+                     encoder::WriterBackend backend = encoder::WriterBackend::Auto);
     // Driverless E2E entry: spawns a self-contained animated test window in a
     // child process, records it through the full capture pipeline, then closes
     // the child. Exit 0 on a finalized MP4.
     int RunDevRecordWindow(int seconds, const std::wstring& presetName,
                            const std::wstring& outputDir,
                            encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
-                           bool captureAudio = false);
+                           bool captureAudio = false,
+                           encoder::WriterBackend backend = encoder::WriterBackend::Auto);
     // Prints a capability report (OS, GPU, capture, encoder, virtual display,
     // topology, settings) and exits. Support/diagnostics tool; satisfies the
     // T020/T030 "diagnostic output" verification items. Never mutates state.
@@ -52,7 +54,8 @@ public:
     // path via the process exit log; exit 0 on a finalized MP4.
     int RunEncodeTest(int seconds, const std::wstring& presetName,
                       const std::wstring& outputDir,
-                      encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto);
+                      encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
+                      encoder::WriterBackend backend = encoder::WriterBackend::Auto);
 
     // "Windows 11 build 26100" style string for diagnostics.
     static std::wstring OsBuildString();

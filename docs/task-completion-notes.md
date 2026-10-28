@@ -953,3 +953,79 @@ Full harness, `--audio` AAC verification (play a looped tone during `--dev-recor
 --audio`), the counter-display E2E check, and the long soak all need a healthy encoder
 session; at session close the machine fails the consumption gate 10/10. Post-reboot sequence:
 IntegrationTests.ps1 -Configuration Release, then the audio + soak runs via retry-app.ps1.
+
+## Session 12 addendum (Oct 28-29): ffmpeg recording backend + meeting-oriented tuning
+
+Product decision (user): replace the Media Foundation encode path with an **ffmpeg.exe
+child-process backend**. MF encoder MFTs are unusable on this Insider build (session 12
+findings); the user's machine has ffmpeg at C:\ffmpeg.
+
+### Architecture (implemented)
+
+- `Encoder/IVideoWriter` — backend-neutral recording-sink interface (SubmitFrame NV12 GPU
+  texture / WriteAudioSample PCM / QueueHealth / Finalize).
+- `Encoder/FfmpegWriter` — spawns ffmpeg.exe children over named pipes:
+  **one child per input** (video rawvideo->libx264->MP4; audio s16le->AAC->M4A), then
+  Finalize remuxes with a third `-c copy` invocation. A single ffmpeg fed by TWO raw pipes
+  stalls inside its interleaved demuxer — verified against builds N-121437 (2025-10) AND
+  N-128121 (2026-10-27, downloaded via proxy for the comparison): both stall, so updating
+  ffmpeg does NOT fix it; one-input-per-child is the reliable shape and matches the proven
+  single-pipe configuration.
+- `Encoder/VideoWriterFactory` — Settings.encoderBackend ("auto" | "ffmpeg" | "mf"); Auto
+  resolves to ffmpeg when ffmpeg.exe is found (VSR_FFMPEG_PATH, app dir, PATH, C:\ffmpeg),
+  else Media Foundation. CLI: `--backend ffmpeg|mf|auto`.
+- Real-time **pacer thread** owns all pipe writes: video ticks at the preset rate repeating
+  the latest frame (CFR container; capture under-delivery becomes duplicates), audio drains
+  a PCM FIFO with silence padding. SubmitFrame only swaps the latest-frame buffer, so
+  capture never blocks on encoder backpressure. Waitable timers misbehaved on this build
+  (stuck signaled) - pacing is sleep-to-2ms + spin, deterministic everywhere.
+- Bounded by construction: overlapped pipe writes with a 10 s deadline; Finalize stops the
+  pacer, EOFs the pipes, waits each child 8 s (under the coordinator's 10 s bounded stop),
+  remuxes with a 20 s deadline; any failure degrades to the video-only intermediate instead
+  of losing the recording. Children inherit one stderr pipe drained by a dedicated thread.
+- Encoder selection: libx264 default; h264_qsv is OPT-IN via VSR_FFMPEG_ALLOW_QSV=1 (it
+  passes a 3-frame probe on this machine but degrades badly in sustained sessions - the
+  same Intel media-driver disease as the MF MFTs); VSR_FFMPEG_VENCODER overrides outright.
+- Coordinator: WGC window-capture repair - the Session-9 disease (frame pool delivers one
+  blank frame or nothing) now triggers an automatic in-session rebuild on the GDI backend
+  (captured-count frozen 2.5 s => rebuild, same queue). The consume loop also surfaces
+  writer QueueHealth on a 3 s cadence.
+- RunDevRecord duration semantics: `--seconds N` now counts from the FIRST Recording
+  sample (pipeline start-up no longer eats into the content; the harness duration check
+  passes as designed).
+
+### Meeting-oriented encode tuning (user request: record meetings)
+
+- Frame rate: **standard preset 1080p30 is the meeting setting**; the pacer now delivers the
+  full nominal rate (verified 30 fps over a 30 s run and 60 fps at high). 60 fps (high
+  preset) stays available but buys nothing for slides/talking heads.
+- Bitrate: libx264 uses **capped CRF** (`-crf 20 -maxrate <preset bps> -bufsize 2x`) instead
+  of pure ABR: shared text/slides stay sharp at CRF 20, static stretches spend very few
+  bits, scene changes burst to the preset ceiling. Measured: a 30 s mostly-static 1080p30
+  recording landed at ~21 kbps average (84 KB) where ABR would spend the full 6 Mbps
+  (~22 MB); real meeting content lands between, always capped. Hardware path keeps ABR
+  (QSV rate control), MF backend unchanged.
+- Audio for meetings: enable the "system audio" checkbox (WASAPI loopback -> AAC 128k);
+  verified E2E with a looping tone - video 13.4 s / audio 13.5 s aligned, decodable.
+
+### Verification
+
+- Unit tests 83/83 (backend string round-trip, three argument builders).
+- E2E on this machine: encode-test low/standard/high VALID (exact frame counts, durations
+  within tolerance); record-window standard/high PASS in the harness; audio E2E aligned.
+- Known cosmetic: CFR containers include a ~1-1.5 s frozen-frame tail (stop->finalize
+  window); duration stays inside the harness ±3 s tolerance.
+- encode-high duration overrun fixed: the synthetic generator repainted the full 1080p
+  gradient per frame on the CPU and could not sustain 60 fps, so the paced feed fell
+  behind wall time and the CFR container honestly recorded the overrun (17.5 s for a
+  10 s request). The gradient is now rendered once and only the moving block is
+  repainted per frame; encode-high completes at 10.4 s.
+
+### Probes/scripts added under artifacts/
+
+mfenc_probe.cpp (sink-writer statistics), mftpump_probe.cpp (raw async-MFT pump),
+run-app.ps1 (output capture + hard timeout + real exit code), retry-app.ps1
+(retry-until-healthy loop), pipe-eof-test.ps1 / dual-pipe-test.ps1 / run-pipe-test.ps1 /
+run-new-pipe.ps1 (the two-pipe stall replication, old vs new ffmpeg), audio-e2e.ps1
+(tone loop + --audio record), elevate-gpu-restart.ps1 (pnputil device restart - did NOT
+clear the MF disease; reboot is the documented remedy).

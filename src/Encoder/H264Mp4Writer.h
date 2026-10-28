@@ -29,13 +29,14 @@
 #include <Infrastructure/Error.h>
 #include <Infrastructure/Result.h>
 #include "EncoderProbe.h"
+#include "IVideoWriter.h"
 #include <Capture/GraphicsDevice.h>
 #include "AudioCapture.h"
 #include "VideoPreset.h"
 
 namespace vsr::encoder {
 
-class H264Mp4Writer {
+class H264Mp4Writer : public IVideoWriter {
 public:
     // Creates the writer for a `.partial.mp4` path. Fails BEFORE creating any
     // usable recording when no compliant encoder path can be activated
@@ -52,19 +53,20 @@ public:
 
     // Submits one NV12 frame with 100ns-unit timestamp and duration.
     Result<void> SubmitFrame(ID3D11Texture2D* nv12Frame, std::int64_t time100Ns,
-                             std::int64_t duration100Ns);
+                             std::int64_t duration100Ns) override;
 
     // Drains pending samples, finalizes the sink, closes the file. Idempotent
     // (FR-073): a second call reports the first result without side effects.
-    Result<void> Finalize();
+    Result<void> Finalize() override;
 
     // Submits interleaved 16-bit PCM for the audio stream enabled at Create.
     Result<void> WriteAudioSample(const std::int16_t* pcm, std::size_t frames,
-                                  std::int64_t time100Ns, std::int64_t duration100Ns);
+                                  std::int64_t time100Ns,
+                                  std::int64_t duration100Ns) override;
 
-    bool HasAudio() const noexcept { return audioEnabled_; }
-    bool IsFinalized() const noexcept { return finalized_.load(); }
-    std::uint64_t WrittenFrames() const noexcept { return writtenFrames_.load(); }
+    bool HasAudio() const noexcept override { return audioEnabled_; }
+    bool IsFinalized() const noexcept override { return finalized_.load(); }
+    std::uint64_t WrittenFrames() const noexcept override { return writtenFrames_.load(); }
     bool UsingGpuSamples() const noexcept { return useGpuSamples_; }
 
     // Watchdog hook: reports EncoderWriteFailed when the encoder MFT has
@@ -75,7 +77,7 @@ public:
     // random on stalled drivers and deterministically on broken software
     // encoder MFTs; the queue byte count stays deceptively empty there).
     // Cheap; call on a slow cadence from the consume loop.
-    Result<void> QueueHealth();
+    Result<void> QueueHealth() override;
 
 private:
     H264Mp4Writer() = default;

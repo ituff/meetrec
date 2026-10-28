@@ -1,6 +1,8 @@
 // Encoder policy and preset tests (T030, T031): deterministic encoder
 // selection (FR-062) and spec preset table (spec.md §7.3, FR-051).
 #include "TestFramework.h"
+#include <Encoder/VideoWriterFactory.h>
+#include <Encoder/FfmpegWriter.h>
 #include <Encoder/EncoderProbe.h>
 #include <Encoder/VideoPreset.h>
 
@@ -182,4 +184,66 @@ VSR_TEST(EncoderPolicy, ExcludeNameSkipsTheFailedCandidate) {
     auto unaffected = SelectEncoder({sw, hw}, EncoderPreference::Auto, L"not-in-list");
     VSR_CHECK(unaffected.IsOk());
     VSR_CHECK(unaffected.Value().name == L"hw-amd");
+}
+
+VSR_TEST(FfmpegBackend, BackendStringRoundTrip) {
+    VSR_CHECK(vsr::encoder::WriterBackendFromString("ffmpeg") ==
+              vsr::encoder::WriterBackend::Ffmpeg);
+    VSR_CHECK(vsr::encoder::WriterBackendFromString("mf") ==
+              vsr::encoder::WriterBackend::MediaFoundation);
+    VSR_CHECK(vsr::encoder::WriterBackendFromString("auto") ==
+              vsr::encoder::WriterBackend::Auto);
+    VSR_CHECK(vsr::encoder::WriterBackendFromString("garbage") ==
+              vsr::encoder::WriterBackend::Auto);
+    VSR_CHECK(std::string(vsr::encoder::ToString(vsr::encoder::WriterBackend::Ffmpeg)) ==
+              "ffmpeg");
+}
+
+VSR_TEST(FfmpegBackend, CommandLineCarriesPipelineParameters) {
+    vsr::encoder::PresetParams params{};
+    params.width = 1920;
+    params.height = 1080;
+    params.fps = 30;
+    params.bitrateBps = 6'000'000;
+    vsr::encoder::AudioFormat audio{};
+    audio.sampleRate = 44100;
+    audio.channels = 2;
+
+    // Video child: exactly ONE input (the rawvideo pipe) - a second raw pipe
+    // into the same ffmpeg stalls its interleaved demuxer.
+    const std::wstring videoArgs = vsr::encoder::FfmpegWriter::BuildVideoArguments(
+        params, L"' + pipe_video + '", L"' + out_vid + '");
+    VSR_CHECK(videoArgs.find(L"-f rawvideo") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-pix_fmt nv12") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-video_size 1920x1080") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-framerate 30") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"' + pipe_video + '") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-c:v libx264") != std::wstring::npos);
+    // Meeting-oriented capped CRF: quality floor + preset ceiling.
+    VSR_CHECK(videoArgs.find(L"-crf 20") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-maxrate 6000000") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-bufsize 12000000") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-b:v") == std::wstring::npos); // no ABR on x264
+    VSR_CHECK(videoArgs.find(L"-g 60") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-f mp4") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"pipe") == videoArgs.rfind(L"pipe")); // one pipe input only
+
+    // Audio child: one s16le pipe input -> AAC in an m4a container.
+    const std::wstring audioArgs = vsr::encoder::FfmpegWriter::BuildAudioArguments(
+        audio, L"' + pipe_audio + '", L"' + out_m4a + '");
+    VSR_CHECK(audioArgs.find(L"-f s16le") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"-ar 44100") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"-ac 2") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"' + pipe_audio + '") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"-c:a aac -b:a 128k") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"-f ipod") != std::wstring::npos);
+
+    // Finalize remux: stream copy of both intermediates into the MP4.
+    const std::wstring muxArgs = vsr::encoder::FfmpegWriter::BuildMuxArguments(
+        L"' + out_vid + '", L"' + out_m4a + '", L"' + out_rec + '");
+    VSR_CHECK(muxArgs.find(L"-c copy") != std::wstring::npos);
+    VSR_CHECK(muxArgs.find(L"' + out_vid + '") != std::wstring::npos);
+    VSR_CHECK(muxArgs.find(L"' + out_m4a + '") != std::wstring::npos);
+    VSR_CHECK(muxArgs.rfind(L"-f mp4") != std::wstring::npos);
+    VSR_CHECK(muxArgs.find(L"' + out_rec + '") != std::wstring::npos);
 }

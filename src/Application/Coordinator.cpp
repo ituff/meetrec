@@ -6,8 +6,9 @@
 #include <Capture/GdiCaptureSession.h>
 #include <shlobj.h>
 #include <Encoder/EncoderProbe.h>
-#include <Encoder/H264Mp4Writer.h>
+#include <Encoder/FfmpegWriter.h>
 #include <Encoder/VideoConverter.h>
+#include <Encoder/VideoWriterFactory.h>
 #include <Infrastructure/Guid.h>
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Strings.h>
@@ -23,9 +24,10 @@ using capture::CapturedFrame;
 using capture::GraphicsDevice;
 using capture::CaptureSession;
 using encoder::EncoderCapability;
-using encoder::H264Mp4Writer;
+using encoder::IVideoWriter;
 using encoder::PresetParams;
 using encoder::VideoConverter;
+using encoder::WriterBackend;
 using window::SavedPlacement;
 using window::WindowPlacementManager;
 
@@ -136,6 +138,10 @@ Result<void> Coordinator::Start(const StartRecordingRequest& request) {
     lastFps_.store(0.0);
     fpsSampleEncoded_ = 0;
     fpsSampleTimeMs_ = 0;
+    usingWgcWindowCapture_ = false;
+    captureFallbackTried_ = false;
+    lastSeenCapturedCount_ = 0;
+    lastCapturedChangeMs_ = 0;
 
     // Fast validations synchronously so the UI gets immediate feedback.
     DWORD targetPid = 0;
@@ -492,12 +498,23 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     finalPath_ = plan.Value().finalPath;
 
     // 3. Encoder availability BEFORE any capture or file creation (FR-063).
+    // The ffmpeg backend does not use OS encoder MFTs, so a failed probe
+    // must not block it; the MF probe result is still used for the
+    // MF-backend fallback selection below.
+    const WriterBackend backend = encoder::ResolveBackend(request.backend);
     auto probe = encoder::ProbeEncoders(request.encoderPreference);
-    if (!probe || stopNow()) {
-        if (!probe) PublishError(probe.TakeError());
+    if (!probe && backend != WriterBackend::Ffmpeg) {
+        if (stopNow()) return false;
+        PublishError(probe.TakeError());
         return false;
     }
-    encoderCap_ = std::make_unique<EncoderCapability>(probe.Value().selected);
+    if (probe) {
+        encoderCap_ = std::make_unique<EncoderCapability>(probe.Value().selected);
+    } else {
+        EncoderCapability ffmpegCap{};
+        ffmpegCap.name = L"ffmpeg (libx264)";
+        encoderCap_ = std::make_unique<EncoderCapability>(ffmpegCap);
+    }
 
     // 4. Graphics device (FR-041).
     auto deviceResult = GraphicsDevice::Create();
@@ -550,6 +567,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     // PrintWindow backend is used there instead.
     queue_ = std::make_unique<BoundedFrameQueue>(kQueueCapacity);
     const bool remoteSession = GetSystemMetrics(SM_REMOTESESSION) != 0;
+    usingWgcWindowCapture_ = windowTarget && !remoteSession;
     using SessionResult = Result<std::unique_ptr<capture::ICaptureSession>>;
     SessionResult sessionResult = SessionResult{Error{ErrorCode::CaptureInitFailed,
                                                       L"", L"capture session not started"}};
@@ -608,14 +626,14 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
 
     const encoder::AudioFormat* audioFormatArg =
         request.captureAudio && audioRate_ > 0 ? &audioFormat_ : nullptr;
-    auto writerResult =
-        H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_, audioFormatArg);
-    if (!writerResult) {
-        // Encoder-fallback retry: a candidate can pass the capability probe
-        // yet fail at activation or the consumption gate (per-session
-        // hardware MFT stalls, software MFTs that never encode on some OS
-        // builds). Retry once with the next best candidate under the same
-        // preference before failing the session.
+    auto writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
+                                              partialPath_, audioFormatArg);
+    if (!writerResult && backend == WriterBackend::MediaFoundation && probe) {
+        // Encoder-fallback retry (MF backend only): a candidate can pass the
+        // capability probe yet fail at activation or the consumption gate
+        // (per-session hardware MFT stalls, software MFTs that never encode
+        // on some OS builds). Retry once with the next best candidate under
+        // the same preference before failing the session.
         const Error firstError = writerResult.TakeError();
         auto alternative =
             encoder::SelectEncoder(probe.Value().candidates, request.encoderPreference,
@@ -628,10 +646,10 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
                           {"retry", WideToUtf8(alternative.Value().name)}});
             DeleteFileW(partialPath_.c_str());
             encoderCap_ = std::make_unique<EncoderCapability>(alternative.Value());
-            writerResult = H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_,
-                                                 audioFormatArg);
+            writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
+                                                 partialPath_, audioFormatArg);
         } else {
-            writerResult = Result<std::unique_ptr<H264Mp4Writer>>(firstError);
+            writerResult = Result<std::unique_ptr<IVideoWriter>>(firstError);
         }
     }
     if (!writerResult) {
@@ -708,6 +726,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         std::chrono::duration_cast<std::chrono::milliseconds>(clock_->MonotonicNow()).count();
     nextDiskCheckMs_ = nowMs + 5'000;
     nextTargetCheckMs_ = nowMs + 500;
+    lastCapturedChangeMs_ = nowMs; // repair clock starts at Recording
     encodedBytes_ = 0;
     return true;
 }
@@ -849,6 +868,62 @@ void Coordinator::ConsumeLoop() {
                 PublishError(disk.TakeError());
                 SetStopRequested(StopReason::DiskLow);
                 break;
+            }
+        }
+
+        // Writer health (NFR-007/NFR-014): the backends latch internal
+        // failures (stalled encoder MFT, dead ffmpeg feeder); surfacing them
+        // here stops the session safely instead of recording nothing.
+        if (nowMs >= nextQueueCheckMs_) {
+            nextQueueCheckMs_ = nowMs + 3'000;
+            if (writer_ != nullptr) {
+                auto health = writer_->QueueHealth();
+                if (!health) {
+                    PublishError(health.TakeError());
+                    SetStopRequested(StopReason::WriteFailed);
+                    break;
+                }
+            }
+        }
+
+        // WGC window-capture repair: the documented failure mode is a frame
+        // pool that delivers a single blank frame (or nothing) and never
+        // updates. When the captured count is frozen past the start deadline,
+        // the session is rebuilt on the GDI PrintWindow backend (same queue;
+        // the recording continues with the documented fallback).
+        const auto countersNow = queue_->Counters();
+        if (countersNow.captured != lastSeenCapturedCount_) {
+            lastSeenCapturedCount_ = countersNow.captured;
+            lastCapturedChangeMs_ = nowMs;
+        }
+        if (usingWgcWindowCapture_ && !captureFallbackTried_ &&
+            nowMs - lastCapturedChangeMs_ >= 2'500) {
+            captureFallbackTried_ = true;
+            {
+                HWND hwnd = nullptr;
+                {
+                    std::lock_guard<std::mutex> lock(stateMutex_);
+                    hwnd = snapshot_.targetHwnd;
+                }
+                log::Warning("Coordinator", "WGC_WINDOW_CAPTURE_IDLE", correlationId_,
+                             L"WGC window capture stopped producing frames; rebuilding the "
+                             L"session on the GDI backend.",
+                             {{"captured", std::to_string(countersNow.captured)}});
+                session_->Stop();
+                auto gdi = capture::GdiCaptureSession::Start(
+                    *device_, hwnd, GetPresetParams(preset_).fps, *queue_, *clock_);
+                if (gdi) {
+                    session_ = std::move(gdi.Value());
+                    session_->SetCursorCaptureEnabled(captureCursor_);
+                    usingWgcWindowCapture_ = false;
+                    log::Warning("Coordinator", "WGC_TO_GDI_FALLBACK", correlationId_,
+                                 L"Window capture continues on the GDI backend.");
+                } else {
+                    Error e = RollbackError(gdi.TakeError(), "gdi capture repair");
+                    PublishError(e);
+                    SetStopRequested(StopReason::DeviceLost);
+                    break;
+                }
             }
         }
 

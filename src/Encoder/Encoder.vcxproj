@@ -27,6 +27,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="EncoderProbe.cpp" />
+    <ClCompile Include="FfmpegWriter.cpp" />
+    <ClCompile Include="VideoWriterFactory.cpp" />
     <ClCompile Include="H264Mp4Writer.cpp" />
     <ClCompile Include="AudioCapture.cpp" />
     <ClCompile Include="VideoConverter.cpp" />
@@ -34,6 +36,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EncoderProbe.h" />
+    <ClInclude Include="FfmpegWriter.h" />
+    <ClInclude Include="IVideoWriter.h" />
+    <ClInclude Include="VideoWriterFactory.h" />
     <ClInclude Include="H264Mp4Writer.h" />
     <ClInclude Include="AudioCapture.h" />
     <ClInclude Include="VideoConverter.h" />

@@ -87,6 +87,19 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         }
     }
     {
+        const json::Value& v = root.Find("encoderBackend");
+        if (v.GetType() == json::Type::String) {
+            const std::string value = v.AsString();
+            if (value == "auto" || value == "ffmpeg" || value == "mf") {
+                settings.encoderBackend = value;
+            } else {
+                anyFallback = true;
+            }
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("recordSystemAudio");
         if (v.GetType() == json::Type::Boolean) settings.recordSystemAudio = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
@@ -121,6 +134,7 @@ Settings SettingsStore::Load(bool* usedDefaults) {
     for (const auto& kv : root.AsObject()) {
         const bool known = kv.first == "schemaVersion" || kv.first == "outputDirectory" ||
                            kv.first == "encoderPreference" ||
+                           kv.first == "encoderBackend" ||
                            kv.first == "qualityPreset" || kv.first == "showPreview" ||
                            kv.first == "captureCursor" || kv.first == "minimizeToTray" ||
                            kv.first == "restoreTargetWindow" ||
@@ -143,6 +157,7 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("outputDirectory", json::Value(WideToUtf8(settings.outputDirectory)));
     root.Set("qualityPreset", json::Value(ToString(settings.preset)));
     root.Set("encoderPreference", json::Value(settings.encoderPreference));
+    root.Set("encoderBackend", json::Value(settings.encoderBackend));
     root.Set("showPreview", json::Value(settings.showPreview));
     root.Set("captureCursor", json::Value(settings.captureCursor));
     root.Set("minimizeToTray", json::Value(settings.minimizeToTray));
