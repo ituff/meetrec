@@ -30,9 +30,11 @@ const char* ToString(EncoderPreference preference) noexcept {
 }
 
 Result<EncoderCapability> SelectEncoder(const std::vector<EncoderCapability>& candidates,
-                                        EncoderPreference preference) {
+                                        EncoderPreference preference,
+                                        const std::wstring& excludeName) {
     const EncoderCapability* best = nullptr;
     for (const auto& c : candidates) {
+        if (!excludeName.empty() && c.name == excludeName) continue;
         if (!c.acceptsNv12 || !c.producesH264) continue;
         if (preference == EncoderPreference::Hardware && !c.hardware) continue;
         if (preference == EncoderPreference::Software && c.hardware) continue;
@@ -67,6 +69,93 @@ Result<EncoderCapability> SelectEncoder(const std::vector<EncoderCapability>& ca
 }
 
 namespace {
+
+// Stream test: configures NV12 -> H264 on an (async) transform, feeds ONE
+// black frame, drains, and requires the transform to emit at least one output
+// sample. Type negotiation is not enough codec identity on this OS build:
+// async hardware MFTs enumerate every codec's format list before an input
+// type is set AND accept foreign output subtypes at configuration time
+// (observed: "Intel Hardware VP9 Encoder MFT" accepting H264 negotiation and
+// then silently encoding nothing). Bounded: 3 s without output fails.
+bool LiveEncodesNv12ToH264(IMFTransform* transform) {
+    Microsoft::WRL::ComPtr<IMFAttributes> attrs;
+    if (SUCCEEDED(transform->GetAttributes(&attrs))) {
+        UINT32 isAsync = 0;
+        if (SUCCEEDED(attrs->GetUINT32(MF_TRANSFORM_ASYNC, &isAsync)) && isAsync) {
+            attrs->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE);
+        }
+    }
+    Microsoft::WRL::ComPtr<IMFMediaType> outType;
+    Microsoft::WRL::ComPtr<IMFMediaType> inType;
+    if (FAILED(MFCreateMediaType(&outType)) || FAILED(MFCreateMediaType(&inType))) return false;
+    outType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+    outType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+    outType->SetUINT32(MF_MT_AVG_BITRATE, 2'000'000);
+    MFSetAttributeSize(outType.Get(), MF_MT_FRAME_SIZE, 320, 240);
+    MFSetAttributeRatio(outType.Get(), MF_MT_FRAME_RATE, 30, 1);
+    MFSetAttributeRatio(outType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+    outType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+    inType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+    inType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
+    MFSetAttributeSize(inType.Get(), MF_MT_FRAME_SIZE, 320, 240);
+    MFSetAttributeRatio(inType.Get(), MF_MT_FRAME_RATE, 30, 1);
+    MFSetAttributeRatio(inType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+    inType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+    if (FAILED(transform->SetOutputType(0, outType.Get(), 0))) return false;
+    if (FAILED(transform->SetInputType(0, inType.Get(), 0))) return false;
+
+    Microsoft::WRL::ComPtr<IMFMediaEventGenerator> events;
+    if (FAILED(transform->QueryInterface(IID_PPV_ARGS(&events)))) return false;
+    transform->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
+    transform->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
+
+    bool fed = false;
+    bool draining = false;
+    UINT32 produced = 0;
+    const ULONGLONG deadline = GetTickCount64() + 3'000;
+    for (;;) {
+        if (GetTickCount64() >= deadline) break;
+        Microsoft::WRL::ComPtr<IMFMediaEvent> ev;
+        if (events->GetEvent(MF_EVENT_FLAG_NO_WAIT, &ev) != S_OK) {
+            Sleep(10);
+            continue;
+        }
+        MediaEventType type = MEUnknown;
+        ev->GetType(&type);
+        if (type == METransformNeedInput && !fed) {
+            const DWORD luma = 320 * 240;
+            Microsoft::WRL::ComPtr<IMFMediaBuffer> buf;
+            if (FAILED(MFCreateMemoryBuffer(luma + luma / 2, &buf))) break;
+            BYTE* dst = nullptr;
+            if (SUCCEEDED(buf->Lock(&dst, nullptr, nullptr))) {
+                memset(dst, 16, luma);
+                memset(dst + luma, 128, luma / 2);
+                buf->Unlock();
+                buf->SetCurrentLength(luma + luma / 2);
+            }
+            Microsoft::WRL::ComPtr<IMFSample> sample;
+            if (FAILED(MFCreateSample(&sample))) break;
+            sample->AddBuffer(buf.Get());
+            sample->SetSampleTime(0);
+            sample->SetSampleDuration(10'000'000 / 30);
+            if (FAILED(transform->ProcessInput(0, sample.Get(), 0))) break;
+            fed = true;
+        } else if (type == METransformNeedInput && fed && !draining) {
+            transform->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
+            draining = true;
+        } else if (type == METransformHaveOutput) {
+            MFT_OUTPUT_DATA_BUFFER out = {};
+            out.dwStreamID = 0;
+            DWORD status = 0;
+            if (SUCCEEDED(transform->ProcessOutput(0, 1, &out, &status))) ++produced;
+            if (out.pEvents != nullptr) out.pEvents->Release();
+        } else if (type == METransformDrainComplete) {
+            break;
+        }
+    }
+    transform->ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+    return produced >= 1;
+}
 
 // Reads capability flags from an MFT activation object.
 EncoderCapability InspectCandidate(IMFActivate* activate) {
@@ -136,9 +225,11 @@ EncoderCapability InspectCandidate(IMFActivate* activate) {
             }
             type->Release();
         }
-        if (sawOutAny) {
-            cap.producesH264 = sawH264;
-        } else if (!cap.hardware) {
+        if (sawH264) {
+            // Ambiguous static match: prove codec identity by a live stream
+            // test (see LiveEncodesNv12ToH264).
+            cap.producesH264 = LiveEncodesNv12ToH264(transform.Get());
+        } else if (!sawOutAny && !cap.hardware) {
             // No static output types and not a known hardware MFT: verify
             // H.264 by live negotiation, otherwise Store-hosted non-video
             // "encoders" (HEIF image extensions and friends) pass.
@@ -157,7 +248,8 @@ EncoderCapability InspectCandidate(IMFActivate* activate) {
 
 } // namespace
 
-Result<EncoderProbeResult> ProbeEncoders(EncoderPreference preference) {
+Result<EncoderProbeResult> ProbeEncoders(EncoderPreference preference,
+                                         const std::wstring& excludeName) {
     EncoderProbeResult result;
 
     IMFActivate** activates = nullptr;
@@ -181,7 +273,7 @@ Result<EncoderProbeResult> ProbeEncoders(EncoderPreference preference) {
     }
     CoTaskMemFree(activates);
 
-    auto selected = SelectEncoder(result.candidates, preference);
+    auto selected = SelectEncoder(result.candidates, preference, excludeName);
     if (!selected) return selected.TakeError();
     result.selected = selected.Value();
     result.available = true;

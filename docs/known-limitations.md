@@ -35,7 +35,11 @@ release notes sections with the same purpose.
 
 ## Recording behavior
 
-- **No audio** in MVP 1.0 (FR-061).
+- **System audio is opt-in** (Settings checkbox or `--audio` on the dev CLI; default off).
+  WASAPI loopback captures the default render endpoint, so nothing is captured while no
+  application is playing audio; a silent AAC track is written in that case. AAC finalization
+  has been observed to hang on Windows Insider builds (see the encoder section below), which
+  is why audio stays opt-in until verified on retail builds.
 - Recordings pause correctly (paused time is excluded from the output, AC-005), but frames are
   not buffered during pause: what happens on the virtual display during a pause is not recorded
   and cannot be recovered.
@@ -54,6 +58,25 @@ release notes sections with the same purpose.
   frames at wall-clock rate only. A hard-stalled encoder for the whole session would
   accumulate memory in the media pipeline — monitored via the AC-008 two-hour soak on
   reference machines.
+
+## Encoder media stack (Windows Insider build 26200 findings)
+
+Recording verification on Insider build 26200 machines exposed encoder-MFT failure modes the
+recorder now detects and contains (see `docs/task-completion-notes.md`, session 12):
+
+- **Per-session encoder stalls**: a hardware encoder MFT session may accept samples without
+  ever encoding them, wedge in `WriteSample`, or hang in `Finalize` — with the odds changing
+  per process. The recorder gates every session start on the encoder actually consuming the
+  priming frame, fails over to the next encoder candidate, stops mid-recording when the
+  encoded-count freezes while frames keep arriving, and runs an independent watchdog thread
+  for the wedged-`WriteSample` case. A stalled session therefore ends in a bounded,
+  process-surviving stop with the partial file kept — not a hang.
+- **The Microsoft software H.264 encoder was observed deterministically dead** on one 26200
+  machine (zero encoded samples ever; `MF_E_SINK_NO_SAMPLES_PROCESSED` at finalize). The
+  "software" encoder preference is not a guaranteed escape hatch on Insider builds.
+- These failures survived a display-adapter restart; only a reboot restored healthy encoder
+  sessions on the affected machine. Sustained-recording evidence (soaks) should be collected
+  shortly after a reboot on machines showing this family of behavior.
 
 ## Environment
 

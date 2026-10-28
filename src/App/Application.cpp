@@ -63,11 +63,19 @@ void ShowStartupError(const std::wstring& text) {
 }
 
 void AttachParentConsole() {
+    // Never clobber an existing stdout redirection (pipe or file): terminals
+    // and automation capture the CLI output through it. Only attach to the
+    // parent console when the GUI subsystem left stdout unusable (a plain
+    // double-click/console launch).
+    const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (out != nullptr && out != INVALID_HANDLE_VALUE && GetFileType(out) != FILE_TYPE_CHAR) {
+        return;
+    }
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        FILE* out = nullptr;
-        FILE* err = nullptr;
-        (void)freopen_s(&out, "CONOUT$", "w", stdout);
-        (void)freopen_s(&err, "CONOUT$", "w", stderr);
+        FILE* outFile = nullptr;
+        FILE* errFile = nullptr;
+        (void)freopen_s(&outFile, "CONOUT$", "w", stdout);
+        (void)freopen_s(&errFile, "CONOUT$", "w", stderr);
     }
 }
 
@@ -454,7 +462,8 @@ int Application::RunInteractive() {
 
 int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                               const std::wstring& outputDir, HWND targetWindow,
-                              encoder::EncoderPreference encoderPreference) {
+                              encoder::EncoderPreference encoderPreference,
+                              bool captureAudio) {
     // T040: command-line development entry point recording the virtual
     // display for a fixed duration, without UI or window movement.
     AttachParentConsole();
@@ -464,9 +473,9 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
 
     const encoder::QualityPreset preset = encoder::FromString(WideToUtf8(presetName).c_str());
     const encoder::PresetParams params = encoder::GetPresetParams(preset);
-    wprintf(L"[dev-record] preset=%s (%ux%u@%u, %u bps), %d seconds\n",
+    wprintf(L"[dev-record] preset=%s (%ux%u@%u, %u bps), %d seconds, audio=%s\n",
             Utf8ToWide(encoder::ToString(preset)).c_str(), params.width, params.height,
-            params.fps, params.bitrateBps, seconds);
+            params.fps, params.bitrateBps, seconds, captureAudio ? L"on" : L"off");
 
     // Window targets record driverless; only the display-only dev path needs
     // the virtual display to be up.
@@ -491,8 +500,10 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     request.outputDirectory = outputDir;
     request.preset = preset;
     request.encoderPreference = encoderPreference;
-    // Audio is opt-in (GUI checkbox): the MS AAC encoder finalize hangs on
-    // some Insider builds, so automated runs stay video-only by default.
+    // Audio stays opt-in (--audio / GUI checkbox): the MS AAC encoder
+    // finalize hung on some Insider builds, so automated runs are video-only
+    // by default and the failure mode degrades to video-only when present.
+    request.captureAudio = captureAudio;
     auto started = coordinator_->Start(request);
     if (!started) {
         const Error e = started.TakeError();
@@ -644,7 +655,8 @@ int RunDevTestWindow(unsigned fps, int seconds, const std::wstring& title) {
 
 int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
                                     const std::wstring& outputDir,
-                                    encoder::EncoderPreference encoderPreference) {
+                                    encoder::EncoderPreference encoderPreference,
+                                    bool captureAudio) {
     wprintf(L"[dev-record-window] starting\n");
     fflush(stdout);
     AttachParentConsole();
@@ -690,7 +702,8 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
         return 21;
     }
 
-    const int code = RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference);
+    const int code =
+        RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference, captureAudio);
 
     PostMessageW(hwnd, WM_CLOSE, 0, 0);
     WaitForSingleObject(child, 5000);
@@ -703,6 +716,45 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
+
+namespace {
+
+struct DevRecordOptions {
+    int seconds = 10;
+    std::wstring preset = L"standard";
+    std::wstring outputDir;
+    vsr::encoder::EncoderPreference encoder = vsr::encoder::EncoderPreference::Auto;
+    bool audio = false;
+};
+
+// Shared parser for the recording CLI modes. `--audio` is a bare boolean
+// flag; the rest are name/value pairs and tolerate any order.
+DevRecordOptions ParseDevRecordOptions(int argc, wchar_t* argv[]) {
+    DevRecordOptions o;
+    for (int i = 2; i < argc; ++i) {
+        if (wcscmp(argv[i], L"--audio") == 0) {
+            o.audio = true;
+            continue;
+        }
+        if (i + 1 >= argc) break;
+        if (wcscmp(argv[i], L"--seconds") == 0) {
+            o.seconds = _wtoi(argv[i + 1]);
+            ++i;
+        } else if (wcscmp(argv[i], L"--preset") == 0) {
+            o.preset = argv[i + 1];
+            ++i;
+        } else if (wcscmp(argv[i], L"--output") == 0) {
+            o.outputDir = argv[i + 1];
+            ++i;
+        } else if (wcscmp(argv[i], L"--encoder") == 0) {
+            o.encoder = vsr::encoder::EncoderPreferenceFromString(vsr::WideToUtf8(argv[i + 1]));
+            ++i;
+        }
+    }
+    return o;
+}
+
+} // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
     using namespace vsr::app;
@@ -723,24 +775,9 @@ int wmain(int argc, wchar_t* argv[]) {
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--encode-test") == 0) {
-        int seconds = 10;
-        std::wstring preset = L"standard";
-        std::wstring outputDir;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            if (wcscmp(argv[i], L"--seconds") == 0) seconds = _wtoi(argv[i + 1]);
-            else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
-            else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
-        }
-        vsr::encoder::EncoderPreference encoder =
-            vsr::encoder::EncoderPreference::Auto;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            if (wcscmp(argv[i], L"--encoder") == 0) {
-                encoder = vsr::encoder::EncoderPreferenceFromString(
-                    vsr::WideToUtf8(argv[i + 1]));
-            }
-        }
-        const int code = Application::Instance().RunEncodeTest(seconds, preset, outputDir,
-                                                               encoder);
+        const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
+        const int code = Application::Instance().RunEncodeTest(o.seconds, o.preset, o.outputDir,
+                                                               o.encoder);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -752,24 +789,9 @@ int wmain(int argc, wchar_t* argv[]) {
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--dev-record") == 0) {
-        int seconds = 10;
-        std::wstring preset = L"standard";
-        std::wstring outputDir;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            if (wcscmp(argv[i], L"--seconds") == 0) seconds = _wtoi(argv[i + 1]);
-            else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
-            else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
-        }
-        vsr::encoder::EncoderPreference encoder =
-            vsr::encoder::EncoderPreference::Auto;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            if (wcscmp(argv[i], L"--encoder") == 0) {
-                encoder = vsr::encoder::EncoderPreferenceFromString(
-                    vsr::WideToUtf8(argv[i + 1]));
-            }
-        }
-        const int code = Application::Instance().RunDevRecord(seconds, preset, outputDir,
-                                                              nullptr, encoder);
+        const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
+        const int code = Application::Instance().RunDevRecord(o.seconds, o.preset, o.outputDir,
+                                                              nullptr, o.encoder, o.audio);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -791,24 +813,10 @@ int wmain(int argc, wchar_t* argv[]) {
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--dev-record-window") == 0) {
-        int seconds = 10;
-        std::wstring preset = L"standard";
-        std::wstring outputDir;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            if (wcscmp(argv[i], L"--seconds") == 0) seconds = _wtoi(argv[i + 1]);
-            else if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
-            else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
-        }
-        vsr::encoder::EncoderPreference encoder =
-            vsr::encoder::EncoderPreference::Auto;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            if (wcscmp(argv[i], L"--encoder") == 0) {
-                encoder = vsr::encoder::EncoderPreferenceFromString(
-                    vsr::WideToUtf8(argv[i + 1]));
-            }
-        }
-        const int code =
-            Application::Instance().RunDevRecordWindow(seconds, preset, outputDir, encoder);
+        const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
+        const int code = Application::Instance().RunDevRecordWindow(o.seconds, o.preset,
+                                                                    o.outputDir, o.encoder,
+                                                                    o.audio);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }

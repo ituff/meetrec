@@ -157,3 +157,29 @@ VSR_TEST(EncoderPolicy, AutoPreferenceKeepsHardwareFirstOrder) {
     VSR_CHECK(EncoderPreferenceFromString("garbage") == EncoderPreference::Auto);
     VSR_CHECK(std::string(ToString(EncoderPreference::Hardware)) == "hardware");
 }
+VSR_TEST(EncoderPolicy, ExcludeNameSkipsTheFailedCandidate) {
+    EncoderCapability sw{};
+    sw.name = L"sw-ms";
+    sw.acceptsNv12 = true;
+
+    EncoderCapability hw{};
+    hw.name = L"hw-amd";
+    hw.hardware = true;
+    hw.acceptsNv12 = true;
+
+    // Auto would normally pick hw-amd; excluding it falls through to sw-ms.
+    auto pick = SelectEncoder({sw, hw}, EncoderPreference::Auto, L"hw-amd");
+    VSR_CHECK(pick.IsOk());
+    VSR_CHECK(pick.Value().name == L"sw-ms");
+
+    // Excluding the software encoder under a Software preference has no
+    // candidate left: typed failure.
+    auto none = SelectEncoder({sw, hw}, EncoderPreference::Software, L"sw-ms");
+    VSR_CHECK(!none.IsOk());
+    VSR_CHECK(none.GetError().code == ErrorCode::EncoderUnavailable);
+
+    // Excluding a name that matches nothing changes the normal choice.
+    auto unaffected = SelectEncoder({sw, hw}, EncoderPreference::Auto, L"not-in-list");
+    VSR_CHECK(unaffected.IsOk());
+    VSR_CHECK(unaffected.Value().name == L"hw-amd");
+}

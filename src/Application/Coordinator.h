@@ -23,6 +23,7 @@
 #include <Infrastructure/Result.h>
 #include "AppState.h"
 #include "DiskSpaceGuard.h"
+#include "EncoderStallDetector.h"
 #include "RecordingTimeline.h"
 #include "StatusSnapshot.h"
 #include <Encoder/AudioCapture.h>
@@ -101,13 +102,19 @@ private:
     bool PrepareSession(const StartRecordingRequest& request);
     void ConsumeLoop();
     void TeardownSession();
+    // Independent-thread encoder stall watchdog (NFR-014): detects a wedged
+    // WriteSample/Finalize that the worker's own in-thread checks cannot see,
+    // then escalates through the bounded-abandon stop path.
+    void WatchdogLoop();
+    // Containment shared by Stop and the watchdog: bounded wait for the
+    // worker, detach + resource abandon past the deadline.
+    Result<void> WaitForWorkerExit(std::chrono::milliseconds bounded);
 
     void SetState(AppState next);
     void PublishError(const Error& error);
     void SetStopRequested(StopReason reason);
     // Drains queued audio chunks into the writer (pause/watermark aware).
     void DrainAudio();
-    Result<void> WaitForWorkerExit(std::chrono::milliseconds bounded);
     void ReleaseRecordingMutex();
     // Wedged-worker containment: when the bounded stop deadline expires the
     // worker thread is detached while still inside a driver call. The session
@@ -130,6 +137,11 @@ private:
 
     // Worker lifecycle.
     std::thread worker_;
+    // Serializes the join/detach of worker_ between Stop, Shutdown, and the
+    // watchdog escalation (std::thread::detach on two threads is UB).
+    std::mutex workerJoinMutex_;
+    std::thread watchdog_;
+    std::atomic<bool> watchdogStop_{false};
     std::atomic<bool> workerAlive_{false};
     std::atomic<bool> sessionAbandoned_{false};
     std::atomic<bool> stopRequested_{false};

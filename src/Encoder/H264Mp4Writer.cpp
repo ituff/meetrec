@@ -312,6 +312,25 @@ Result<void> H264Mp4Writer::ProbeSubmission(const capture::GraphicsDevice& devic
     if (FAILED(hr)) {
         return EncodeError("IMFSinkWriter::Flush(probe)", hr, true);
     }
+    // Consumption gate: a working encoder must have encoded the probe frame
+    // once the flush drained. Some MFTs accept samples but never encode them
+    // (deterministic on broken software encoder MFTs, per-session random on
+    // stalled hardware drivers) and only fail much later at Finalize with
+    // MF_E_SINK_NO_SAMPLES_PROCESSED. Rejecting the path here keeps the
+    // failure inside the bounded creation matrix, where the documented
+    // fallbacks (CPU staging, next encoder candidate) still apply.
+    bool consumed = false;
+    for (int poll = 0; poll < 15 && !consumed; ++poll) {
+        Sleep(200);
+        MF_SINK_WRITER_STATISTICS stats = {};
+        stats.cb = sizeof(stats);
+        if (FAILED(writer_->GetStatistics(streamIndex_, &stats))) break;
+        if (stats.qwNumSamplesEncoded >= 1) consumed = true;
+    }
+    if (!consumed) {
+        return EncodeError("encoder probe-frame consumption check", HRESULT_FROM_WIN32(ERROR_TIMEOUT),
+                           true);
+    }
     // Reset the timestamp anchor: real frames start at t=0 on the next tick.
     lastTimestamp_ = -1;
     writtenFrames_.store(0);
@@ -505,6 +524,28 @@ Result<void> H264Mp4Writer::QueueHealth() {
         return EncodeError("IMFSinkWriter queue watermark", HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY),
                            true);
     }
+
+    // Consumption check: "received advanced, encoded frozen" for 10 s is a
+    // stall regardless of the queue byte count — MFTs that silently never
+    // encode keep dwByteCountQueued at 0 while accepting every sample.
+    // Encoder-side GOP buffering legitimately lags the encoded count at
+    // start, so only a long frozen window while input keeps flowing fires.
+    constexpr std::int64_t kEncodedLagStallMs = 10'000;
+    const std::uint64_t encoded = stats.qwNumSamplesEncoded;
+    const std::uint64_t received = stats.qwNumSamplesReceived;
+    const std::int64_t nowMs = static_cast<std::int64_t>(GetTickCount64());
+    if (encoded != lastStatsEncoded_) {
+        lastStatsEncoded_ = encoded;
+        lastStatsReceived_ = received;
+        statsStallSinceMs_ = -1;
+    } else if (received > lastStatsReceived_) {
+        if (statsStallSinceMs_ < 0) statsStallSinceMs_ = nowMs;
+        if (nowMs - statsStallSinceMs_ >= kEncodedLagStallMs &&
+            !encoderStallReported_.exchange(true)) {
+            return EncodeError("encoder stopped consuming (encoded count frozen)",
+                               HRESULT_FROM_WIN32(ERROR_TIMEOUT), true);
+        }
+    }
     return Result<void>{};
 }
 
@@ -517,14 +558,30 @@ Result<void> H264Mp4Writer::Finalize() {
     if (writer_ == nullptr) {
         return Result<void>{};
     }
+    // Sample the encoder statistics before the writer is released: the
+    // encoded-count distinguishes "MFT never encoded" from downstream sink
+    // failures when Finalize misbehaves.
+    std::uint64_t encodedTotal = 0;
+    {
+        MF_SINK_WRITER_STATISTICS stats = {};
+        stats.cb = sizeof(stats);
+        if (SUCCEEDED(writer_->GetStatistics(streamIndex_, &stats))) {
+            encodedTotal = stats.qwNumSamplesEncoded;
+        }
+    }
     HRESULT hr = writer_->Finalize();
     if (FAILED(hr)) {
         CloseWriter();
+        log::Error("Encoder", "ENCODER_FINALIZE_FAILED", L"", L"Finalize failed.",
+                   {{"writtenFrames", std::to_string(writtenFrames_.load())},
+                    {"encodedSamples", std::to_string(encodedTotal)},
+                    {"path", WideToUtf8(partialPath_.wstring())}});
         return FinalizeError("IMFSinkWriter::Finalize", hr);
     }
     CloseWriter();
     log::Info("Encoder", "ENCODER_FINALIZED", L"", L"Output finalized.",
               {{"writtenFrames", std::to_string(writtenFrames_.load())},
+               {"encodedSamples", std::to_string(encodedTotal)},
                {"path", WideToUtf8(partialPath_.wstring())}});
     return Result<void>{};
 }

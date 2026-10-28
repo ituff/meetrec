@@ -47,6 +47,7 @@
     <ClCompile Include="StateMachineTests.cpp" />
     <ClCompile Include="TestMain.cpp" />
     <ClCompile Include="TimelineTests.cpp" />
+    <ClCompile Include="WatchdogTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TestFramework.h" />

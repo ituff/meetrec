@@ -27,6 +27,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="AppState.cpp" />
+    <ClCompile Include="EncoderStallDetector.cpp" />
     <ClCompile Include="Coordinator.cpp" />
     <ClCompile Include="Diagnostics.cpp" />
     <ClCompile Include="DiskSpaceGuard.cpp" />
@@ -38,6 +39,7 @@
     <ClInclude Include="Coordinator.h" />
     <ClInclude Include="Diagnostics.h" />
     <ClInclude Include="DiskSpaceGuard.h" />
+    <ClInclude Include="EncoderStallDetector.h" />
     <ClInclude Include="OutputFile.h" />
     <ClInclude Include="RecordingTimeline.h" />
     <ClInclude Include="StatusSnapshot.h" />

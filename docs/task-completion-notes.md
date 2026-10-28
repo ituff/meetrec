@@ -880,3 +880,76 @@ Unit tests 74/74. Default encoder preference: software (user decision).
 Machine note: Sept 23 afternoon the MS software encoder also stalled
 (E_OUTOFMEMORY watermark at ~frame 180) and AAC finalize hung; uptime >24h
 with heavy media testing -> reboot recommended before revalidation.
+
+## Session 12 (Oct 28, new dev machine FITS2L63GS3): watchdog, encoder health gates, `--audio`
+
+New environment: Intel Iris Xe Graphics (driver 32.0.101.7088), **console** session (no RDP),
+Windows 11 商业版 build 26200 (Insider), fresh toolchain install (VS BuildTools 17.14 + MSVC
+14.44 + SDK 10.0.26100 via winget; no WDK — driverless MVP does not need it).
+
+### Shipped
+
+1. **In-process encoder-stall watchdog (NFR-014)** — the AMD-machine follow-up. A watchdog
+   thread runs for the Recording phase (`Coordinator::WatchdogLoop`); the pure decision logic
+   lives in `Application/EncoderStallDetector` (unit-tested, 6 cases). A stall requires BOTH
+   signals: `writer->WrittenFrames()` frozen while the queue's captured count keeps advancing
+   (WGC static scenes freeze both and never fire; pauses re-arm the clock). On fire:
+   `ENCODER_STALLED_WATCHDOG` is logged, the session stops through the same bounded-abandon
+   path as Stop; `WaitForWorkerExit`'s detach/join is now serialized by `workerJoinMutex_`
+   (concurrent Stop/watchdog detach was UB). The AMD hang family that ignored the watermark
+   defense is now contained in-process (≤10 s stop deadline + bounded abandon), no external
+   taskkill needed.
+2. **Encoder health gates** (new failure family found on THIS machine):
+   - `ProbeSubmission` now requires the priming frame to be *encoded* (sink-writer
+     statistics `qwNumSamplesEncoded >= 1` within 3 s). MFTs that accept samples but never
+     encode are rejected inside the bounded creation matrix instead of surfacing at Finalize
+     as `MF_E_SINK_NO_SAMPLES_PROCESSED` (0xC00D4A44).
+   - `QueueHealth` gained a second signal: encoded-count frozen while received-count advances
+     for 10 s => `EncoderWriteFailed` (the queue byte watermark stays deceptively 0 in this
+     failure mode, so the old check could not see it). `ENCODER_FINALIZE_FAILED` now logs the
+     encoder's encoded-sample count.
+   - `Coordinator` falls back to the next encoder candidate (same preference order,
+     `SelectEncoder(..., excludeName)`) when writer activation fails, before failing the
+     session.
+3. **`--audio` CLI flag** on `--dev-record` / `--dev-record-window` (parity with the GUI
+   checkbox) for automated AAC verification; `RunDevRecord` prints audio on/off.
+4. **CLI console attach fix**: `AttachParentConsole` no longer clobbers an existing stdout
+   redirection (pipe/file), so CLI output reaches terminals and automation captures.
+5. **Counter display fix**: final captured/encoded/dropped counters and capture dimensions
+   are persisted into the status snapshot at teardown, so the UI and `--dev-record` show the
+   real final numbers after Stop (previously zeros because the live queue/session objects
+   were destroyed first).
+6. Null-guard: `TeardownSession` no longer calls `writer_->HasAudio()` on a null writer
+   (PrepareSession early-failure path; previously survived on UB).
+
+Verification: 81/81 unit tests (6 watchdog + 1 encoder-exclusion cases new); Debug+Release
+builds green (/W4 /WX).
+
+### Machine findings (build 26200 media stack)
+
+- The **Microsoft software H.264 encoder MFT is deterministically dead** on this machine:
+  minimal-probe and production runs show samples accepted, `qwNumSamplesEncoded == 0` forever,
+  `Finalize` fails `MF_E_SINK_NO_SAMPLES_PROCESSED`. The user-decision default
+  `encoderPreference = "software"` cannot work here; use Auto/Hardware on Insider builds.
+- Hardware encoder sessions are **per-process random**: of the earliest sink-writer runs,
+  4/6 finalized cleanly (320x240 and 1080p30), then sessions degraded to encodes-nothing,
+  write-hangs, and finalize-hangs; a raw async-MFT pump (bypassing the sink writer) encoded
+  successfully while same-minute sink-writer sessions failed, and even media-type acceptance
+  flipped between processes. A display-adapter restart (`pnputil /restart-device`, UAC) did
+  NOT restore the odds; the documented remedy (old machine, same build family) is a reboot.
+- Encoder probe finding: async hardware MFTs enumerate their full codec format list before an
+  input type is set, and the "Intel Hardware VP9 Encoder MFT" even ACCEPTED H264 type
+  negotiation in one process while rejecting it (`MF_E_TOPO_CODEC_NOT_FOUND`) in another.
+  `InspectCandidate` now runs a live 1-frame stream test for H264-claiming async candidates
+  (bounded 3 s), so selection lands on a transform that demonstrably encodes.
+- Probes added under `artifacts/`: `mfenc_probe.cpp` (sink-writer encode + statistics dump),
+  `mftpump_probe.cpp` (raw async-MFT event pump), `run-app.ps1` (output capture + hard
+  timeout + real exit code via a generated .cmd; the inline `%ERRORLEVEL%` form expands at
+  parse time and always yields 0), `retry-app.ps1` (retry-until-healthy-session loop).
+
+### Blocked E2E (needs a reboot of this machine)
+
+Full harness, `--audio` AAC verification (play a looped tone during `--dev-record-window
+--audio`), the counter-display E2E check, and the long soak all need a healthy encoder
+session; at session close the machine fails the consumption gate 10/10. Post-reboot sequence:
+IntegrationTests.ps1 -Configuration Release, then the audio + soak runs via retry-app.ps1.

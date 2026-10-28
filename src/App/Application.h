@@ -28,15 +28,19 @@ public:
     // Runs the headless development recording entry point (T040). With
     // `targetWindow` set, records that window driverless (parked off-screen);
     // with null, brings up the virtual display and records it (dev path).
+    // `captureAudio` opts the run into the system-audio (WASAPI loopback ->
+    // AAC) stream.
     int RunDevRecord(int seconds, const std::wstring& presetName,
                      const std::wstring& outputDir, HWND targetWindow = nullptr,
-                     encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto);
+                     encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
+                     bool captureAudio = false);
     // Driverless E2E entry: spawns a self-contained animated test window in a
     // child process, records it through the full capture pipeline, then closes
     // the child. Exit 0 on a finalized MP4.
     int RunDevRecordWindow(int seconds, const std::wstring& presetName,
                            const std::wstring& outputDir,
-                           encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto);
+                           encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
+                           bool captureAudio = false);
     // Prints a capability report (OS, GPU, capture, encoder, virtual display,
     // topology, settings) and exits. Support/diagnostics tool; satisfies the
     // T020/T030 "diagnostic output" verification items. Never mutates state.

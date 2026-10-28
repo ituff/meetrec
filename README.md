@@ -72,9 +72,16 @@ artifacts/<Configuration>/
 ```text
 VirtualScreenRecorder.exe                       # controller UI (also creates the tray icon)
 VirtualScreenRecorder.exe --dev-record --seconds 10 --preset standard --output D:\Clips
+VirtualScreenRecorder.exe --dev-record-window --seconds 10 --preset standard --output D:\Clips
 VirtualScreenRecorder.exe --self-check          # capability report (read-only diagnostics)
 VirtualScreenRecorder.exe --encode-test --seconds 10 --preset high --output D:\Clips
 ```
+
+Common flags for the recording modes: `--seconds N`, `--preset low|standard|high`,
+`--output DIR`, `--encoder auto|hardware|software` (candidate filtering; the default
+`auto` prefers hardware and fails over to the next candidate when activation fails),
+and `--audio` (opt-in system audio via WASAPI loopback -> AAC; automated runs are
+video-only by default).
 
 `--self-check` prints OS build, the D3D11 adapter + feature level, capture availability, the
 probed H.264 encoder MFTs (hardware vs software, D3D11-aware), virtual display driver/monitor

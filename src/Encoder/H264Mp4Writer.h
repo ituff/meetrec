@@ -67,10 +67,14 @@ public:
     std::uint64_t WrittenFrames() const noexcept { return writtenFrames_.load(); }
     bool UsingGpuSamples() const noexcept { return useGpuSamples_; }
 
-    // Watchdog hook: reports EncoderWriteFailed when the sink's queued-byte
-    // watermark shows the encoder MFT has stopped consuming (observed as a
-    // real driver failure mode; WriteSample itself would otherwise block
-    // forever — NFR-007/NFR-014 defense). Cheap; call on a slow cadence.
+    // Watchdog hook: reports EncoderWriteFailed when the encoder MFT has
+    // stopped consuming (NFR-007/NFR-014 defense). Two failure families are
+    // covered: the queued-byte watermark (a WriteSample that would otherwise
+    // block forever) and an encoded-count that freezes while new samples keep
+    // being accepted (MFTs that silently never encode — observed per-session
+    // random on stalled drivers and deterministically on broken software
+    // encoder MFTs; the queue byte count stays deceptively empty there).
+    // Cheap; call on a slow cadence from the consume loop.
     Result<void> QueueHealth();
 
 private:
@@ -108,6 +112,11 @@ private:
     std::int64_t lastTimestamp_ = -1;
     std::atomic<bool> finalized_{false};
     std::atomic<std::uint64_t> writtenFrames_{0};
+    // Encoder-consumption stall detection state (sampled by QueueHealth).
+    std::uint64_t lastStatsEncoded_ = 0;
+    std::uint64_t lastStatsReceived_ = 0;
+    std::int64_t statsStallSinceMs_ = -1;
+    std::atomic<bool> encoderStallReported_{false};
 };
 
 // MF lifecycle helper: balanced MFStartup/MFShutdown per process.

@@ -264,30 +264,39 @@ Result<void> Coordinator::WaitForWorkerExit(std::chrono::milliseconds bounded) {
     // WriteSample that never returns on a stalled encoder MFT) must not hang
     // Stop or process shutdown. After the deadline the thread is detached and
     // the session resources it may still touch are deliberately leaked so the
-    // abandoned thread can never operate on freed memory.
+    // abandoned thread can never operate on freed memory. Stop, Shutdown, and
+    // the stall watchdog can reach this concurrently; the join/detach decision
+    // is serialized by workerJoinMutex_.
     const auto deadline = std::chrono::steady_clock::now() + bounded;
     while (workerAlive_.load(std::memory_order_acquire)) {
         if (std::chrono::steady_clock::now() >= deadline) {
-            if (worker_.joinable()) worker_.detach();
-            {
-                std::lock_guard<std::mutex> lock(stateMutex_);
-                state_ = AppState::Faulted;
+            std::lock_guard<std::mutex> joinLock(workerJoinMutex_);
+            if (workerAlive_.load(std::memory_order_acquire)) {
+                if (worker_.joinable()) worker_.detach();
+                {
+                    std::lock_guard<std::mutex> lock(stateMutex_);
+                    state_ = AppState::Faulted;
+                }
+                AbandonSessionResources();
+                audioCapture_.release(); // bounded queue; the thread self-terminates on Stop
+                ReleaseRecordingMutex(); // wedged worker will never release it
+                log::Error("Coordinator", "WORKER_ABANDONED", correlationId_,
+                           L"Recording worker did not exit in time; abandoned with its session "
+                           L"resources (NFR-014 bounded stop).");
+                return Error(ErrorCode::InternalState,
+                             L"The recording pipeline stopped responding. The application "
+                             L"recovered, but the recording file may be incomplete.",
+                             L"Worker thread exceeded the stop deadline", S_OK, false);
             }
-            AbandonSessionResources();
-    audioCapture_.release(); // bounded queue; the thread self-terminates on Stop
-            ReleaseRecordingMutex(); // wedged worker will never release it
-            log::Error("Coordinator", "WORKER_ABANDONED", correlationId_,
-                       L"Recording worker did not exit in time; abandoned with its session "
-                       L"resources (NFR-014 bounded stop).");
-            return Error(ErrorCode::InternalState,
-                         L"The recording pipeline stopped responding. The application recovered, "
-                         L"but the recording file may be incomplete.",
-                         L"Worker thread exceeded the stop deadline", S_OK, false);
+            break; // the worker exited between the checks; join below
         }
         Sleep(50);
     }
-    if (worker_.joinable()) {
-        worker_.join(); // sets workerAlive_ false just before exiting
+    {
+        std::lock_guard<std::mutex> joinLock(workerJoinMutex_);
+        if (worker_.joinable()) {
+            worker_.join(); // sets workerAlive_ false just before exiting
+        }
     }
     return Result<void>{};
 }
@@ -397,10 +406,25 @@ void Coordinator::SessionWorker(const StartRecordingRequest& request) {
     SetState(AppState::Recording); // Preparing -> Recording
     log::Info("Coordinator", "RECORDING_STARTED", correlationId_, L"Recording is active.");
 
+    // Independent stall watchdog for the active phase. Failures to spawn it
+    // are non-fatal: the in-thread watermark checks and the bounded external
+    // stop remain as backstops.
+    watchdogStop_.store(false);
+    try {
+        watchdog_ = std::thread([this] { WatchdogLoop(); });
+    } catch (...) {
+        log::Warning("Coordinator", "WATCHDOG_UNAVAILABLE", correlationId_,
+                     L"Encoder stall watchdog could not start; continuing without it.");
+    }
+
     ConsumeLoop();
 
     // Stopping phase: drain, finalize, restore (design.md §4.8 stop order).
     SetState(AppState::Stopping);
+    // The watchdog only covers the Recording phase; teardown has its own
+    // bounded-stop containment for a Finalize that never returns.
+    watchdogStop_.store(true, std::memory_order_release);
+    if (watchdog_.joinable()) watchdog_.join();
     TeardownSession();
 
     const StopReason reason = stopReason_.load();
@@ -582,11 +606,34 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     converter_ = std::move(converterResult.Value());
 
-    auto writerResult = H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_,
-                                              request.captureAudio &&
-                                                      audioRate_ > 0
-                                                  ? &audioFormat_
-                                                  : nullptr);
+    const encoder::AudioFormat* audioFormatArg =
+        request.captureAudio && audioRate_ > 0 ? &audioFormat_ : nullptr;
+    auto writerResult =
+        H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_, audioFormatArg);
+    if (!writerResult) {
+        // Encoder-fallback retry: a candidate can pass the capability probe
+        // yet fail at activation or the consumption gate (per-session
+        // hardware MFT stalls, software MFTs that never encode on some OS
+        // builds). Retry once with the next best candidate under the same
+        // preference before failing the session.
+        const Error firstError = writerResult.TakeError();
+        auto alternative =
+            encoder::SelectEncoder(probe.Value().candidates, request.encoderPreference,
+                                   encoderCap_->name);
+        if (alternative) {
+            log::Warning("Coordinator", "ENCODER_FALLBACK_RETRY", correlationId_,
+                         L"Selected encoder failed to activate; retrying with the next "
+                         L"candidate.",
+                         {{"failed", WideToUtf8(encoderCap_->name)},
+                          {"retry", WideToUtf8(alternative.Value().name)}});
+            DeleteFileW(partialPath_.c_str());
+            encoderCap_ = std::make_unique<EncoderCapability>(alternative.Value());
+            writerResult = H264Mp4Writer::Create(*device_, *encoderCap_, preset, partialPath_,
+                                                 audioFormatArg);
+        } else {
+            writerResult = Result<std::unique_ptr<H264Mp4Writer>>(firstError);
+        }
+    }
     if (!writerResult) {
         Error e = RollbackError(writerResult.TakeError(), "writer create");
         session_->Stop();
@@ -850,6 +897,79 @@ void Coordinator::ConsumeLoop() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Encoder stall watchdog
+// ---------------------------------------------------------------------------
+
+void Coordinator::WatchdogLoop() {
+    // Covers the stall family the worker's in-thread watermark check cannot
+    // see: a WriteSample blocked forever inside a stalled MFT never returns
+    // to run the next self-check. This thread samples progress counters and,
+    // on a declared stall, escalates through the same bounded-abandon stop
+    // path as Stop (process survives, session Faulted, partial file kept).
+    constexpr DWORD kCheckIntervalMs = 1'000;
+    EncoderStallDetector detector;
+    for (;;) {
+        Sleep(kCheckIntervalMs);
+        if (watchdogStop_.load(std::memory_order_acquire)) return;
+
+        bool active = false;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            active = state_ == AppState::Recording;
+        }
+        if (paused_.load(std::memory_order_relaxed)) active = false;
+        // writer_/queue_ live until TeardownSession resets them, which happens
+        // only after this thread has been joined (or after an abandon, which
+        // releases rather than destroys them — the null guard covers that).
+        if (writer_ == nullptr || queue_ == nullptr) return;
+
+        const std::uint64_t encoded = writer_->WrittenFrames();
+        const auto counters = queue_->Counters();
+        const std::int64_t nowMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock_->MonotonicNow()).count();
+        if (!detector.Feed(active, encoded, counters.captured, nowMs)) continue;
+
+        log::Error("Coordinator", "ENCODER_STALLED_WATCHDOG", correlationId_,
+                   L"Encoder stopped consuming while capture kept producing; escalating to a "
+                   L"bounded stop.",
+                   {{"encodedFrames", std::to_string(encoded)},
+                    {"capturedFrames", std::to_string(counters.captured)},
+                    {"droppedFrames", std::to_string(counters.dropped)}});
+        PublishError(Error(ErrorCode::EncoderWriteFailed,
+                           L"The encoder stopped responding. The recording was stopped safely "
+                           L"and the partial file was kept.",
+                           L"Encoder stall watchdog fired", S_OK, true));
+        SetStopRequested(StopReason::WriteFailed);
+
+        // Give the worker a bounded window to unwind on its own; a WriteSample
+        // wedged inside the MFT will not, and the deadline path contains it.
+        const auto deadline = std::chrono::steady_clock::now() + kStopWait;
+        while (workerAlive_.load(std::memory_order_acquire)) {
+            if (watchdogStop_.load(std::memory_order_acquire)) return; // healthy teardown began
+            if (std::chrono::steady_clock::now() >= deadline) break;
+            Sleep(50);
+        }
+        if (!workerAlive_.load(std::memory_order_acquire)) return; // worker exited cleanly
+        {
+            std::lock_guard<std::mutex> joinLock(workerJoinMutex_);
+            if (!workerAlive_.load(std::memory_order_acquire)) return;
+            if (worker_.joinable()) worker_.detach();
+        }
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            state_ = AppState::Faulted;
+        }
+        AbandonSessionResources();
+        audioCapture_.release();
+        ReleaseRecordingMutex();
+        log::Error("Coordinator", "WORKER_ABANDONED", correlationId_,
+                   L"Recording worker did not exit after the watchdog stop; abandoned with its "
+                   L"session resources (NFR-014).");
+        return;
+    }
+}
+
 void Coordinator::TeardownSession() {
     // Stop order (design.md §4.8): stop accepting frames -> close capture ->
     // signal queue completion -> encode remaining frames -> drain -> finalize
@@ -891,7 +1011,8 @@ void Coordinator::TeardownSession() {
     // WASAPI loopback yields no packets while the render endpoint is idle;
     // a zero-input AAC stream can wedge Finalize, so feed minimal silence
     // when nothing was captured.
-    if (writer_->HasAudio() && !audioReceived_.load(std::memory_order_relaxed)) {
+    if (writer_ != nullptr && writer_->HasAudio() &&
+        !audioReceived_.load(std::memory_order_relaxed)) {
         const std::int64_t silenceFrames = static_cast<std::int64_t>(audioRate_) / 10;
         std::vector<std::int16_t> silence(
             static_cast<std::size_t>(silenceFrames) * audioChannels_, 0);
@@ -936,6 +1057,25 @@ void Coordinator::TeardownSession() {
     if (savedPlacement_ != nullptr) {
         (void)WindowPlacementManager().Restore(*savedPlacement_);
         savedPlacement_.reset();
+    }
+
+    // Persist the final pipeline counters into the snapshot before the live
+    // objects are destroyed: the UI and the dev CLI read the final
+    // captured/encoded/dropped numbers after Stop, and GetStatus only sees
+    // live counters while queue_/session_ still exist.
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        if (queue_ != nullptr) {
+            const auto counters = queue_->Counters();
+            snapshot_.capturedFrames = counters.captured;
+            snapshot_.encodedFrames = counters.encoded;
+            snapshot_.droppedFrames = counters.dropped;
+        }
+        if (session_ != nullptr) {
+            const auto stats = session_->Stats();
+            snapshot_.captureWidth = stats.lastWidth;
+            snapshot_.captureHeight = stats.lastHeight;
+        }
     }
 
     // Release pipeline objects in reverse creation order.

@@ -44,14 +44,17 @@ struct EncoderProbeResult {
 
 // Pure selection policy, unit-testable without Media Foundation. With
 // Hardware/Software preference the candidate pool is filtered first; an empty
-// matching pool yields VSR-ENCODER-UNAVAILABLE.
+// matching pool yields VSR-ENCODER-UNAVAILABLE. `excludeName` skips one
+// candidate (encoder-fallback retry after a failed writer activation).
 Result<EncoderCapability> SelectEncoder(
     const std::vector<EncoderCapability>& candidates,
-    EncoderPreference preference = EncoderPreference::Auto);
+    EncoderPreference preference = EncoderPreference::Auto,
+    const std::wstring& excludeName = std::wstring());
 
 // Enumerates the system's H.264 encoders via MFTEnumEx and applies the
-// selection policy.
+// selection policy. See SelectEncoder for `excludeName`.
 Result<EncoderProbeResult> ProbeEncoders(
-    EncoderPreference preference = EncoderPreference::Auto);
+    EncoderPreference preference = EncoderPreference::Auto,
+    const std::wstring& excludeName = std::wstring());
 
 } // namespace vsr::encoder
