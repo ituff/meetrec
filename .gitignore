@@ -45,3 +45,6 @@ installer/Output/
 # OS noise
 Thumbs.db
 desktop.ini
+
+# Generated build-stamp header
+src/App/VersionGenerated.h

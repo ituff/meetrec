@@ -30,6 +30,10 @@
 
 #include <Application/OutputFile.h>
 
+#if __has_include("VersionGenerated.h")
+#include "VersionGenerated.h"
+#endif
+
 namespace vsr::app {
 
 namespace {
@@ -824,6 +828,9 @@ int wmain(int argc, wchar_t* argv[]) {
 
     if (argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
         wprintf(L"Virtual Screen Recorder 1.0.0.0 (MVP)\n");
+#ifdef VSR_BUILD_COMMIT
+        wprintf(L"build: %s\n", VSR_BUILD_COMMIT);
+#endif
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return 0;
     }
