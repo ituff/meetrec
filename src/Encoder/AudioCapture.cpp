@@ -64,28 +64,6 @@ public:
     }
 };
 
-// Converts the loopback mix chunk (float32 interleaved or PCM16 depending on
-// the mix format) to interleaved 16-bit PCM.
-void ConvertToPcm16(const BYTE* data, UINT32 bytes, bool isFloat, std::vector<std::int16_t>& out) {
-    out.clear();
-    if (isFloat) {
-        const auto* f = reinterpret_cast<const float*>(data);
-        const std::size_t count = bytes / sizeof(float);
-        out.resize(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            float v = f[i];
-            if (v > 1.0f) v = 1.0f;
-            if (v < -1.0f) v = -1.0f;
-            out[i] = static_cast<std::int16_t>(std::lrintf(v * 32767.0f));
-        }
-    } else if (bytes % 2 == 0) {
-        const auto* s = reinterpret_cast<const std::int16_t*>(data);
-        const std::size_t count = bytes / sizeof(std::int16_t);
-        out.resize(count);
-        for (std::size_t i = 0; i < count; ++i) out[i] = s[i];
-    }
-}
-
 } // namespace
 
 Result<AudioFormat> AudioCapture::QueryLoopbackFormat() {
@@ -159,14 +137,41 @@ void AudioCapture::CaptureLoop() {
                    {"extensible", ext ? "1" : "0"}});
     }
 
-    const bool isFloat = mix->wFormatTag == WAVE_FORMAT_EXTENSIBLE
-                             ? reinterpret_cast<WAVEFORMATEXTENSIBLE*>(mix)
-                                       ->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
-                             : mix->wFormatTag == WAVE_FORMAT_IEEE_FLOAT;
+    // Explicit PCM16 capture format with engine-side conversion
+    // (AUTOCONVERTPCM + SRC): the engine resamples and converts its float mix
+    // to 16-bit PCM for us. Hand-parsing the float mix format produced noise
+    // on real meeting audio for one user while probe tones stayed clean; the
+    // engine conversion removes that whole ambiguity, matching how Windows'
+    // own recorders consume loopback.
+    WAVEFORMATEX captureFormat = {};
+    captureFormat.wFormatTag = WAVE_FORMAT_PCM;
+    captureFormat.nChannels = mix->nChannels > 0 ? mix->nChannels : 2;
+    captureFormat.nSamplesPerSec = mix->nSamplesPerSec > 0 ? mix->nSamplesPerSec : 48000;
+    captureFormat.wBitsPerSample = 16;
+    captureFormat.nBlockAlign =
+        captureFormat.nChannels * captureFormat.wBitsPerSample / 8;
+    captureFormat.nAvgBytesPerSec =
+        captureFormat.nSamplesPerSec * captureFormat.nBlockAlign;
     // 20 s buffer budget; the loop drains every ~10 ms so actual latency is low.
-    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
-                            20'000'000 /* 2 s in 100ns */, 0, mix, nullptr);
+    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
+                            AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+                                AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY,
+                            20'000'000 /* 2 s in 100ns */, 0, &captureFormat, nullptr);
     if (FAILED(hr)) { cleanup(); return; }
+    log::Info("Encoder", "AUDIO_CAPTURE_FORMAT", L"", L"Loopback capture format (engine-converted).",
+              {{"channels", std::to_string(captureFormat.nChannels)},
+               {"rate", std::to_string(captureFormat.nSamplesPerSec)},
+               {"bits", std::to_string(captureFormat.wBitsPerSample)}});
+
+    // Ground-truth dump of the converted capture stream (diagnostics only;
+    // set VSR_AUDIO_DUMP=path before recording a suspect session).
+    wchar_t dumpPath[MAX_PATH] = {};
+    FILE* dump = nullptr;
+    if (GetEnvironmentVariableW(L"VSR_AUDIO_DUMP", dumpPath, MAX_PATH) > 0 &&
+        dumpPath[0] != 0) {
+        dump = nullptr;
+        _wfopen_s(&dump, dumpPath, L"wb");
+    }
     hr = client->GetService(__uuidof(IAudioCaptureClient),
                             reinterpret_cast<void**>(&capture));
     if (FAILED(hr) || capture == nullptr) { cleanup(); return; }
@@ -201,17 +206,21 @@ void AudioCapture::CaptureLoop() {
             continue;
         }
 
+        if (dump != nullptr) fwrite(pending.data(), 1, pending.size(), dump);
+
         AudioChunk chunk;
-        ConvertToPcm16(pending.data(), static_cast<UINT32>(pending.size()), isFloat, chunk.pcm);
-        chunk.frames = chunk.pcm.size() / (mix->nChannels > 0 ? mix->nChannels : 2);
+        chunk.pcm.resize(pending.size() / 2);
+        memcpy(chunk.pcm.data(), pending.data(), chunk.pcm.size() * 2);
+        chunk.frames = chunk.pcm.size() / (captureFormat.nChannels > 0 ? captureFormat.nChannels : 2);
         // Timestamp the span as (now - duration) so it aligns with video
         // frames captured during the same wall-clock window.
         chunk.timestampUs = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(clock_.MonotonicNow()).count()) -
-            (chunk.frames * 1000000ULL) / (mix->nSamplesPerSec > 0 ? mix->nSamplesPerSec : 1);
+            (chunk.frames * 1000000ULL) / (captureFormat.nSamplesPerSec > 0 ? captureFormat.nSamplesPerSec : 1);
         if (!chunk.pcm.empty() && sink_) sink_(std::move(chunk));
     }
 
+    if (dump != nullptr) fclose(dump);
     client->Stop();
     cleanup();
 }
