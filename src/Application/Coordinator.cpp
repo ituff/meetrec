@@ -434,7 +434,8 @@ void Coordinator::SessionWorker(const StartRecordingRequest& request) {
     TeardownSession();
 
     const StopReason reason = stopReason_.load();
-    if (reason == StopReason::User || reason == StopReason::Shutdown) {
+    if (reason == StopReason::User || reason == StopReason::Shutdown ||
+        reason == StopReason::TargetLost) {
         SetState(AppState::Ready);
     } else {
         SetState(AppState::Faulted);
@@ -824,12 +825,12 @@ void Coordinator::ConsumeLoop() {
                 pid = snapshot_.targetPid;
             }
             if (hwnd != nullptr && !window::WindowEnumerator::IsTargetAlive(hwnd, pid)) {
+                // A closed target window is a NATURAL end for window
+                // recording (the meeting/source app was closed): stop and
+                // save like a user stop - not a fault (user feedback).
                 targetLost_ = true;
-                PublishError(Error(ErrorCode::TargetLost,
-                                   L"The recorded application was closed. The recording was "
-                                   L"stopped and saved.",
-                                   L"Target window no longer alive during recording", S_OK,
-                                   true));
+                log::Info("Coordinator", "TARGET_CLOSED", correlationId_,
+                          L"Target window closed; stopping and saving the recording.");
                 SetStopRequested(StopReason::TargetLost);
                 break;
             }
