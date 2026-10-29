@@ -561,18 +561,26 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         }
     }
 
-    // 6. Queue + capture session (FR-040..FR-046). Window targets capture
-    // through the WGC backend on desktop sessions; inside a remote (RDP)
-    // session WGC window capture returns a blank surface, so the GDI
-    // PrintWindow backend is used there instead.
+    // 6. Queue + capture session (FR-040..FR-046). Window targets default to
+    // the GDI PrintWindow backend: WGC window capture on Insider builds
+    // delivers blank/black surfaces for hardware-composited apps while
+    // frames keep flowing (observed on CONSOLE sessions too, build 26200),
+    // which neither the freeze repair nor anything downstream can detect.
+    // GDI PrintWindow captures composed content in place and was verified
+    // end-to-end with real content. VSR_CAPTURE_BACKEND=wgc opts back in;
+    // monitor targets (dev CLI) keep WGC.
     queue_ = std::make_unique<BoundedFrameQueue>(kQueueCapacity);
-    const bool remoteSession = GetSystemMetrics(SM_REMOTESESSION) != 0;
-    usingWgcWindowCapture_ = windowTarget && !remoteSession;
+    wchar_t captureBackend[8] = {};
+    const bool forceWgc =
+        GetEnvironmentVariableW(L"VSR_CAPTURE_BACKEND", captureBackend, 8) > 0 &&
+        _wcsicmp(captureBackend, L"wgc") == 0;
+    const bool useGdiForWindow = windowTarget && !forceWgc;
+    usingWgcWindowCapture_ = windowTarget && !useGdiForWindow;
     using SessionResult = Result<std::unique_ptr<capture::ICaptureSession>>;
     SessionResult sessionResult = SessionResult{Error{ErrorCode::CaptureInitFailed,
                                                       L"", L"capture session not started"}};
     if (windowTarget) {
-        if (remoteSession) {
+        if (useGdiForWindow) {
             auto gdi = capture::GdiCaptureSession::Start(*device_, request.targetWindow,
                                                          preset.fps, *queue_, *clock_);
             if (gdi) {

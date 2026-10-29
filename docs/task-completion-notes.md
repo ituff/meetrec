@@ -1056,3 +1056,20 @@ bring-up audio). Verified: three tone E2E runs now show stream durations equal w
 1 ms (11.200/11.200, 11.166/11.166, 11.200/11.200). The two 80-byte broken partials in
 the user's Recycle Bin are consistent with playback attempts of truncated files; if
 noise is still heard after this fix, keep the file for analysis.
+
+## Session 12 addendum 3 (Oct 29): user report "no picture" -> WGC window capture delivers BLACK frames on console too; GDI becomes the default
+
+User's post-fix recording (Recording_20261029_094416.mp4): structurally complete
+(1920x1080@30, 304 frames, aligned audio with real content) but the VIDEO luma is 0 on
+every sampled frame - pure black. The log shows WGC window capture started (1324x829,
+the user's real app) and DELIVERED frames: the freeze-triggered repair correctly stayed
+silent, because this WGC disease variant flows constant-black frames instead of
+freezing. Same family as Session 9's blank-white finding, now confirmed on console
+sessions and against hardware-composited apps (the simple GDI-drawn dev test window
+captured fine, which is why all automated E2E stayed green).
+
+Fix: window targets now DEFAULT to the GDI PrintWindow backend on every session type
+(RDP or console); WGC remains for monitor targets and via VSR_CAPTURE_BACKEND=wgc.
+Verified through the dev pipeline: real content luma (73-174), A/V durations equal.
+Known trade-off: GDI PrintWindow at 30 fps + encode slightly overruns the queue
+(22 drops in a 10 s run - frames are sampled fresh-per-tick, cosmetic).
