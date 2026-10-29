@@ -1039,3 +1039,20 @@ run-app.ps1 (output capture + hard timeout + real exit code), retry-app.ps1
 run-new-pipe.ps1 (the two-pipe stall replication, old vs new ffmpeg), audio-e2e.ps1
 (tone loop + --audio record), elevate-gpu-restart.ps1 (pnputil device restart - did NOT
 clear the MF disease; reboot is the documented remedy).
+
+## Session 12 addendum 2 (Oct 29): user audio report -> A/V desync bug found and fixed
+
+User report: "recorded audio is white noise". Analysis of the three actual recordings
+(recovered from the Recycle Bin; logs vsr-20261029-074103) contradicted the noise
+description - band-energy profiles show a decaying, content-shaped spectrum with no
+clipping (Peak count 2, Flat factor 0) - but exposed a REAL defect: **audio track longer
+than video** (13.2 s vs 10.5 s = 2.7 s A/V offset). Root cause: the pacer's audio branch
+ran outside the have-frame gate, so audio was written during the WGC-idle bring-up window
+(81 ticks x 33 ms = 2.7 s on this machine) while the CFR video container starts at the
+first frame. Audio captured before the first video frame cannot be aligned to anything.
+
+Fix: the pacer drains audio only after the first video frame (FIFO, 4 s cap, holds the
+bring-up audio). Verified: three tone E2E runs now show stream durations equal within
+1 ms (11.200/11.200, 11.166/11.166, 11.200/11.200). The two 80-byte broken partials in
+the user's Recycle Bin are consistent with playback attempts of truncated files; if
+noise is still heard after this fix, keep the file for analysis.

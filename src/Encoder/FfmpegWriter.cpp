@@ -565,7 +565,14 @@ void FfmpegWriter::PacerLoop() {
             videoBytes += lastSentNv12_.size();
             writtenFrames_.fetch_add(1, std::memory_order_relaxed);
         }
-        if (audioEnabled_) {
+        // Audio waits for the FIRST VIDEO FRAME: capture bring-up (WGC idle
+        // windows before the GDI repair) can delay the first frame by seconds,
+        // and audio written before it has no video to align with - the audio
+        // track would start early and run longer than the video (observed as
+        // a 2.7 s A/V offset on a user recording). The FIFO (4 s cap) holds
+        // the audio captured during the wait; leftovers beyond the cap are
+        // dropped with the video.
+        if (audioEnabled_ && haveFrame) {
             std::vector<std::uint8_t> chunk(audioTickBytes, 0);
             {
                 std::lock_guard<std::mutex> lock(audioMutex_);
