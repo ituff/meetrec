@@ -526,10 +526,18 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     device_ = std::make_unique<GraphicsDevice>(deviceResult.Value());
 
     encoder::AudioFormat audioFormat_{};
-    // 4b. System audio format: probed up front so the writer is created with
-    // its AAC stream (best effort - failures degrade to video-only).
+    // 4b. Meeting audio format: probed up front so the writer is created with
+    // its AAC stream (best effort - failures degrade to video-only). Without
+    // a loopback endpoint the mic (when enabled) still carries the track.
     if (request.captureAudio) {
-        auto fmt = encoder::AudioCapture::QueryLoopbackFormat();
+        auto fmt = encoder::AudioCapture::QueryLoopbackFormat(request.audioOutputDeviceId);
+        if (!fmt && request.captureMicrophone) {
+            fmt = encoder::AudioCapture::QueryMicrophoneFormat(request.audioInputDeviceId);
+            if (fmt) {
+                log::Warning("Coordinator", "AUDIO_LOOPBACK_UNAVAILABLE_MIC_ONLY", correlationId_,
+                             L"System audio unavailable; recording the microphone only.");
+            }
+        }
         if (fmt.IsOk()) {
             audioFormat_ = fmt.Value();
             audioRate_ = fmt.Value().sampleRate;
@@ -674,22 +682,33 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     writer_ = std::move(writerResult.Value());
 
     if (request.captureAudio && audioRate_ > 0) {
+        encoder::AudioCaptureOptions audioOptions{};
+        audioOptions.microphone = request.captureMicrophone;
+        audioOptions.loopbackDeviceId = request.audioOutputDeviceId;
+        audioOptions.microphoneDeviceId = request.audioInputDeviceId;
         auto started = encoder::AudioCapture::Start(
             *clock_, [this](encoder::AudioChunk&& chunk) {
                 audioReceived_.store(true, std::memory_order_relaxed);
                 std::lock_guard<std::mutex> lock(audioMutex_);
                 if (audioQueue_.size() >= 400) audioQueue_.pop_front();
                 audioQueue_.push_back(std::move(chunk));
-            });
+            }, audioOptions);
         if (started) {
             audioCapture_ = std::move(started.Value());
             log::Info("Coordinator", "AUDIO_STREAM_ENABLED", correlationId_,
-                      L"System audio will be recorded.",
+                      L"Meeting audio (system + microphone mix) will be recorded.",
                       {{"sampleRate", std::to_string(audioRate_)},
-                       {"channels", std::to_string(audioChannels_)}});
+                       {"channels", std::to_string(audioChannels_)},
+                       {"mic", request.captureMicrophone ? "1" : "0"},
+                       {"outputDeviceId",
+                        WideToUtf8(request.audioOutputDeviceId.empty() ? L"default"
+                                                                      : request.audioOutputDeviceId)},
+                       {"inputDeviceId",
+                        WideToUtf8(request.audioInputDeviceId.empty() ? L"default"
+                                                                     : request.audioInputDeviceId)}});
         } else {
             log::Warning("Coordinator", "AUDIO_CAPTURE_UNAVAILABLE", correlationId_,
-                         L"System audio capture could not start; recording video only.");
+                         L"Audio capture could not start; recording video only.");
         }
     }
 

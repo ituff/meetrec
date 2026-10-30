@@ -3,8 +3,12 @@
 #include <windows.h>
 #include <windowsx.h>
 
+#include <mmdeviceapi.h>
+#include <propsys.h>
 #include <shellapi.h>
 #include <shlobj.h>
+
+#pragma comment(lib, "ole32.lib")
 
 #include <Application/Diagnostics.h>
 #include <Capture/GraphicsDevice.h>
@@ -47,6 +51,9 @@ constexpr int ID_BTN_DISPLAY = 220;
 constexpr int ID_TXT_DISPLAY = 221;
 constexpr int ID_COMBO_ENCODER = 222;
 constexpr int ID_CHK_AUDIO = 223;
+constexpr int ID_CHK_MIC = 224;
+constexpr int ID_COMBO_AUDIOOUT = 225;
+constexpr int ID_COMBO_AUDIOIN = 226;
 
 constexpr UINT WM_APP_ACTIVATE = WM_APP + 1;
 constexpr UINT WM_APP_TRAY = WM_APP + 2;
@@ -68,6 +75,106 @@ void PlaceControl(HWND hwnd, int x, int y, int w, int h, UINT dpi) {
     SetWindowPos(hwnd, nullptr, Scale(x, dpi), Scale(y, dpi), Scale(w, dpi), Scale(h, dpi),
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
+
+// PKEY_Device_FriendlyName, spelled out so no extra SDK import lib is needed.
+constexpr PROPERTYKEY kPkeyDeviceFriendlyName = {
+    {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
+
+std::wstring DeviceFriendlyName(IMMDevice* device) {
+    if (device == nullptr) return L"";
+    IPropertyStore* store = nullptr;
+    if (FAILED(device->OpenPropertyStore(STGM_READ, &store)) || store == nullptr) return L"";
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    std::wstring name;
+    if (SUCCEEDED(store->GetValue(kPkeyDeviceFriendlyName, &value)) && value.vt == VT_LPWSTR &&
+        value.pwszVal != nullptr) {
+        name = value.pwszVal;
+    }
+    PropVariantClear(&value);
+    store->Release();
+    return name;
+}
+
+struct AudioEndpointItem {
+    std::wstring id;
+    std::wstring name;
+};
+
+// Active endpoints of one flow, in the order the OS reports them.
+std::vector<AudioEndpointItem> EnumerateAudioEndpoints(EDataFlow flow) {
+    std::vector<AudioEndpointItem> items;
+    IMMDeviceEnumerator* enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(&enumerator))) ||
+        enumerator == nullptr) {
+        return items;
+    }
+    IMMDeviceCollection* collection = nullptr;
+    if (SUCCEEDED(enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE, &collection)) &&
+        collection != nullptr) {
+        UINT count = 0;
+        collection->GetCount(&count);
+        for (UINT i = 0; i < count; ++i) {
+            IMMDevice* device = nullptr;
+            if (FAILED(collection->Item(i, &device)) || device == nullptr) continue;
+            LPWSTR id = nullptr;
+            if (SUCCEEDED(device->GetId(&id)) && id != nullptr) {
+                AudioEndpointItem item;
+                item.id = id;
+                item.name = DeviceFriendlyName(device);
+                if (item.name.empty()) item.name = L"Audio device";
+                items.push_back(std::move(item));
+                CoTaskMemFree(id);
+            }
+            device->Release();
+        }
+        collection->Release();
+    }
+    enumerator->Release();
+    return items;
+}
+
+// Name of the Windows default endpoint for the role the recorder uses.
+std::wstring DefaultAudioEndpointName(EDataFlow flow) {
+    IMMDeviceEnumerator* enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(&enumerator))) ||
+        enumerator == nullptr) {
+        return L"";
+    }
+    IMMDevice* device = nullptr;
+    if (flow == eRender) {
+        enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+    } else {
+        if (FAILED(enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &device))) {
+            enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+        }
+    }
+    std::wstring name = DeviceFriendlyName(device);
+    if (device != nullptr) device->Release();
+    enumerator->Release();
+    return name;
+}
+
+// COM may not be initialized on the UI thread; MMDeviceEnumerator needs it.
+class ComScope {
+public:
+    ComScope() {
+        const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        uninit_ = hr == S_OK || hr == S_FALSE;
+    }
+    ~ComScope() {
+        if (uninit_) CoUninitialize();
+    }
+    ComScope(const ComScope&) = delete;
+    ComScope& operator=(const ComScope&) = delete;
+
+private:
+    bool uninit_ = false;
+};
 
 } // namespace
 
@@ -102,14 +209,17 @@ bool MainWindow::Create() {
     // fail with ERROR_TLW_WITH_WSCHILD).
     OnCreate();
 
-    // The window itself was sized before it existed, using the system DPI,
-    // while OnCreate lays out children with GetDpiForWindow; reconcile once
-    // here (afterwards WM_DPICHANGED keeps them in sync).
+    // The window was created with an unscaled outer size before the DPI was
+    // known; LayoutControls works in client coordinates. Size the window so
+    // its CLIENT area matches the layout - otherwise the frame (and DPI
+    // scaling) clips the right column and the status rows.
     const UINT windowDpi = GetDpiForWindow(hwnd_);
-    if (windowDpi != 0 && windowDpi != dpi_) {
-        OnDpiChanged(windowDpi);
-        SetWindowPos(hwnd_, nullptr, 0, 0, Scale(760, windowDpi), Scale(640, windowDpi),
-                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    const DWORD style = static_cast<DWORD>(GetWindowLongPtrW(hwnd_, GWL_STYLE));
+    const DWORD exStyle = static_cast<DWORD>(GetWindowLongPtrW(hwnd_, GWL_EXSTYLE));
+    RECT client = {0, 0, Scale(760, windowDpi), Scale(640, windowDpi)};
+    if (AdjustWindowRectExForDpi(&client, style, FALSE, exStyle, windowDpi)) {
+        SetWindowPos(hwnd_, nullptr, 0, 0, client.right - client.left,
+                     client.bottom - client.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
     return true;
 }
@@ -153,7 +263,13 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             const int code = HIWORD(wp);
             switch (id) {
                 case ID_BTN_REFRESH:
-                    if (code == BN_CLICKED) RefreshWindowList();
+                    if (code == BN_CLICKED) {
+                        // Also pick up audio devices plugged in since start,
+                        // keeping the current selections.
+                        RefreshAudioDeviceCombos(SelectedAudioDeviceId(true),
+                                                 SelectedAudioDeviceId(false));
+                        RefreshWindowList();
+                    }
                     return 0;
                 case ID_BTN_START:
                     if (code == BN_CLICKED) OnStartClicked();
@@ -394,7 +510,12 @@ void MainWindow::OnCreate() {
     makeControl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | CBS_HASSTRINGS, ID_COMBO_ENCODER);
     makeControl(L"BUTTON", L"Capture mouse cursor (when supported)", BS_AUTOCHECKBOX,
                 ID_CHK_CURSOR);
-    makeControl(L"BUTTON", L"Record system audio", BS_AUTOCHECKBOX, ID_CHK_AUDIO);
+    makeControl(L"BUTTON", L"Record system audio (participants)", BS_AUTOCHECKBOX, ID_CHK_AUDIO);
+    makeControl(L"BUTTON", L"Record microphone (my voice)", BS_AUTOCHECKBOX, ID_CHK_MIC);
+    makeControl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL,
+                ID_COMBO_AUDIOOUT);
+    makeControl(L"COMBOBOX", nullptr, CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL,
+                ID_COMBO_AUDIOIN);
     makeControl(L"BUTTON", L"Show preview", BS_AUTOCHECKBOX, ID_PREVIEW_TOGGLE);
     makeControl(L"BUTTON", L"Start Recording", BS_DEFPUSHBUTTON, ID_BTN_START);
     makeControl(L"BUTTON", L"Pause", BS_PUSHBUTTON, ID_BTN_PAUSE);
@@ -446,6 +567,9 @@ void MainWindow::OnCreate() {
     CheckDlgButton(hwnd_, ID_CHK_CURSOR, settings.captureCursor ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(hwnd_, ID_CHK_AUDIO,
                    settings.recordSystemAudio ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(hwnd_, ID_CHK_MIC,
+                   settings.recordMicrophone ? BST_CHECKED : BST_UNCHECKED);
+    RefreshAudioDeviceCombos(settings.audioOutputDeviceId, settings.audioInputDeviceId);
     CheckDlgButton(hwnd_, ID_PREVIEW_TOGGLE, settings.showPreview ? BST_CHECKED : BST_UNCHECKED);
     preview_->SetEnabled(settings.showPreview);
     if (preview_->Hwnd() != nullptr) {
@@ -471,7 +595,7 @@ void MainWindow::OnDpiChanged(UINT newDpi) {
     uiFont_ = CreateFontW(-Scale(9, dpi_), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                           DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                           CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    for (int id = ID_LIST_WINDOWS; id <= ID_TXT_ERROR; ++id) {
+    for (int id = ID_LIST_WINDOWS; id <= ID_COMBO_AUDIOIN; ++id) {
         HWND control = GetDlgItem(hwnd_, id);
         if (control != nullptr) SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont_), TRUE);
     }
@@ -497,12 +621,21 @@ void MainWindow::LayoutControls(UINT dpi) {
 
     PlaceControl(GetDlgItem(hwnd_, ID_CHK_CURSOR), margin, y, 260, 22, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_CHK_AUDIO), margin, y + 26, 260, 22, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_CHK_MIC), margin, y + 52, 260, 22, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_PREVIEW_TOGGLE), 290, y, 120, 22, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_DIAG), 290, y + 30, 120, 24, dpi);
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_DISPLAY), 420, y + 30, 150, 24, dpi);
-    // 66 clears the Diagnostics/display row above; 36 would overlap it with
-    // the command row (Diagnostics is covered by the Stop button).
-    y += 66;
+    // 84 clears the checkbox/Diagnostics column above (the mic checkbox ends
+    // at y+74).
+    y += 84;
+
+    // Audio device row: call apps (Teams, Zoom, Tencent Meeting) keep their
+    // own device selection, which often differs from the Windows default;
+    // capturing the wrong endpoint leaves that source silent. The lists are
+    // rebuilt on Refresh so newly plugged devices appear.
+    PlaceControl(GetDlgItem(hwnd_, ID_COMBO_AUDIOOUT), margin, y, 225, 200, dpi);
+    PlaceControl(GetDlgItem(hwnd_, ID_COMBO_AUDIOIN), 245, y, 225, 200, dpi);
+    y += 34;
 
     // Command row.
     PlaceControl(GetDlgItem(hwnd_, ID_BTN_START), margin, y, 150, 36, dpi);
@@ -654,6 +787,10 @@ void MainWindow::OnStartClicked() {
         IsDlgButtonChecked(hwnd_, ID_CHK_CURSOR) == BST_CHECKED;
     request.captureAudio =
         IsDlgButtonChecked(hwnd_, ID_CHK_AUDIO) == BST_CHECKED;
+    request.captureMicrophone =
+        IsDlgButtonChecked(hwnd_, ID_CHK_MIC) == BST_CHECKED;
+    request.audioOutputDeviceId = SelectedAudioDeviceId(true);
+    request.audioInputDeviceId = SelectedAudioDeviceId(false);
     {
         // Recording backend from settings (no dedicated control; "auto"
         // picks ffmpeg when ffmpeg.exe is available). A stale/invalid value
@@ -845,6 +982,52 @@ void MainWindow::RefreshWindowList() {
     }
 }
 
+void MainWindow::RefreshAudioDeviceCombos(const std::wstring& preferredOutput,
+                                          const std::wstring& preferredInput) {
+    ComScope com;
+    auto fill = [&](int comboId, EDataFlow flow, std::vector<std::wstring>& ids,
+                    const wchar_t* prefix, const std::wstring& preferred) {
+        HWND combo = GetDlgItem(hwnd_, comboId);
+        if (combo == nullptr) return;
+        ComboBox_ResetContent(combo);
+        ids.clear();
+        ids.emplace_back(); // index 0: Windows default (empty ID)
+
+        std::wstring defaultLabel = std::wstring(prefix) + L": Default";
+        const std::wstring defaultName = DefaultAudioEndpointName(flow);
+        if (!defaultName.empty()) defaultLabel += L" - " + defaultName;
+        ComboBox_AddString(combo, defaultLabel.c_str());
+
+        for (const AudioEndpointItem& endpoint : EnumerateAudioEndpoints(flow)) {
+            const std::wstring label = std::wstring(prefix) + L": " + endpoint.name;
+            ComboBox_AddString(combo, label.c_str());
+            ids.push_back(endpoint.id);
+        }
+        int selection = 0;
+        for (size_t i = 1; i < ids.size(); ++i) {
+            if (!preferred.empty() && ids[i] == preferred) {
+                selection = static_cast<int>(i);
+                break;
+            }
+        }
+        ComboBox_SetCurSel(combo, selection);
+        // Device names are long; widen the dropped list, not the control.
+        SendMessageW(combo, CB_SETDROPPEDWIDTH, Scale(420, dpi_), 0);
+    };
+    fill(ID_COMBO_AUDIOOUT, eRender, audioOutputIds_, L"System audio", preferredOutput);
+    fill(ID_COMBO_AUDIOIN, eCapture, audioInputIds_, L"Microphone", preferredInput);
+}
+
+std::wstring MainWindow::SelectedAudioDeviceId(bool output) const {
+    const std::vector<std::wstring>& ids = output ? audioOutputIds_ : audioInputIds_;
+    HWND combo = GetDlgItem(hwnd_, output ? ID_COMBO_AUDIOOUT : ID_COMBO_AUDIOIN);
+    const int selection = combo != nullptr ? ComboBox_GetCurSel(combo) : CB_ERR;
+    if (selection >= 0 && static_cast<size_t>(selection) < ids.size()) {
+        return ids[static_cast<size_t>(selection)];
+    }
+    return L"";
+}
+
 void MainWindow::SaveSettings() {
     SettingsStore store;
     store.Load(nullptr); // populates the unknown-field preservation set
@@ -863,6 +1046,10 @@ void MainWindow::SaveSettings() {
                                                        : "auto";
     settings.recordSystemAudio =
         IsDlgButtonChecked(hwnd_, ID_CHK_AUDIO) == BST_CHECKED;
+    settings.recordMicrophone =
+        IsDlgButtonChecked(hwnd_, ID_CHK_MIC) == BST_CHECKED;
+    settings.audioOutputDeviceId = SelectedAudioDeviceId(true);
+    settings.audioInputDeviceId = SelectedAudioDeviceId(false);
     settings.showPreview = IsDlgButtonChecked(hwnd_, ID_PREVIEW_TOGGLE) == BST_CHECKED;
     settings.captureCursor = IsDlgButtonChecked(hwnd_, ID_CHK_CURSOR) == BST_CHECKED;
     settings.minimizeToTray = Application::Instance().WantsMinimizeToTray();

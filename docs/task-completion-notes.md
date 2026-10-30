@@ -1073,3 +1073,133 @@ Fix: window targets now DEFAULT to the GDI PrintWindow backend on every session 
 Verified through the dev pipeline: real content luma (73-174), A/V durations equal.
 Known trade-off: GDI PrintWindow at 30 fps + encode slightly overruns the queue
 (22 drops in a 10 s run - frames are sampled fresh-per-tick, cosmetic).
+
+## Session 12 addendum 4 (Oct 30): user report "only a faint hiss" -> WASAPI packet unit bug (frames read as bytes)
+
+User report: recordings of Teams / Tencent Meeting / Zoom calls contain "only a bit of
+hissing" from the system audio. This came after the PCM16+engine-conversion change and the
+A/V-length fix, so both were re-examined with real measurements instead of spectrograms.
+
+### Root cause
+
+`IAudioCaptureClient::GetBuffer` reports the packet size in **audio frames** (one frame =
+one sample per channel); `ReleaseBuffer` takes the same frame count back. The capture loop
+used the value as a byte count when copying:
+
+```cpp
+UINT32 bytes = 0;                                  // actually FRAMES
+capture->GetBuffer(&data, &bytes, ...);
+pending.insert(pending.end(), data, data + bytes); // 1/blockAlign of the packet
+capture->ReleaseBuffer(bytes);                     // this part was correct
+```
+
+A packet therefore contributed only `1 / blockAlign` of its audio (1/8 for the float32
+stereo mix, 1/4 for the PCM16 engine-converted stream); the missing 75-87 % became zero
+samples through the timeline gap bridging and the pacer's silence padding. The result is
+low-level, 100 Hz-chopped audio - heard as a faint buzz/hiss, exactly the report.
+
+Why earlier investigations missed it: the ground-truth probes in `artifacts/` contained the
+same unit bug, so "raw float" and "converted PCM16" dumps compared identical (both chopped
+to the same fraction); the previous analysis looked at stream durations and band-energy
+profiles of the final files, not at what fraction of each packet reached the buffer.
+
+### Fix (`src/Encoder/AudioCapture.cpp`)
+
+- The packet byte span is `frames * blockAlign`; silent packets are expanded to the same
+  span. `ReleaseBuffer` keeps taking the frame count. This restores the full stream from
+  both endpoints (mic uses the same loop).
+- Long-idle guard: this build's audio engine delivers **no packets at all** while the
+  endpoint is fully idle (verified: 6 s probe, 0 bytes), so the timestamp gap before the
+  next packet can be minutes. `TimelineBuffer::Push` now restarts the timeline when a gap
+  exceeds the 400 ms retention instead of allocating a huge silence buffer.
+
+### Verification (Release build, this machine, Jabra headset endpoints, ffmpeg backend)
+
+- Ground-truth probe mirroring production (PCM16 + `AUTOCONVERTPCM`): 5 s of looping 440 Hz
+  tone -> 4.98 s captured, every packet 480 frames (10 ms), RMS steady at 2026-2067, zero
+  silent 10 ms windows.
+- Old build + tone, 10 s dev-record: mixed dump 2.777 s of audio = **24.9 % duty**; decoded
+  AAC median RMS 2, 60.2 % of 10 ms windows near-silent (the user's symptom, reproduced).
+- Fixed build, same run: loopback dump 11.19 s for an 11.27 s recording, **0** silent 10 ms
+  windows; decoded AAC median RMS 1986, only start/tail padding silent.
+- Intermittent audio (1 s tone / 1 s silence loop, 12 s): every burst recorded at full
+  level at the 2 s cadence, no loss after silent stretches; no periodic dropouts inside
+  bursts.
+- 83/83 unit tests pass. Diagnostics `VSR_AUDIO_DUMP_LOOPBACK`, `VSR_AUDIO_DUMP_MIC`,
+  `VSR_AUDIO_DUMP` unchanged (now writing the full stream).
+
+### Notes / remaining limits
+
+- Use headphones with the mic enabled: no AEC, so speakers make the mic re-record the
+  participants (documented in `docs/known-limitations.md`).
+- Endpoint changes mid-recording still keep the old stream (documented limitation).
+- Probes under `artifacts/` had the same frames-vs-bytes bug and are fixed
+  (`audio_cap_probe`, `audio_rate_probe`, `audio_delivery_probe`, `audio_event_probe`,
+  `audio_qpc_probe`); `audio_pcm16_probe.cpp` is new and mirrors the production stream.
+
+## Session 12 addendum 5 (Oct 30): Teams recording "noise" -> drain-time timestamps; missing own mic -> meeting app used a different endpoint
+
+Follow-up to addendum 4: the user recorded a real Teams call (59.7 s, 2 participants,
+Jabra headset as the Windows default render + communications capture device) and reported
+"sound but noise" plus "my own microphone does not seem to be recorded".
+
+### "Noise" root cause: packet timestamps came from thread wake-up times
+
+The capture source timestamped every drained batch as `now - duration`, where `now` is the
+wall clock when the polling thread woke up. The poll interval (3 ms sleep + scheduling)
+jitters relative to the 10 ms packet cadence, so each push started a few hundred µs late or
+early relative to the previous push's end. `TimelineBuffer::Push` bridged the late ones
+with silence and clipped the early ones: 1-5 ms holes at 20-30/s, heard as a rough buzz /
+"noise" over any speech. Measured in the user's file: 82 sub-30 %-level 1 ms windows in a
+3 s speech stretch; no 50/100 Hz hum, no clipping - the dropouts were the artifact.
+
+Fix: `IAudioCaptureClient::GetBuffer` reports the QPC position of each packet's first frame.
+The source converts that QPC to the clock's monotonic domain one-to-one (offset sampled
+once) and places packets **sample-continuously** (previous end + frame count); a QPC jump
+beyond one packet plus 5 ms is a real gap (idle endpoint / device glitch) and re-anchors.
+Verification: the same 3 s stretch shows 0 dropouts (also 0 in the mixer dump and in the
+decoded AAC), and a 1 s-on/1 s-off burst tone records every burst at full level.
+
+### Missing microphone: Teams' selected mic was not the Windows default
+
+- Teams' settings (`%LOCALAPPDATA%\Packages\MSTeams_8wekyb3d8bbwe\LocalCache\Microsoft\MSTeams\cmd_settings.json`)
+  select microphone `{0.0.1.00000000}.{40d212db-...}` = **麦克风阵列 (Realtek(R) Audio)**
+  (the built-in array) and speaker `{0.0.0.00000000}.{00e63dc5-...}` = the Jabra headset.
+- The Windows default capture endpoint was the Jabra **耳机式麦克风** `{d9e01e14-...}`.
+  The recorder followed the Windows default, so it captured the headset boom mic while the
+  user spoke into the laptop array - their voice was never on the captured endpoint. The
+  system audio was fine because Teams' speaker was also the Windows default render endpoint.
+- `session_probe` confirms ms-teams.exe holds audio sessions on both capture endpoints
+  (the selected array and the default headset), which is why an automatic "active session"
+  heuristic cannot reliably pick the app's device; explicit device selection is the
+  deterministic answer.
+
+Fix: the GUI now has **System audio** and **Microphone** device lists (Windows default +
+every active endpoint). The selection is persisted (`audioOutputDeviceId` /
+`audioInputDeviceId`), passed through `StartRecordingRequest` to `AudioCaptureOptions`, and
+the endpoints are opened by ID (a stale ID falls back to the default with an
+`AUDIO_DEVICE_FALLBACK` warning). Dev CLI: `--audio-out <id>` / `--audio-in <id>`.
+
+Verification: recording with the Realtek speakers + Realtek array selected logs exactly
+those devices (`AUDIO_LOOPBACK_MIX_FORMAT`, `AUDIO_MIC_MIX_FORMAT`), the loopback dump is
+9.1 s of the rendered 1 kHz tone with 0 dropouts, and the mic source opens on the array and
+delivers continuously. The acoustic pickup itself could not be verified on this desktop
+(the on-board array does not hear the on-board speakers; its stream is live but near
+silence), so the real acceptance check is a Teams/Zoom call with the matching device
+selected.
+
+### Distribution build (Oct 30)
+
+Portable package built from the current working tree (version stamp
+`2a5d4da-dirty`): `artifacts/dist/VirtualScreenRecorder-1.0.0.0-win64.zip`
+(970 KB, SHA-256 `695d85b4...3f3f94dd`). Contents: Release x64 exe, app-local
+Microsoft VC++ 2022 runtime (no redistributable install required), README.txt
+(Chinese quick start + audio-device matching), RELEASE-NOTES.txt (this audio
+root-cause summary), VERSION.txt, build-manifest.json, SHA256SUMS.txt.
+ffmpeg is intentionally not bundled (size/licensing; the app finds it in its own
+directory, PATH, or C:\ffmpeg\bin, or via VSR_FFMPEG_PATH) and the virtual
+display driver is not needed for window recording.
+
+Verified from the packaged folder: `--version`, `--self-check`, and a 6 s
+`--dev-record-window --audio` run (audio 7.21 s, median RMS 2042, 0 dropouts),
+plus 83/83 unit tests.

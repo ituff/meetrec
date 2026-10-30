@@ -34,7 +34,9 @@ public:
                      const std::wstring& outputDir, HWND targetWindow = nullptr,
                      encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
                      bool captureAudio = false,
-                     encoder::WriterBackend backend = encoder::WriterBackend::Auto);
+                     encoder::WriterBackend backend = encoder::WriterBackend::Auto,
+                     const std::wstring& audioOutputDeviceId = {},
+                     const std::wstring& audioInputDeviceId = {});
     // Driverless E2E entry: spawns a self-contained animated test window in a
     // child process, records it through the full capture pipeline, then closes
     // the child. Exit 0 on a finalized MP4.
@@ -42,7 +44,9 @@ public:
                            const std::wstring& outputDir,
                            encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
                            bool captureAudio = false,
-                           encoder::WriterBackend backend = encoder::WriterBackend::Auto);
+                           encoder::WriterBackend backend = encoder::WriterBackend::Auto,
+                           const std::wstring& audioOutputDeviceId = {},
+                           const std::wstring& audioInputDeviceId = {});
     // Prints a capability report (OS, GPU, capture, encoder, virtual display,
     // topology, settings) and exits. Support/diagnostics tool; satisfies the
     // T020/T030 "diagnostic output" verification items. Never mutates state.

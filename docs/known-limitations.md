@@ -35,11 +35,33 @@ release notes sections with the same purpose.
 
 ## Recording behavior
 
-- **System audio is opt-in** (Settings checkbox or `--audio` on the dev CLI; default off).
-  WASAPI loopback captures the default render endpoint, so nothing is captured while no
-  application is playing audio; a silent AAC track is written in that case. AAC finalization
-  has been observed to hang on Windows Insider builds (see the encoder section below), which
-  is why audio stays opt-in until verified on retail builds.
+- **Audio recording is opt-in** (the "Record system audio" checkbox, or `--audio` on the dev
+  CLI; default off). Two sources can be recorded and are mixed into one AAC track: WASAPI
+  loopback of a render endpoint (participants/system sound) and, when "Record microphone" is
+  also ticked (the default when audio is enabled), a capture endpoint (your own voice). Both
+  endpoints are chosen in the two device lists below the checkboxes; the first entry follows
+  the **Windows default** (render: console role; capture: communications role).
+- Meeting apps keep their **own** audio device selection. The recorder cannot read it, so the
+  lists must be matched to the app: if Teams (or Zoom / Tencent Meeting) uses the built-in
+  microphone array while Windows' default mic is a headset, select the array in the
+  Microphone list - otherwise your voice is not in the recording and that source stays
+  silent. The log records the actual endpoints (`AUDIO_LOOPBACK_MIX_FORMAT`,
+  `AUDIO_MIC_MIX_FORMAT`).
+- Endpoint changes mid-recording are not followed. Plugging in a headset or letting a
+  Bluetooth headset connect while recording invalidates the stream; the source thread logs
+  `AUDIO_..._SOURCE_EXITED` and that source stays silent for the rest of the recording while
+  the other one continues. Select the device you will use before starting.
+- No acoustic echo cancellation. With speakers, the microphone picks up the participants
+  along with your voice, so the recording contains a delayed copy of the remote side. Use
+  headphones for clean two-sided meeting audio.
+- The loopback track captures **everything** the selected output renders (meeting audio,
+  notifications, music, other apps). Content on protected audio paths records as silence;
+  the recorder never attempts to bypass that (NFR-025).
+- Microphone level is fixed (no auto gain); `VSR_MIC_GAIN=<multiplier>` adjusts it
+  (0.25-8.0) when your voice is much quieter than the participants. A stretch with no
+  audible sound records as silence. AAC finalization has been observed to hang on Windows
+  Insider builds (see the encoder section below), which is why audio stays opt-in until
+  verified on retail builds.
 - Recordings pause correctly (paused time is excluded from the output, AC-005), but frames are
   not buffered during pause: what happens on the virtual display during a pause is not recorded
   and cannot be recovered.

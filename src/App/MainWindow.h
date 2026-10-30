@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -53,6 +54,11 @@ private:
     void OnStopClickedAsync();
     void ReapStopOperation();
     void RefreshWindowList();
+    // Rebuilds the audio device combo items; empty preferred IDs keep the
+    // Windows default entry selected.
+    void RefreshAudioDeviceCombos(const std::wstring& preferredOutput = {},
+                                  const std::wstring& preferredInput = {});
+    std::wstring SelectedAudioDeviceId(bool output) const;
     void SaveSettings();
 
     Coordinator& coordinator_;
@@ -74,6 +80,10 @@ private:
     std::thread stopOp_;      // bounded stop/finalize work (FR-075)
     HFONT uiFont_ = nullptr;
     std::vector<window::WindowInfo> windows_;
+    // Endpoint IDs behind the audio device combo items; index 0 is the
+    // Windows default (empty ID). Parallel to the combo item indexes.
+    std::vector<std::wstring> audioOutputIds_;
+    std::vector<std::wstring> audioInputIds_;
 };
 
 } // namespace vsr::app

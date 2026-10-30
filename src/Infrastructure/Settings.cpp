@@ -105,6 +105,27 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("recordMicrophone");
+        if (v.GetType() == json::Type::Boolean) settings.recordMicrophone = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("audioOutputDeviceId");
+        if (v.GetType() == json::Type::String) {
+            settings.audioOutputDeviceId = Utf8ToWide(v.AsString());
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("audioInputDeviceId");
+        if (v.GetType() == json::Type::String) {
+            settings.audioInputDeviceId = Utf8ToWide(v.AsString());
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("showPreview");
         if (v.GetType() == json::Type::Boolean) settings.showPreview = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
@@ -139,6 +160,9 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "captureCursor" || kv.first == "minimizeToTray" ||
                            kv.first == "restoreTargetWindow" ||
                            kv.first == "recordSystemAudio" ||
+                           kv.first == "recordMicrophone" ||
+                           kv.first == "audioOutputDeviceId" ||
+                           kv.first == "audioInputDeviceId" ||
                            kv.first == "enableCrashDumps";
         if (!known) {
             unknown_.Set(kv.first, kv.second);
@@ -163,6 +187,9 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("minimizeToTray", json::Value(settings.minimizeToTray));
     root.Set("restoreTargetWindow", json::Value(settings.restoreTargetWindow));
     root.Set("recordSystemAudio", json::Value(settings.recordSystemAudio));
+    root.Set("recordMicrophone", json::Value(settings.recordMicrophone));
+    root.Set("audioOutputDeviceId", json::Value(WideToUtf8(settings.audioOutputDeviceId)));
+    root.Set("audioInputDeviceId", json::Value(WideToUtf8(settings.audioInputDeviceId)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
 
     // Re-attach preserved unknown keys verbatim (FR-091).

@@ -35,6 +35,16 @@ struct Settings {
     // System audio (WASAPI loopback) mixed into the recording. Opt-in: the
     // AAC encoder finalize hangs on some Insider builds (26200 observed).
     bool recordSystemAudio = false;
+    // The user's microphone mixed into the same audio track as the system
+    // loopback (meeting recording needs both ends of the call). On by
+    // default whenever audio recording is enabled.
+    bool recordMicrophone = true;
+    // Audio endpoint IDs to record (empty = the Windows default). Meeting
+    // apps keep their own device selection, which can differ from the
+    // Windows default - recording the wrong endpoint is silent for that
+    // source, so the UI lets the user match the app's devices.
+    std::wstring audioOutputDeviceId;
+    std::wstring audioInputDeviceId;
     // T103: local crash dumps are strictly opt-in and never uploaded.
     bool enableCrashDumps = false;
 };

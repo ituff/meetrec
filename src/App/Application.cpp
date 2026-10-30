@@ -484,7 +484,9 @@ int Application::RunInteractive() {
 int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                               const std::wstring& outputDir, HWND targetWindow,
                               encoder::EncoderPreference encoderPreference,
-                              bool captureAudio, encoder::WriterBackend backend) {
+                              bool captureAudio, encoder::WriterBackend backend,
+                              const std::wstring& audioOutputDeviceId,
+                              const std::wstring& audioInputDeviceId) {
     // T040: command-line development entry point recording the virtual
     // display for a fixed duration, without UI or window movement.
     AttachParentConsole();
@@ -525,6 +527,11 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     // finalize hung on some Insider builds, so automated runs are video-only
     // by default and the failure mode degrades to video-only when present.
     request.captureAudio = captureAudio;
+    // Dev runs mix the mic in with the loopback (VSR_MIC_DISABLE=1 forces a
+    // system-only run).
+    request.captureMicrophone = captureAudio;
+    request.audioOutputDeviceId = audioOutputDeviceId;
+    request.audioInputDeviceId = audioInputDeviceId;
     request.backend = backend;
     auto started = coordinator_->Start(request);
     if (!started) {
@@ -696,7 +703,9 @@ int RunDevTestWindow(unsigned fps, int seconds, const std::wstring& title) {
 int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
                                     const std::wstring& outputDir,
                                     encoder::EncoderPreference encoderPreference,
-                                    bool captureAudio, encoder::WriterBackend backend) {
+                                    bool captureAudio, encoder::WriterBackend backend,
+                                    const std::wstring& audioOutputDeviceId,
+                                    const std::wstring& audioInputDeviceId) {
     wprintf(L"[dev-record-window] starting\n");
     fflush(stdout);
     AttachParentConsole();
@@ -743,7 +752,7 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
     }
 
     const int code = RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference,
-                                  captureAudio, backend);
+                                  captureAudio, backend, audioOutputDeviceId, audioInputDeviceId);
 
     PostMessageW(hwnd, WM_CLOSE, 0, 0);
     WaitForSingleObject(child, 5000);
@@ -766,6 +775,8 @@ struct DevRecordOptions {
     vsr::encoder::EncoderPreference encoder = vsr::encoder::EncoderPreference::Auto;
     vsr::encoder::WriterBackend backend = vsr::encoder::WriterBackend::Auto;
     bool audio = false;
+    std::wstring audioOutId; // empty = Windows default endpoint
+    std::wstring audioInId;
 };
 
 // Shared parser for the recording CLI modes. `--audio` is a bare boolean
@@ -786,6 +797,12 @@ DevRecordOptions ParseDevRecordOptions(int argc, wchar_t* argv[]) {
             ++i;
         } else if (wcscmp(argv[i], L"--output") == 0) {
             o.outputDir = argv[i + 1];
+            ++i;
+        } else if (wcscmp(argv[i], L"--audio-out") == 0) {
+            o.audioOutId = argv[i + 1];
+            ++i;
+        } else if (wcscmp(argv[i], L"--audio-in") == 0) {
+            o.audioInId = argv[i + 1];
             ++i;
         } else if (wcscmp(argv[i], L"--encoder") == 0) {
             o.encoder = vsr::encoder::EncoderPreferenceFromString(vsr::WideToUtf8(argv[i + 1]));
@@ -839,7 +856,8 @@ int wmain(int argc, wchar_t* argv[]) {
         const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
         const int code = Application::Instance().RunDevRecord(o.seconds, o.preset, o.outputDir,
                                                               nullptr, o.encoder, o.audio,
-                                                              o.backend);
+                                                              o.backend, o.audioOutId,
+                                                              o.audioInId);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -864,7 +882,8 @@ int wmain(int argc, wchar_t* argv[]) {
         const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
         const int code = Application::Instance().RunDevRecordWindow(o.seconds, o.preset,
                                                                     o.outputDir, o.encoder,
-                                                                    o.audio, o.backend);
+                                                                    o.audio, o.backend,
+                                                                    o.audioOutId, o.audioInId);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }

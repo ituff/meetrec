@@ -80,8 +80,11 @@ VirtualScreenRecorder.exe --encode-test --seconds 10 --preset high --output D:\C
 Common flags for the recording modes: `--seconds N`, `--preset low|standard|high`,
 `--output DIR`, `--encoder auto|hardware|software` (candidate filtering for the
 Media Foundation backend), `--backend ffmpeg|mf|auto` (recording backend; `auto`
-prefers ffmpeg and falls back to Media Foundation), and `--audio` (opt-in system
-audio via WASAPI loopback -> AAC; automated runs are video-only by default).
+prefers ffmpeg and falls back to Media Foundation), and `--audio` (system audio via
+WASAPI loopback plus the microphone, mixed into one AAC track; automated runs are
+video-only by default, and `VSR_MIC_DISABLE=1` forces a system-only run). The dev modes
+also accept `--audio-out <endpoint-id>` and `--audio-in <endpoint-id>` to pin the
+recorded render/capture endpoints (defaults: the Windows default devices).
 
 ### Recording backends
 
@@ -93,9 +96,22 @@ builds) and is contained end-to-end: bounded pipe writes, bounded finalize, degr
 video-only when audio muxing fails.
 
 **Meeting-recording recommendation:** use the **standard** preset (1920x1080@30 - 60 fps
-buys nothing for slides or talking heads) and turn on the system-audio checkbox. The
-x264 path encodes with capped-CRF rate control (constant quality, preset bitrate as the
-ceiling), so static slides spend few bits and text stays sharp.
+buys nothing for slides or talking heads) and tick both **Record system audio
+(participants)** and **Record microphone (my voice)**; the two sources are mixed into
+one AAC track, so participants and your own voice both land in the recording. Select the
+**same audio devices the meeting app uses** in the two device lists below the checkboxes
+(Teams, Zoom and Tencent Meeting keep their own device selection, which can differ from
+the Windows default; recording the wrong endpoint leaves that source silent). Wear
+headphones: without them the microphone also picks up the speakers, and the recording
+contains an echo of the participants. The x264 path encodes with capped-CRF rate
+control (constant quality, preset bitrate as the ceiling), so static slides spend few
+bits and text stays sharp.
+
+Audio diagnostics (support only): `VSR_AUDIO_DUMP_LOOPBACK=<file>` writes the raw
+captured system audio (s16le, recorded rate/channels), `VSR_AUDIO_DUMP_MIC=<file>`
+the microphone feed, and `VSR_AUDIO_DUMP=<file>` the mixed stream sent to the encoder.
+`VSR_MIC_GAIN` multiplies the microphone before mixing (default 1.0, clamped to
+0.25-8.0) when your voice is noticeably quieter than the participants.
 
 `--self-check` prints OS build, the D3D11 adapter + feature level, capture availability, the
 probed H.264 encoder MFTs (hardware vs software, D3D11-aware), virtual display driver/monitor

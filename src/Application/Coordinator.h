@@ -59,6 +59,15 @@ struct StartRecordingRequest {
     encoder::WriterBackend backend = encoder::WriterBackend::Auto;
     bool captureCursor = false;
     bool captureAudio = false;
+    // Mixes the user's microphone into the audio track alongside the system
+    // loopback (meeting participants). Requires captureAudio; when the
+    // loopback endpoint is missing the recording degrades to mic-only.
+    bool captureMicrophone = true;
+    // Audio endpoint IDs selected in the UI (empty = Windows default). Call
+    // apps often use devices other than the Windows default; capturing the
+    // wrong endpoint makes that source silent.
+    std::wstring audioOutputDeviceId;
+    std::wstring audioInputDeviceId;
 };
 
 enum class StopReason { User, TargetLost, DisplayLost, DeviceLost, DiskLow, WriteFailed, Shutdown };
