@@ -12,6 +12,8 @@ param(
     [string]$Configuration = "Release",
     [string]$Version = "1.1.0",
     [string]$FfmpegDir = "C:\ffmpeg\bin",
+    [string]$FfmpegLicense = "",
+    [string]$FfmpegSourceUrl = "https://github.com/FFmpeg/FFmpeg",
     [string]$OutputRoot = ""
 )
 
@@ -19,6 +21,8 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $root "artifacts\dist"
+} elseif (-not [System.IO.Path]::IsPathRooted($OutputRoot)) {
+    $OutputRoot = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutputRoot))
 }
 $app = Join-Path $root "artifacts\$Configuration\app\MeetRec.exe"
 if (-not (Test-Path $app)) {
@@ -28,9 +32,17 @@ $ffmpeg = Join-Path $FfmpegDir "ffmpeg.exe"
 if (-not (Test-Path $ffmpeg)) {
     throw "Missing ffmpeg.exe at $ffmpeg. Pass -FfmpegDir <dir>."
 }
-$license = Join-Path (Split-Path -Parent $FfmpegDir) "LICENSE.txt"
+if ([string]::IsNullOrWhiteSpace($FfmpegLicense)) {
+    $FfmpegLicense = Join-Path (Split-Path -Parent $FfmpegDir) "LICENSE.txt"
+}
+$license = $FfmpegLicense
 if (-not (Test-Path $license)) {
-    throw "Missing ffmpeg LICENSE.txt at $license."
+    throw "Missing ffmpeg license file at $license. Pass -FfmpegLicense <file>."
+}
+$ffmpegVersion = (& $ffmpeg -version 2>&1 | Select-Object -First 1)
+$ffmpegVersion = ($ffmpegVersion -join ' ').Trim()
+if ([string]::IsNullOrWhiteSpace($ffmpegVersion)) {
+    throw "Could not query ffmpeg version from $ffmpeg."
 }
 
 $name = "MeetRec-$Version-win64-with-ffmpeg"
@@ -60,18 +72,19 @@ FFmpeg source and license
 =========================
 
 This package bundles an unmodified FFmpeg build:
-  ffmpeg version N-121437-gf4a87d8ca4-20251015 (GPLv3 build)
-  commit: f4a87d8ca4
-  configuration: --enable-gpl --enable-version3 --enable-libx264 (shared DLL build)
+  $ffmpegVersion
 
 License: GNU General Public License v3 (see licenses/FFmpeg-GPLv3.txt).
-Source code for this exact FFmpeg revision:
-  https://github.com/FFmpeg/FFmpeg/tree/f4a87d8ca4
+Source / build provider:
+  $FfmpegSourceUrl
 
 MeetRec runs ffmpeg.exe as a separate child process (pipe transport); it does
 not link FFmpeg libraries into the application binary.
 "@
-Set-Content -Path (Join-Path $stage "licenses\FFmpeg-SOURCE.txt") -Value $source -Encoding UTF8
+[System.IO.File]::WriteAllText(
+    (Join-Path $stage "licenses\FFmpeg-SOURCE.txt"),
+    $source,
+    (New-Object System.Text.UTF8Encoding($false)))
 
 # Windows' bsdtar produces a normal deflate zip without the high memory use of
 # Compress-Archive on a 200+ MB payload.

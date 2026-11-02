@@ -1,0 +1,186 @@
+name: Build and release
+
+# Tag pushes build, test, package and publish the GitHub Release.
+# Pull requests and manual dispatches build/test/package and upload a workflow
+# artifact; only a v* tag publishes a release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version override (defaults to App.rc)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: meetrec-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows x64 Release
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $rc = Get-Content src/App/App.rc -Raw
+          if ($rc -notmatch 'FILEVERSION\s+(\d+),(\d+),(\d+),(\d+)') {
+            throw "Could not read FILEVERSION from src/App/App.rc"
+          }
+          $appVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          $requested = "${{ inputs.version }}"
+          $version = if ([string]::IsNullOrWhiteSpace($requested)) {
+            $appVersion
+          } else {
+            $requested.TrimStart('v')
+          }
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+            if ($tagVersion -ne $appVersion) {
+              throw "Tag v$tagVersion does not match App.rc version $appVersion"
+            }
+            $version = $appVersion
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Invalid package version: $version"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Package version: $version (App.rc $appVersion)"
+
+      - name: Build Release (x64, driver skipped)
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -Configuration Release -SkipDriver
+
+      - name: Run unit tests (Release)
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1 -Configuration Release
+
+      - name: Download and verify bundled FFmpeg
+        id: ffmpeg
+        shell: pwsh
+        run: |
+          $zipName = 'ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip'
+          $zipUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$zipName"
+          $checksUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256'
+          $dl = Join-Path $PWD 'artifacts/ffmpeg-dl'
+          New-Item -ItemType Directory -Force -Path $dl | Out-Null
+          $zip = Join-Path $dl $zipName
+          Invoke-WebRequest -Uri $zipUrl -OutFile $zip -UseBasicParsing
+          Invoke-WebRequest -Uri $checksUrl -OutFile (Join-Path $dl 'checksums.sha256') -UseBasicParsing
+
+          $line = Get-Content (Join-Path $dl 'checksums.sha256') |
+            Where-Object { $_ -match [regex]::Escape($zipName) } |
+            Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($line)) {
+            throw "No checksum entry for $zipName"
+          }
+          $expected = (($line -split '\s+')[0]).TrimStart('*').ToLowerInvariant()
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) {
+            throw "FFmpeg checksum mismatch: expected $expected, got $actual"
+          }
+          Write-Host "FFmpeg SHA256 verified: $actual"
+
+          $extract = Join-Path $PWD 'artifacts/ffmpeg'
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          $ffmpegExe = Get-ChildItem $extract -Recurse -Filter ffmpeg.exe |
+            Select-Object -First 1
+          if ($null -eq $ffmpegExe) { throw "ffmpeg.exe not found in the archive" }
+          $binDir = $ffmpegExe.Directory.FullName
+          $licenseUrl = 'https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.GPLv3'
+          Invoke-WebRequest -Uri $licenseUrl -OutFile (Join-Path $extract 'COPYING.GPLv3') -UseBasicParsing
+
+          & $ffmpegExe.FullName -version | Select-Object -First 1
+          "bin=$binDir" >> $env:GITHUB_OUTPUT
+
+      - name: Package portable release
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 `
+            -Configuration Release `
+            -Version "${{ steps.version.outputs.version }}" `
+            -FfmpegDir "${{ steps.ffmpeg.outputs.bin }}" `
+            -FfmpegLicense "artifacts/ffmpeg/COPYING.GPLv3" `
+            -FfmpegSourceUrl "https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest"
+
+      - name: Smoke test bundled ffmpeg
+        shell: pwsh
+        run: |
+          $stage = "artifacts/dist/MeetRec-${{ steps.version.outputs.version }}-win64-with-ffmpeg"
+          $out = "artifacts/smoke-encode"
+          $exe = Join-Path $stage 'MeetRec.exe'
+          if (-not (Test-Path $exe)) { throw "Packaged MeetRec.exe missing: $exe" }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          & $exe --encode-test --seconds 1 --preset low --output $out --backend ffmpeg
+          if ($LASTEXITCODE -ne 0) { throw "Bundled ffmpeg smoke test failed ($LASTEXITCODE)" }
+          Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeetRec-${{ steps.version.outputs.version }}-win64-with-ffmpeg
+          if-no-files-found: error
+          path: |
+            artifacts/dist/MeetRec-${{ steps.version.outputs.version }}-win64-with-ffmpeg.zip
+            artifacts/dist/SHA256SUMS.txt
+            artifacts/dist/MeetRec-${{ steps.version.outputs.version }}-win64-with-ffmpeg/README.txt
+            artifacts/dist/MeetRec-${{ steps.version.outputs.version }}-win64-with-ffmpeg/RELEASE-NOTES.txt
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $version = "${{ steps.version.outputs.version }}"
+          $zip = "artifacts/dist/MeetRec-$version-win64-with-ffmpeg.zip"
+          $sums = "artifacts/dist/SHA256SUMS.txt"
+          $notes = "docs/release/RELEASE-NOTES-$version.md"
+          if (-not (Test-Path $notes)) { throw "Missing release notes: $notes" }
+          if (-not (Test-Path $zip)) { throw "Missing package: $zip" }
+
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          $body = Get-Content $notes -Raw
+          $body += @"
+
+          ## 下载
+
+          - $(Split-Path -Leaf $zip)（约 $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB，便携版，内置 ffmpeg）
+          - SHA256SUMS.txt
+
+          SHA256: $hash
+
+          Windows 10 2004+ x64 / Windows 11 x64。没有 32 位版本；ARM64 未官方支持。
+          "@
+          $bodyPath = "artifacts/release-body.md"
+          [System.IO.File]::WriteAllText($bodyPath, $body, (New-Object System.Text.UTF8Encoding($false)))
+
+          $title = "MeetRec $version — Windows 10/11 x64 (portable, ffmpeg included)"
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip $sums --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+            gh release edit $tag --title $title --notes-file $bodyPath --latest
+            if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
+          } else {
+            gh release create $tag $zip $sums --title $title --notes-file $bodyPath --latest --verify-tag
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          }
