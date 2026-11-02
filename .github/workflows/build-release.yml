@@ -123,13 +123,26 @@ jobs:
       - name: Smoke test bundled ffmpeg
         shell: pwsh
         run: |
+          # GitHub-hosted runners have no D3D11 video processor, so the app's
+          # GPU encode-test cannot run here. Verify the packaged ffmpeg loads
+          # its DLLs and can encode with the bundled libx264 instead.
           $stage = "artifacts/dist/MeetRec-${{ steps.version.outputs.version }}-win64-with-ffmpeg"
-          $out = "artifacts/smoke-encode"
           $exe = Join-Path $stage 'MeetRec.exe'
+          $ffmpeg = Join-Path $stage 'ffmpeg.exe'
           if (-not (Test-Path $exe)) { throw "Packaged MeetRec.exe missing: $exe" }
+          if (-not (Test-Path $ffmpeg)) { throw "Packaged ffmpeg.exe missing: $ffmpeg" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Packaged MeetRec.exe --version failed" }
+          $out = "artifacts/smoke-encode"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          & $exe --encode-test --seconds 1 --preset low --output $out --backend ffmpeg
-          if ($LASTEXITCODE -ne 0) { throw "Bundled ffmpeg smoke test failed ($LASTEXITCODE)" }
+          $sample = Join-Path $out 'smoke.mp4'
+          & $ffmpeg -hide_banner -loglevel error -f lavfi `
+            -i "testsrc=size=320x240:rate=10" -t 1 -c:v libx264 -pix_fmt yuv420p `
+            $sample -y
+          if ($LASTEXITCODE -ne 0) { throw "Bundled ffmpeg/libx264 smoke test failed ($LASTEXITCODE)" }
+          if (-not (Test-Path $sample) -or (Get-Item $sample).Length -le 0) {
+            throw "Bundled ffmpeg produced no output"
+          }
           Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
 
       - name: Upload workflow artifact
