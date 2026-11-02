@@ -111,6 +111,28 @@ artifacts/<Configuration>/
   build-manifest.json                 # tool versions + commit id
 ```
 
+## Automated builds (GitHub Actions)
+
+[![Build and release](https://github.com/ituff/meetrec/actions/workflows/build-release.yml/badge.svg)](https://github.com/ituff/meetrec/actions/workflows/build-release.yml)
+
+`.github/workflows/build-release.yml` builds the Windows x64 Release package on a
+`windows-2022` runner:
+
+1. `src/App/App.rc` provides the version; a `v*` tag must match it.
+2. Release build with `-SkipDriver` (the hosted runner has no WDK) and the full Release unit
+   suite.
+3. Downloads the pinned BtbN FFmpeg n9.0 GPL-shared zip, verifies it against the release
+   `checksums.sha256`, and stages the license.
+4. Packages `MeetRec-<version>-win64-with-ffmpeg.zip`, runs a bundled-ffmpeg/libx264 smoke
+   encode, and uploads a workflow artifact.
+5. On a `v*` tag push, publishes or updates the GitHub Release with the zip and
+   `SHA256SUMS.txt`. Pull requests and manual dispatches build/test/package without
+   publishing.
+
+The hosted runner has no Direct3D 11 video processor, so the app's GPU capture/encode path
+cannot be exercised there; CI verifies compilation, unit tests, packaging, and the bundled
+ffmpeg. Hardware recording remains covered by local/manual runs.
+
 ## Running (development)
 
 ```text
