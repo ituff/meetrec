@@ -77,7 +77,10 @@ Set-Content -Path (Join-Path $stage "licenses\FFmpeg-SOURCE.txt") -Value $source
 # Compress-Archive on a 200+ MB payload.
 Push-Location $stage
 try {
-    & tar.exe -a -c -f $zip *
+    # Use the Windows bsdtar explicitly; Git Bash may put GNU tar on PATH,
+    # which treats "C:\..." as a remote host.
+    $tar = Join-Path $env:SystemRoot "System32\tar.exe"
+    & $tar -a -c -f $zip *
     if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
 } finally {
     Pop-Location
