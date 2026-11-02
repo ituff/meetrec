@@ -45,6 +45,16 @@ struct Settings {
     // source, so the UI lets the user match the app's devices.
     std::wstring audioOutputDeviceId;
     std::wstring audioInputDeviceId;
+    // UI language: "system" follows the Windows display language; "zh-CN" and
+    // "en-US" are explicit overrides. Unknown values fall back to "system".
+    std::string uiLanguage = "system";
+    // Post-recording behavior (Settings > General).
+    bool showCompletionNotification = true;
+    bool autoOpenOutputFolder = true;
+    // Preview column share of the main window's content width (0.20..0.80).
+    // The splitter between settings and preview writes this value; the left
+    // column keeps a fixed minimum so every control stays usable.
+    double previewPaneRatio = 0.40;
     // T103: local crash dumps are strictly opt-in and never uploaded.
     bool enableCrashDumps = false;
 };

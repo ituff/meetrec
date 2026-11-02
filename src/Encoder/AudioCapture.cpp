@@ -615,6 +615,18 @@ void AudioCapture::SourceLoop(bool mic) {
                 raw = silence.data();
             }
             if (dump != nullptr && packetBytes > 0) fwrite(raw, 1, packetBytes, dump);
+            if (options_.onLevel && frames > 0) {
+                // Peak of this packet for the UI level meter. Cheap enough at
+                // the 10 ms packet cadence (a few thousand samples at most).
+                float peak = 0.0f;
+                const std::size_t sampleCount =
+                    static_cast<std::size_t>(frames) * format_.channels;
+                for (std::size_t i = 0; i < sampleCount; ++i) {
+                    const float value = std::fabs(static_cast<float>(samples[i])) / 32768.0f;
+                    if (value > peak) peak = value;
+                }
+                options_.onLevel(mic, peak > 1.0f ? 1.0f : peak);
+            }
             timeline.Push(timestampUs, samples, frames);
             nextStartUs = timestampUs + durationUs;
             lastDurationUs = durationUs;

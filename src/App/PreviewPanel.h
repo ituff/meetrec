@@ -5,6 +5,7 @@
 // the panel releases its resources and never affects capture or encoding.
 
 #include <windows.h>
+#include <dwmapi.h>
 
 #include <vector>
 
@@ -31,10 +32,27 @@ public:
     void Clear();
     HWND Hwnd() const noexcept { return hwnd_; }
 
+    // Idle preview: a live DWM thumbnail of the selected window (works even
+    // for GPU-composited apps where PrintWindow returns black), with a
+    // one-shot PrintWindow bitmap as the fallback. Tick() replaces it with
+    // live capture frames once recording starts.
+    bool ShowThumbnail(HWND source);
+    void UpdateThumbnailRect();
+    void HideThumbnail();
+    bool HasThumbnail() const noexcept { return thumbnail_ != nullptr; }
+    void SetStaticFrame(std::vector<std::uint8_t> bgra, UINT width, UINT height);
+    bool HasFrame() const noexcept {
+        return thumbnail_ != nullptr || (frameW_ > 0 && frameH_ > 0);
+    }
+    bool CopyLastFrame(std::vector<std::uint8_t>& outBgra, UINT& width, UINT& height) const;
+
 private:
     static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-    void Render();
+    // Double-buffered: compose black letterbox + scaled frame in an offscreen
+    // bitmap, then blit once. Prevents the black-then-image flicker at 10 FPS.
+    void Render(HDC targetDc = nullptr);
+    void ReleaseBackBuffer();
 
     Coordinator& coordinator_;
     HWND hwnd_ = nullptr;
@@ -47,6 +65,12 @@ private:
     UINT dibW_ = 0;
     UINT dibH_ = 0;
     DWORD lastRenderMs_ = 0;
+    HDC backDc_ = nullptr;
+    HBITMAP backBmp_ = nullptr;
+    int backW_ = 0;
+    int backH_ = 0;
+    HTHUMBNAIL thumbnail_ = nullptr;
+    HWND thumbnailSource_ = nullptr;
 };
 
 } // namespace vsr::app

@@ -1,5 +1,8 @@
 #include <winver.h>
 
+// Application icon (resource id 1): blue tile + white camcorder mark.
+1 ICON "MeetRec.ico"
+
 1 VERSIONINFO
 FILEVERSION 1,0,0,0
 PRODUCTVERSION 1,0,0,0
@@ -10,9 +13,9 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "FileDescription", "Virtual Screen Recorder"
+      VALUE "FileDescription", "MeetRec"
       VALUE "FileVersion", "1.0.0.0"
-      VALUE "ProductName", "Virtual Screen Recorder"
+      VALUE "ProductName", "MeetRec"
       VALUE "ProductVersion", "1.0.0.0"
       VALUE "OriginalFilename", "VirtualScreenRecorder.exe"
     END

@@ -94,16 +94,25 @@ A developer or IT administrator who builds, signs, installs, diagnoses, and supp
 ### 7.3 Recording
 
 - Capture the virtual display, not the preview window.
-- Default output: H.264 video in MP4, 1920 x 1080, 30 FPS, 6 Mbps.
-- Presets:
-  - Low: 1280 x 720, 30 FPS, 3 Mbps
-  - Standard: 1920 x 1080, 30 FPS, 6 Mbps
-  - High: 1920 x 1080, 60 FPS, 12 Mbps
+- Default output: H.264 video in MP4, 1920 x 1080, 30 FPS.
+- Rate control: constant quality (CRF) with a per-preset bitrate ceiling and a
+  5-second keyframe interval. Screen and meeting content is mostly static, so a
+  bitrate target over-spends on unchanged frames, and a short keyframe interval
+  re-codes whole frames at full quality; both made earlier recordings large.
+  Reference benchmark: a Teams cloud recording of comparable content (1080p,
+  16 FPS, 326 kbps video, 64 kbps mono AAC) is 74 MB for 25 minutes. Standard
+  meets or beats that size while keeping on-screen text legible.
+- Presets (bitrate ceiling / audio track):
+  - Low: 1280 x 720, 30 FPS, CRF 28, 1 Mbps, 48 kbps mono AAC
+  - Standard: 1920 x 1080, 30 FPS, CRF 26, 2 Mbps, 64 kbps mono AAC
+  - High: 1920 x 1080, 60 FPS, CRF 22, 6 Mbps, 128 kbps stereo AAC
 - File name pattern: `Recording_yyyyMMdd_HHmmss.mp4`.
 - Support Start, Pause, Resume, and Stop.
 - A paused interval shall not create an equivalent-duration frozen segment in the final output.
 - Finalize the MP4 on Stop and on controlled application shutdown.
 - Use hardware H.264 encoding when available, with a clear error or documented fallback behavior when unavailable.
+  Hardware and Media Foundation encoders have no constant-quality mode; they
+  target the preset bitrate (ABR) instead.
 
 ### 7.4 Controller and tray
 

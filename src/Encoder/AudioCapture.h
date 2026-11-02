@@ -46,6 +46,10 @@ struct AudioChunk {
 struct AudioCaptureOptions {
     bool loopback = true;    // participants / system sound
     bool microphone = false; // the user's own mic
+    // Peak level per source (0..1), delivered at the endpoint's packet cadence.
+    // The UI uses it for the input meters; it never affects the mix.
+    using LevelFn = std::function<void(bool microphone, float peak)>;
+    LevelFn onLevel;
     // Multiplier applied to mic samples before mixing (clamped to int16).
     // VSR_MIC_GAIN overrides this per machine without a settings change.
     float micGain = 1.0f;

@@ -527,16 +527,26 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
 
     encoder::AudioFormat audioFormat_{};
     // 4b. Meeting audio format: probed up front so the writer is created with
-    // its AAC stream (best effort - failures degrade to video-only). Without
-    // a loopback endpoint the mic (when enabled) still carries the track.
-    if (request.captureAudio) {
-        auto fmt = encoder::AudioCapture::QueryLoopbackFormat(request.audioOutputDeviceId);
-        if (!fmt && request.captureMicrophone) {
-            fmt = encoder::AudioCapture::QueryMicrophoneFormat(request.audioInputDeviceId);
-            if (fmt) {
-                log::Warning("Coordinator", "AUDIO_LOOPBACK_UNAVAILABLE_MIC_ONLY", correlationId_,
-                             L"System audio unavailable; recording the microphone only.");
+    // its AAC stream (best effort - failures degrade to video-only). The two
+    // sources are independent; either one alone creates the track.
+    const bool wantSystemAudio = request.captureAudio;
+    const bool wantMicrophone = request.captureMicrophone;
+    if (wantSystemAudio || wantMicrophone) {
+        Result<encoder::AudioFormat> fmt = Error{
+            ErrorCode::EncoderWriteFailed, L"Audio capture is not available on this machine.",
+            L"No audio source requested", S_OK, true};
+        if (wantSystemAudio) {
+            fmt = encoder::AudioCapture::QueryLoopbackFormat(request.audioOutputDeviceId);
+            if (!fmt && wantMicrophone) {
+                fmt = encoder::AudioCapture::QueryMicrophoneFormat(request.audioInputDeviceId);
+                if (fmt) {
+                    log::Warning("Coordinator", "AUDIO_LOOPBACK_UNAVAILABLE_MIC_ONLY",
+                                 correlationId_,
+                                 L"System audio unavailable; recording the microphone only.");
+                }
             }
+        } else {
+            fmt = encoder::AudioCapture::QueryMicrophoneFormat(request.audioInputDeviceId);
         }
         if (fmt.IsOk()) {
             audioFormat_ = fmt.Value();
@@ -545,8 +555,8 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         } else {
             log::Warning("Coordinator", "AUDIO_CAPTURE_UNAVAILABLE", correlationId_,
                          fmt.TakeError().technicalMessage);
-        audioFormat_ = encoder::AudioFormat{};
-        audioRate_ = 0;
+            audioFormat_ = encoder::AudioFormat{};
+            audioRate_ = 0;
         }
     }
 
@@ -642,7 +652,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     converter_ = std::move(converterResult.Value());
 
     const encoder::AudioFormat* audioFormatArg =
-        request.captureAudio && audioRate_ > 0 ? &audioFormat_ : nullptr;
+        (wantSystemAudio || wantMicrophone) && audioRate_ > 0 ? &audioFormat_ : nullptr;
     auto writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
                                               partialPath_, audioFormatArg);
     if (!writerResult && backend == WriterBackend::MediaFoundation && probe) {
@@ -681,11 +691,16 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     writer_ = std::move(writerResult.Value());
 
-    if (request.captureAudio && audioRate_ > 0) {
+    if ((wantSystemAudio || wantMicrophone) && audioRate_ > 0) {
         encoder::AudioCaptureOptions audioOptions{};
-        audioOptions.microphone = request.captureMicrophone;
+        audioOptions.loopback = wantSystemAudio;
+        audioOptions.microphone = wantMicrophone;
         audioOptions.loopbackDeviceId = request.audioOutputDeviceId;
         audioOptions.microphoneDeviceId = request.audioInputDeviceId;
+        audioOptions.onLevel = [this](bool microphone, float peak) {
+            (microphone ? micLevel_ : loopbackLevel_)
+                .store(peak, std::memory_order_relaxed);
+        };
         auto started = encoder::AudioCapture::Start(
             *clock_, [this](encoder::AudioChunk&& chunk) {
                 audioReceived_.store(true, std::memory_order_relaxed);
@@ -1241,6 +1256,11 @@ bool Coordinator::TryGetPreviewFrameCpu(std::vector<std::uint8_t>& outBgra, UINT
     std::lock_guard<std::mutex> lock(stateMutex_);
     if (session_ == nullptr) return false;
     return session_->CopyLatestToCpu(outBgra, width, height);
+}
+
+void Coordinator::GetAudioLevels(float& loopback, float& microphone) const noexcept {
+    loopback = loopbackLevel_.load(std::memory_order_relaxed);
+    microphone = micLevel_.load(std::memory_order_relaxed);
 }
 
 } // namespace vsr::app

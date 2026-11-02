@@ -155,23 +155,35 @@ std::wstring FfmpegWriter::BuildVideoArguments(const PresetParams& preset,
         // shared text and slides sharp while static stretches spend few bits;
         // scene changes burst up to the preset bitrate ceiling. Pure ABR
         // burns the full rate on every frame regardless of content.
-        cmd += L"-preset veryfast -crf 20 -maxrate " +
+        cmd += L"-preset veryfast ";
+        if (preset.screenContentTune) cmd += L"-tune stillimage ";
+        cmd += L"-crf " + std::to_wstring(preset.crf) + L" -maxrate " +
                std::to_wstring(preset.bitrateBps) + L" -bufsize " +
                std::to_wstring(preset.bitrateBps * 2) + L" ";
     }
-    cmd += L"-pix_fmt yuv420p -g " + std::to_wstring(preset.fps * 2) + L" ";
+    // Long keyframe interval: each IDR re-codes the whole frame at full
+    // quality, which on mostly-static meeting content was the single largest
+    // cost in the file (see VideoPreset.h). 5 s keeps seeking responsive.
+    cmd += L"-pix_fmt yuv420p -g " +
+           std::to_wstring(preset.fps * preset.gopSeconds) + L" ";
     cmd += L"-f mp4 " + Quoted(output);
     return cmd;
 }
 
 std::wstring FfmpegWriter::BuildAudioArguments(const AudioFormat& audioFormat,
+                                               const PresetParams& preset,
                                                const std::wstring& audioPipeName,
                                                const std::filesystem::path& output) {
     std::wstring cmd;
     cmd += L"-hide_banner -loglevel error -nostats -nostdin -y ";
     cmd += L"-f s16le -ar " + std::to_wstring(audioFormat.sampleRate) + L" -ac " +
            std::to_wstring(audioFormat.channels) + L" -i \"" + audioPipeName + L"\" ";
-    cmd += L"-c:a aac -b:a 128k ";
+    cmd += L"-c:a aac -b:a " + std::to_wstring(preset.audioBitrateBps / 1000) + L"k ";
+    // Meeting speech carries nothing in a second channel; the preset downmixes
+    // the capture mix when its target layout is narrower than the endpoint's.
+    if (preset.audioChannels < audioFormat.channels) {
+        cmd += L"-ac " + std::to_wstring(preset.audioChannels) + L" ";
+    }
     cmd += L"-f ipod " + Quoted(output); // ipod = m4a container
     return cmd;
 }
@@ -287,7 +299,7 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
                                       HRESULT_FROM_WIN32(GetLastError()));
         }
         auto audioSpawned = writer->SpawnChild(
-            ffmpegPath, BuildAudioArguments(*audioFormat, audioName,
+            ffmpegPath, BuildAudioArguments(*audioFormat, preset, audioName,
                                             writer->audioIntermediate_));
         if (!audioSpawned) {
             CloseHandle(stderrRead);

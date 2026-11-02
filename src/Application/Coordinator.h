@@ -58,11 +58,11 @@ struct StartRecordingRequest {
     encoder::EncoderPreference encoderPreference = encoder::EncoderPreference::Auto;
     encoder::WriterBackend backend = encoder::WriterBackend::Auto;
     bool captureCursor = false;
+    // The two audio sources are independent: either one (or both) creates the
+    // AAC track. A missing loopback endpoint degrades to mic-only; a missing
+    // microphone leaves the loopback track intact.
     bool captureAudio = false;
-    // Mixes the user's microphone into the audio track alongside the system
-    // loopback (meeting participants). Requires captureAudio; when the
-    // loopback endpoint is missing the recording degrades to mic-only.
-    bool captureMicrophone = true;
+    bool captureMicrophone = false;
     // Audio endpoint IDs selected in the UI (empty = Windows default). Call
     // apps often use devices other than the Windows default; capturing the
     // wrong endpoint makes that source silent.
@@ -105,6 +105,10 @@ public:
     // Preview tap (FR-048): copies the latest captured frame into a BGRA
     // byte buffer; preview cannot affect recording. Returns false when idle.
     bool TryGetPreviewFrameCpu(std::vector<std::uint8_t>& outBgra, UINT& width, UINT& height);
+
+    // Latest per-source peak levels (0..1) for the UI input meters. Stale
+    // values are harmless: the UI only reads them while recording.
+    void GetAudioLevels(float& loopback, float& microphone) const noexcept;
 
 private:
     // Worker entry for the active recording session.
@@ -170,6 +174,8 @@ private:
     std::mutex audioMutex_;
     std::deque<encoder::AudioChunk> audioQueue_;
     std::atomic<bool> audioReceived_{false};
+    std::atomic<float> loopbackLevel_{0.0f};
+    std::atomic<float> micLevel_{0.0f};
     std::uint32_t audioRate_ = 48000;
     std::uint32_t audioChannels_ = 2;
     // Output-time cursor for the audio stream (100ns). Audio timestamps must

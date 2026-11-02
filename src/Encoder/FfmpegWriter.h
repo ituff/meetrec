@@ -71,6 +71,7 @@ public:
                                             const std::filesystem::path& output,
                                             const wchar_t* videoEncoder = L"libx264");
     static std::wstring BuildAudioArguments(const AudioFormat& audioFormat,
+                                            const PresetParams& preset,
                                             const std::wstring& audioPipeName,
                                             const std::filesystem::path& output);
     static std::wstring BuildMuxArguments(const std::filesystem::path& video,

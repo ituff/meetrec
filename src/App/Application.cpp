@@ -1,5 +1,8 @@
 #include "Application.h"
 
+#include <objidl.h>
+#include <gdiplus.h>
+
 #include <WindowManagement/WindowPlacement.h>
 
 #include <chrono>
@@ -26,9 +29,12 @@
 #include <Infrastructure/Settings.h>
 #include <Infrastructure/Strings.h>
 
+#include "Localization.h"
 #include "MainWindow.h"
 
 #include <Application/OutputFile.h>
+
+#pragma comment(lib, "gdiplus.lib")
 
 #if __has_include("VersionGenerated.h")
 #include "VersionGenerated.h"
@@ -63,7 +69,8 @@ bool IsWindows11OrLater() {
 }
 
 void ShowStartupError(const std::wstring& text) {
-    MessageBoxW(nullptr, text.c_str(), L"Virtual Screen Recorder", MB_OK | MB_ICONERROR);
+    MessageBoxW(nullptr, text.c_str(), i18n::Text(i18n::Str::AppName),
+                MB_OK | MB_ICONERROR);
 }
 
 void AttachParentConsole() {
@@ -108,16 +115,21 @@ bool Application::InitRuntime() {
     }
     minimizeToTray_ = settings.minimizeToTray;
     outputDirectory_ = settings.outputDirectory;
+    // The UI language follows the Windows display language by default; the
+    // settings window can pin zh-CN or en-US explicitly.
+    i18n::SetLanguage(i18n::LanguageFromSetting(settings.uiLanguage));
 
     // T103: crash dumps are strictly opt-in and stay local.
     CrashReporter::Install(settings.enableCrashDumps);
 
     if (!IsWindows11OrLater()) {
         Error e(ErrorCode::InitOsUnsupported,
-                L"Virtual Screen Recorder requires Windows 11 (x64).",
+                L"MeetRec requires Windows 11 (x64).",
                 L"OS version check failed at startup", S_OK, false);
         log::Error("App", "STARTUP_OS_UNSUPPORTED", L"", e.technicalMessage);
-        ShowStartupError(e.userMessage + L"\n\nError code: " + Utf8ToWide(ToString(e.code)));
+        ShowStartupError(std::wstring(i18n::ErrorTitle(e.code)) + L"\n" +
+                         i18n::ErrorMessage(e.code) + L"\n\nError code: " +
+                         Utf8ToWide(ToString(e.code)));
         return false;
     }
 
@@ -257,7 +269,7 @@ int Application::RunSelfCheck() {
     }
 
     // Report.
-    wprintf(L"Virtual Screen Recorder self-check\n");
+    wprintf(L"MeetRec self-check\n");
     wprintf(L"app: %s\n", OsBuildString().c_str());
     for (const auto& sec : sections) {
         wprintf(L"[%s] %s: %s\n", sec.ok ? L" OK " : L"FAIL", sec.name, sec.detail.c_str());
@@ -458,26 +470,41 @@ int Application::RunInteractive() {
     }
     log::Info("App", "STARTUP_COMPLETE", L"", L"Interactive session starting.");
 
+    Gdiplus::GdiplusStartupInput gdiplusInput;
+    if (Gdiplus::GdiplusStartup(&gdiplusToken_, &gdiplusInput, nullptr) != Gdiplus::Ok) {
+        ShowStartupError(i18n::ErrorMessage(ErrorCode::InitD3dFailed));
+        ShutdownRuntime();
+        return 1;
+    }
+
     mainWindow_ = std::make_unique<MainWindow>(*coordinator_);
     if (!mainWindow_->Create()) {
-        ShowStartupError(L"The recorder window could not be created.");
+        ShowStartupError(i18n::Text(i18n::Str::ErrInternalBody));
         log::Error("App", "STARTUP_WINDOW_FAILED", L"", L"MainWindow::Create failed.");
+        mainWindow_.reset();
         ShutdownRuntime();
+        Gdiplus::GdiplusShutdown(gdiplusToken_);
+        gdiplusToken_ = 0;
         return 1;
     }
     mainWindow_->ShowAndActivate();
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-        // IsDialogMessage gives tab/keyboard navigation to the whole window
-        // (NFR-041: keyboard accessibility).
-        if (!IsDialogMessageW(mainWindow_->Hwnd(), &msg)) {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
+        // The custom-drawn windows implement their own Tab/Enter/arrow
+        // navigation (NFR-041); native edit controls subclass their keys.
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
     }
 
+    // GDI+ fonts and bitmaps are owned by the windows: destroy them before
+    // shutting the graphics subsystem down.
+    mainWindow_.reset();
     ShutdownRuntime();
+    if (gdiplusToken_ != 0) {
+        Gdiplus::GdiplusShutdown(gdiplusToken_);
+        gdiplusToken_ = 0;
+    }
     return static_cast<int>(msg.wParam);
 }
 
@@ -496,9 +523,12 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
 
     const encoder::QualityPreset preset = encoder::FromString(WideToUtf8(presetName).c_str());
     const encoder::PresetParams params = encoder::GetPresetParams(preset);
-    wprintf(L"[dev-record] preset=%s (%ux%u@%u, %u bps), %d seconds, audio=%s\n",
+    wprintf(L"[dev-record] preset=%s (%ux%u@%u, crf %d, ceiling %u bps, gop %us, "
+            L"audio %u kbps/%u ch), %d seconds, audio=%s\n",
             Utf8ToWide(encoder::ToString(preset)).c_str(), params.width, params.height,
-            params.fps, params.bitrateBps, seconds, captureAudio ? L"on" : L"off");
+            params.fps, params.crf, params.bitrateBps, params.gopSeconds,
+            params.audioBitrateBps / 1000, params.audioChannels, seconds,
+            captureAudio ? L"on" : L"off");
 
     // Window targets record driverless; only the display-only dev path needs
     // the virtual display to be up.
@@ -844,7 +874,7 @@ int wmain(int argc, wchar_t* argv[]) {
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
-        wprintf(L"Virtual Screen Recorder 1.0.0.0 (MVP)\n");
+        wprintf(L"MeetRec 1.0.0.0 (MVP)\n");
 #ifdef VSR_BUILD_COMMIT
         wprintf(L"build: %s\n", VSR_BUILD_COMMIT);
 #endif

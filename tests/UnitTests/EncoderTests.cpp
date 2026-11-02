@@ -16,19 +16,37 @@ VSR_TEST(Preset, TableMatchesSpec) {
     VSR_CHECK_EQ(low.width, 1280u);
     VSR_CHECK_EQ(low.height, 720u);
     VSR_CHECK_EQ(low.fps, 30u);
-    VSR_CHECK_EQ(low.bitrateBps, 3'000'000u);
+    VSR_CHECK_EQ(low.crf, 28);
+    VSR_CHECK_EQ(low.bitrateBps, 1'000'000u);
+    VSR_CHECK_EQ(low.gopSeconds, 5u);
+    VSR_CHECK_EQ(low.audioBitrateBps, 48'000u);
+    VSR_CHECK_EQ(low.audioChannels, 1u);
 
     const auto standard = GetPresetParams(QualityPreset::Standard);
     VSR_CHECK_EQ(standard.width, 1920u);
     VSR_CHECK_EQ(standard.height, 1080u);
     VSR_CHECK_EQ(standard.fps, 30u);
-    VSR_CHECK_EQ(standard.bitrateBps, 6'000'000u);
+    VSR_CHECK_EQ(standard.crf, 26);
+    VSR_CHECK_EQ(standard.bitrateBps, 2'000'000u);
+    VSR_CHECK_EQ(standard.gopSeconds, 5u);
+    VSR_CHECK_EQ(standard.audioBitrateBps, 64'000u);
+    VSR_CHECK_EQ(standard.audioChannels, 1u);
 
     const auto high = GetPresetParams(QualityPreset::High);
     VSR_CHECK_EQ(high.width, 1920u);
     VSR_CHECK_EQ(high.height, 1080u);
     VSR_CHECK_EQ(high.fps, 60u);
-    VSR_CHECK_EQ(high.bitrateBps, 12'000'000u);
+    VSR_CHECK_EQ(high.crf, 22);
+    VSR_CHECK_EQ(high.bitrateBps, 6'000'000u);
+    VSR_CHECK_EQ(high.gopSeconds, 5u);
+    VSR_CHECK_EQ(high.audioBitrateBps, 128'000u);
+    VSR_CHECK_EQ(high.audioChannels, 2u);
+
+    // Screen-content tuning is for the static tiers; the 60 FPS tier records
+    // motion and keeps default deblocking.
+    VSR_CHECK(low.screenContentTune);
+    VSR_CHECK(standard.screenContentTune);
+    VSR_CHECK(!high.screenContentTune);
 }
 
 VSR_TEST(Preset, FrameDurationFromFps) {
@@ -204,7 +222,12 @@ VSR_TEST(FfmpegBackend, CommandLineCarriesPipelineParameters) {
     params.width = 1920;
     params.height = 1080;
     params.fps = 30;
-    params.bitrateBps = 6'000'000;
+    params.crf = 26;
+    params.bitrateBps = 2'000'000;
+    params.gopSeconds = 5;
+    params.screenContentTune = true;
+    params.audioBitrateBps = 64'000;
+    params.audioChannels = 1;
     vsr::encoder::AudioFormat audio{};
     audio.sampleRate = 44100;
     audio.channels = 2;
@@ -219,24 +242,49 @@ VSR_TEST(FfmpegBackend, CommandLineCarriesPipelineParameters) {
     VSR_CHECK(videoArgs.find(L"-framerate 30") != std::wstring::npos);
     VSR_CHECK(videoArgs.find(L"' + pipe_video + '") != std::wstring::npos);
     VSR_CHECK(videoArgs.find(L"-c:v libx264") != std::wstring::npos);
-    // Meeting-oriented capped CRF: quality floor + preset ceiling.
-    VSR_CHECK(videoArgs.find(L"-crf 20") != std::wstring::npos);
-    VSR_CHECK(videoArgs.find(L"-maxrate 6000000") != std::wstring::npos);
-    VSR_CHECK(videoArgs.find(L"-bufsize 12000000") != std::wstring::npos);
+    // Meeting-oriented capped CRF: quality target + preset ceiling.
+    VSR_CHECK(videoArgs.find(L"-crf 26") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-maxrate 2000000") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-bufsize 4000000") != std::wstring::npos);
     VSR_CHECK(videoArgs.find(L"-b:v") == std::wstring::npos); // no ABR on x264
-    VSR_CHECK(videoArgs.find(L"-g 60") != std::wstring::npos);
+    VSR_CHECK(videoArgs.find(L"-tune stillimage") != std::wstring::npos);
+    // Keyframe interval is seconds * fps: 5 s at 30 FPS.
+    VSR_CHECK(videoArgs.find(L"-g 150") != std::wstring::npos);
     VSR_CHECK(videoArgs.find(L"-f mp4") != std::wstring::npos);
     VSR_CHECK(videoArgs.find(L"pipe") == videoArgs.rfind(L"pipe")); // one pipe input only
 
-    // Audio child: one s16le pipe input -> AAC in an m4a container.
+    // The motion tier opts out of the still-image tuning, and the keyframe
+    // interval follows the preset rate.
+    vsr::encoder::PresetParams motion = params;
+    motion.fps = 60;
+    motion.gopSeconds = 2;
+    motion.screenContentTune = false;
+    const std::wstring motionArgs = vsr::encoder::FfmpegWriter::BuildVideoArguments(
+        motion, L"' + pipe_video + '", L"' + out_vid + '");
+    VSR_CHECK(motionArgs.find(L"-tune") == std::wstring::npos);
+    VSR_CHECK(motionArgs.find(L"-g 120") != std::wstring::npos);
+
+    // Audio child: one s16le pipe input -> AAC in an m4a container. The preset
+    // bitrate and a downmix to the preset channel count apply on top of the
+    // endpoint's captured layout.
     const std::wstring audioArgs = vsr::encoder::FfmpegWriter::BuildAudioArguments(
-        audio, L"' + pipe_audio + '", L"' + out_m4a + '");
+        audio, params, L"' + pipe_audio + '", L"' + out_m4a + '");
     VSR_CHECK(audioArgs.find(L"-f s16le") != std::wstring::npos);
     VSR_CHECK(audioArgs.find(L"-ar 44100") != std::wstring::npos);
     VSR_CHECK(audioArgs.find(L"-ac 2") != std::wstring::npos);
     VSR_CHECK(audioArgs.find(L"' + pipe_audio + '") != std::wstring::npos);
-    VSR_CHECK(audioArgs.find(L"-c:a aac -b:a 128k") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"-c:a aac -b:a 64k") != std::wstring::npos);
+    VSR_CHECK(audioArgs.find(L"-ac 1") != std::wstring::npos); // 2 -> 1 downmix
     VSR_CHECK(audioArgs.find(L"-f ipod") != std::wstring::npos);
+
+    // A stereo preset leaves the captured layout untouched.
+    vsr::encoder::PresetParams stereo = params;
+    stereo.audioBitrateBps = 128'000;
+    stereo.audioChannels = 2;
+    const std::wstring stereoArgs = vsr::encoder::FfmpegWriter::BuildAudioArguments(
+        audio, stereo, L"' + pipe_audio + '", L"' + out_m4a + '");
+    VSR_CHECK(stereoArgs.find(L"-b:a 128k") != std::wstring::npos);
+    VSR_CHECK(stereoArgs.find(L"-ac 1") == std::wstring::npos);
 
     // Finalize remux: stream copy of both intermediates into the MP4.
     const std::wstring muxArgs = vsr::encoder::FfmpegWriter::BuildMuxArguments(

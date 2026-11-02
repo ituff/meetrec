@@ -68,6 +68,7 @@ VSR_TEST(Settings, DefaultsWhenFileMissing) {
     VSR_CHECK(!defaults.captureCursor);
     VSR_CHECK(defaults.minimizeToTray);
     VSR_CHECK(defaults.restoreTargetWindow);
+    VSR_CHECK(defaults.previewPaneRatio > 0.39 && defaults.previewPaneRatio < 0.41);
 }
 
 VSR_TEST(Settings, PresetNamesRoundTrip) {

@@ -1203,3 +1203,65 @@ display driver is not needed for window recording.
 Verified from the packaged folder: `--version`, `--self-check`, and a 6 s
 `--dev-record-window --audio` run (audio 7.21 s, median RMS 2042, 0 dropouts),
 plus 83/83 unit tests.
+
+### Recording size: Teams-benchmarked encode parameters (Oct 30)
+
+Problem: window-captured Teams meetings cost ~440 MB per hour (an 18-minute
+meeting was 127 MB), roughly 2.5x a Teams cloud recording of the same content.
+Benchmark (user-supplied Teams cloud recording, `ffprobe`): H.264 Constrained
+Baseline 1920x1080, 16 FPS, 326 kbps video + AAC 64.9 kbps mono 16 kHz = 74 MB
+for 25 minutes.
+
+All candidates below were encoded from the same 2-minute slice of a real
+recorder file (screen-shared Teams meeting at 1080p30), so the comparison is
+like-for-like:
+
+| Setting (1080p30, libx264 veryfast) | video bitrate |
+| --- | --- |
+| Previous Standard: CRF 20, 2 s GOP | 829 kbps |
+| 15 FPS, CRF 20, 2 s GOP | 960 kbps |
+| CRF 28, 2 s GOP | 472 kbps |
+| CRF 28, 5 s GOP | 208 kbps |
+| CRF 28, 10 s GOP | 119 kbps |
+| **New Standard: CRF 26, 5 s GOP, stillimage tune** | **229 kbps** |
+
+Findings that shaped the table:
+
+- Keyframe interval, not frame rate, was the dominant term: a 1080p keyframe
+  re-codes the whole frame at full quality, and meeting screens are static
+  between slides.
+- Dropping to 15 FPS made files *larger* at the same CRF (960 vs 829 kbps),
+  because each frame then carries twice the on-screen change. Frame rates are
+  unchanged; the 60 FPS tier stays as the motion option.
+- Audio: the capture mix (system + mic) is meeting speech; 64 kbps mono AAC
+  replaced 128 kbps stereo (measured 156 -> 80 kbps on a real track), matching
+  what Teams records.
+
+New table (spec.md 7.3): Low 720p30 CRF 28 / 1 Mbps ceiling / 48 kbps mono,
+Standard 1080p30 CRF 26 / 2 Mbps / 64 kbps mono, High 1080p60 CRF 22 / 6 Mbps /
+128 kbps stereo; all with a 5-second keyframe interval.
+
+Result on measured meeting content: 985 -> 309 kbps total, i.e. ~3.2x smaller;
+a 25-minute meeting drops from ~185 MB to ~58 MB (Teams reference: 74 MB).
+Quality of the Standard tier: VMAF 93.4 against the source, text crops legible,
+checked across a slide transition. Encodes at ~3x real time on the dev machine.
+
+Verified through the production pipeline: `--encode-test --preset standard`
+emits I-frames exactly 5 s apart, and `--dev-record-window --audio` produces a
+CFR 30 FPS MP4 with an AAC-LC 48 kHz mono track at 66 kbps. The Media
+Foundation fallback (used only when ffmpeg is absent) keeps its own audio
+settings and uses the new ceilings as ABR targets.
+
+Packaging: both portable packages rebuilt from the new binary (build stamp
+`b54664a-dirty`, built 2026-10-30T06:43:35Z) —
+`artifacts/dist/VirtualScreenRecorder-1.0.0.0-win64.zip` (972 KB, SHA-256
+`79d23030a07aa21affe4056aaf9848e5d60067c10eec9458a53f6b5f50fa9bad`) and
+`...-win64-with-ffmpeg.zip` (77.7 MB, SHA-256
+`463ea76843d986194c49097cbeeecf999f7860f555eeff8ed7a1028631a5aa73`).
+README.txt now documents the preset sizes, RELEASE-NOTES.txt carries the
+Teams benchmark and the measurements above, VERSION.txt/build-manifest.json
+carry the new build stamp, and SHA256SUMS.txt was regenerated (15 and 25
+entries, all verified). Packaged smoke test: extracted `--version` reports the
+new build, and a packaged `--dev-record-window --preset standard --audio` run
+produced 1080p30 CFR video with an AAC-LC 48 kHz mono track at 59 kbps.
+Existing recordings were deliberately not re-encoded.

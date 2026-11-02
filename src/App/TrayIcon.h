@@ -1,9 +1,14 @@
 #pragma once
 
-// Virtual Screen Recorder - notification area icon (FR-080..FR-085, T071).
+// MeetRec - notification area icon (FR-080..FR-085, T071).
+//
+// The icon is the product mark with a state badge; the tooltip and menu use
+// the same localized strings as the window.
 
 #include <windows.h>
 #include <shellapi.h>
+
+#include <string>
 
 #include <Application/StatusSnapshot.h>
 
@@ -26,6 +31,7 @@ private:
     NOTIFYICONDATAW data_ = {};
     bool added_ = false;
     UINT lastIconState_ = 0xFFFFFFFF;
+    std::wstring lastTip_;
 };
 
 } // namespace vsr::app

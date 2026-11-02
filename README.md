@@ -1,9 +1,14 @@
-# Virtual Screen Recorder
+# MeetRec (Virtual Screen Recorder)
 
-A lightweight Windows 11 application that creates **one virtual extended display**, moves a
-selected application window onto it, and records the virtual display to an **H.264 MP4** file —
-while you keep working on your physical monitor. Notifications, unrelated windows, and mouse
-activity on the physical desktop never appear in the recording.
+MeetRec is a lightweight Windows 11 **window recorder for meetings and demos**: pick one
+application window, optionally mix in system audio (the other participants) and your
+microphone, and save a clean **H.264 MP4**. Other windows, notifications, and desktop
+activity never appear in the recording. Window recording captures the target in place and
+does not require the virtual display driver.
+
+The product UI is the custom-drawn native Win32 interface specified in
+[`docs/design/`](docs/design/). The executable name and settings paths remain
+`VirtualScreenRecorder` for compatibility.
 
 - **Spec:** [`specs/001-mvp/spec.md`](specs/001-mvp/spec.md) (VSR-MVP-001 v1.0)
 - **Requirements:** [`specs/001-mvp/requirements.md`](specs/001-mvp/requirements.md)
@@ -20,8 +25,46 @@ activity on the physical desktop never appear in the recording.
 | Filesystem | Local NTFS output target for acceptance testing |
 
 Not supported in the MVP: Remote Desktop, Windows Sandbox, GPU-less servers, Windows 10,
-multi-monitor virtual displays, audio capture, HDR. See
+multi-monitor virtual displays, HDR. Window recording is the supported mode; the virtual
+display path remains for legacy development entry points. See
 [docs/known-limitations.md](docs/known-limitations.md).
+
+## Product UI and i18n
+
+- Native Win32 + GDI+ UI matching the product design: custom title bar, target card, audio
+  cards with toggles/device selection/level meters, quality and save-location controls,
+  live preview, and a persistent status/action footer.
+- Audio level meters start as soon as a target window is selected (shared-mode WASAPI
+  monitor for the chosen system/microphone endpoints), then follow the recording pipeline
+  while capturing. Both sources can be verified before starting, and the meters stay live
+  during recording even though the setup controls are disabled.
+- The preview is double-buffered (offscreen composition, single blit), so the 10 FPS
+  capture preview does not flash black between frames.
+- Draggable splitter between the settings column and the preview (size-west cursor, hover
+  grip, keyboard Left/Right): drag left to enlarge the preview (right to give the settings
+  column more room); double-click restores the default 40/60 split. The settings column keeps a 380 logical-pixel minimum so every
+  control remains readable; the preview keeps a 260-pixel minimum. The ratio is persisted
+  in `settings.json` (`previewPaneRatio`).
+- Full state coverage: Ready, Preparing (getting ready), Recording, Paused, Saving, result
+  card (file name/duration/size/path with Open file / Open folder / Record again), and an
+  actionable error card with Retry / Help / Diagnostics.
+- Window picker with search, app icons, titles, and a **Meeting apps only** filter (Teams,
+  Zoom, Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype,
+  GoToMeeting, BlueJeans, Huawei Cloud Meeting, Google Meet in a browser). Settings window
+  with General / Audio / Recording / About pages, including the author and project links;
+  owner-drawn tray menu (Open / Pause-Resume / Stop / Settings / Help / Exit) and a
+  non-activating recording toast.
+- **i18n:** every UI string goes through `src/App/Localization.*`. Chinese (Simplified) is
+  the primary language, English is included, and the language follows the Windows display
+  language by default. Override it in **Settings → General → Language** (`system` /
+  `zh-CN` / `en-US`). Error codes keep their stable `VSR-*` identifiers and gain localized
+  titles/explanations.
+- Keyboard: Tab/Shift+Tab moves through controls, Enter/Space activates, arrow keys change
+  focused dropdowns, Esc clears focus/closes dialogs. Owner-drawn menus use native
+  `TrackPopupMenu` semantics.
+- Audio sources are independent: either system audio or the microphone alone creates the
+  AAC track; both can be mixed, and the recording degrades to video-only if neither is
+  available.
 
 ## Prerequisites
 
@@ -95,17 +138,22 @@ backend bypasses the OS media stack (whose encoder MFTs are unreliable on some I
 builds) and is contained end-to-end: bounded pipe writes, bounded finalize, degrade to
 video-only when audio muxing fails.
 
-**Meeting-recording recommendation:** use the **standard** preset (1920x1080@30 - 60 fps
-buys nothing for slides or talking heads) and tick both **Record system audio
-(participants)** and **Record microphone (my voice)**; the two sources are mixed into
-one AAC track, so participants and your own voice both land in the recording. Select the
-**same audio devices the meeting app uses** in the two device lists below the checkboxes
+**Meeting-recording recommendation:** use the **Standard** preset (1920x1080@30 - 60 fps
+buys nothing for slides or talking heads) and enable both **System audio (other
+participants)** and **Microphone (my voice)**; the two sources are mixed into one AAC
+track, so participants and your own voice both land in the recording. Select the
+**same audio devices the meeting app uses** in the two device selectors in the
+audio section
 (Teams, Zoom and Tencent Meeting keep their own device selection, which can differ from
 the Windows default; recording the wrong endpoint leaves that source silent). Wear
 headphones: without them the microphone also picks up the speakers, and the recording
 contains an echo of the participants. The x264 path encodes with capped-CRF rate
-control (constant quality, preset bitrate as the ceiling), so static slides spend few
-bits and text stays sharp.
+control (constant quality, preset bitrate as the ceiling), a 5-second keyframe
+interval and a mono 64 kbps AAC track, so static slides spend few bits and text
+stays sharp. Measured against the Teams cloud recording of the same kind of
+meeting (1080p/16 FPS/326 kbps + 64 kbps mono, 74 MB for 25 minutes), the
+standard preset lands in the same range instead of the 3-4x larger files the
+earlier bitrate-targeted settings produced.
 
 Audio diagnostics (support only): `VSR_AUDIO_DUMP_LOOPBACK=<file>` writes the raw
 captured system audio (s16le, recorded rate/channels), `VSR_AUDIO_DUMP_MIC=<file>`

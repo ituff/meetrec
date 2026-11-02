@@ -1,5 +1,6 @@
 #include "VideoPreset.h"
 
+#include <cstddef>
 #include <unordered_map>
 
 namespace vsr::encoder {
@@ -24,12 +25,36 @@ QualityPreset FromString(const char* name) noexcept {
 PresetParams GetPresetParams(QualityPreset preset) noexcept {
     switch (preset) {
         case QualityPreset::Low:
-            return {1280, 720, 30, 3'000'000};
+            return {.width = 1280,
+                    .height = 720,
+                    .fps = 30,
+                    .crf = 28,
+                    .bitrateBps = 1'000'000,
+                    .gopSeconds = 5,
+                    .screenContentTune = true,
+                    .audioBitrateBps = 48'000,
+                    .audioChannels = 1};
         case QualityPreset::High:
-            return {1920, 1080, 60, 12'000'000};
+            return {.width = 1920,
+                    .height = 1080,
+                    .fps = 60,
+                    .crf = 22,
+                    .bitrateBps = 6'000'000,
+                    .gopSeconds = 5,
+                    .screenContentTune = false,
+                    .audioBitrateBps = 128'000,
+                    .audioChannels = 2};
         case QualityPreset::Standard:
         default:
-            return {1920, 1080, 30, 6'000'000};
+            return {.width = 1920,
+                    .height = 1080,
+                    .fps = 30,
+                    .crf = 26,
+                    .bitrateBps = 2'000'000,
+                    .gopSeconds = 5,
+                    .screenContentTune = true,
+                    .audioBitrateBps = 64'000,
+                    .audioChannels = 1};
     }
 }
 
@@ -51,7 +76,11 @@ Result<void> ValidatePresetTable() {
     std::unordered_map<std::string_view, int> seen;
     for (const auto& row : rows) {
         if (row.params.width == 0 || row.params.height == 0 || row.params.fps < 15 ||
-            row.params.fps > 120 || row.params.bitrateBps < 500'000) {
+            row.params.fps > 120 || row.params.bitrateBps < 500'000 ||
+            row.params.crf < 0 || row.params.crf > 51 || row.params.gopSeconds < 1 ||
+            row.params.gopSeconds > 60 || row.params.audioBitrateBps < 32'000 ||
+            row.params.audioBitrateBps > 320'000 ||
+            (row.params.audioChannels != 1 && row.params.audioChannels != 2)) {
             return Error(ErrorCode::EncoderUnavailable,
                          L"Internal preset configuration error.",
                          L"Preset table row is out of the valid range.");
@@ -63,14 +92,30 @@ Result<void> ValidatePresetTable() {
         }
     }
     // Spec values (spec.md §7.3): the three rows must match exactly.
-    if (rows[0].params.width != 1280 || rows[0].params.fps != 30 ||
-        rows[0].params.bitrateBps != 3'000'000 || rows[1].params.width != 1920 ||
-        rows[1].params.fps != 30 || rows[1].params.bitrateBps != 6'000'000 ||
-        rows[2].params.width != 1920 || rows[2].params.fps != 60 ||
-        rows[2].params.bitrateBps != 12'000'000) {
-        return Error(ErrorCode::EncoderUnavailable,
-                     L"Internal preset configuration error.",
-                     L"Preset table deviates from spec.md section 7.3.");
+    struct SpecRow {
+        std::uint32_t width;
+        std::uint32_t fps;
+        int crf;
+        std::uint32_t bitrateBps;
+        std::uint32_t gopSeconds;
+        std::uint32_t audioBitrateBps;
+        std::uint32_t audioChannels;
+    };
+    const SpecRow spec[] = {
+        {1280, 30, 28, 1'000'000, 5, 48'000, 1},
+        {1920, 30, 26, 2'000'000, 5, 64'000, 1},
+        {1920, 60, 22, 6'000'000, 5, 128'000, 2},
+    };
+    for (std::size_t i = 0; i < 3; ++i) {
+        const PresetParams& p = rows[i].params;
+        if (p.width != spec[i].width || p.fps != spec[i].fps || p.crf != spec[i].crf ||
+            p.bitrateBps != spec[i].bitrateBps || p.gopSeconds != spec[i].gopSeconds ||
+            p.audioBitrateBps != spec[i].audioBitrateBps ||
+            p.audioChannels != spec[i].audioChannels) {
+            return Error(ErrorCode::EncoderUnavailable,
+                         L"Internal preset configuration error.",
+                         L"Preset table deviates from spec.md section 7.3.");
+        }
     }
     return Result<void>{};
 }

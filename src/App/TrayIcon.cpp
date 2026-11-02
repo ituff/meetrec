@@ -1,22 +1,27 @@
 #include "TrayIcon.h"
 
+#include <objidl.h>
+#include <gdiplus.h>
+
+#include "Localization.h"
+#include "UiDraw.h"
+
 namespace vsr::app {
 
 namespace {
 
-// Fallback icon size when SM_CXSMICON is unavailable.
-constexpr int kIconPx = 16;
+constexpr int kIconResource = 1;
 
-COLORREF StateColor(const StatusSnapshot& snap) {
+Gdiplus::Color StateColor(const StatusSnapshot& snap) {
     switch (snap.state) {
         case AppState::Recording:
-            return RGB(214, 48, 49); // red: recording active (FR-085)
+            return Gdiplus::Color(255, 229, 52, 44);
         case AppState::Paused:
-            return RGB(254, 211, 48); // amber: paused
+            return Gdiplus::Color(255, 233, 162, 27);
         case AppState::Faulted:
-            return RGB(87, 87, 87); // dark gray: faulted
+            return Gdiplus::Color(255, 107, 114, 128);
         default:
-            return RGB(116, 185, 255); // blue: ready/idle
+            return Gdiplus::Color(255, 0, 100, 234);
     }
 }
 
@@ -32,81 +37,94 @@ void TrayIcon::Create(HWND owner, UINT callbackMessage) {
     data_.uID = 1;
     data_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     data_.uCallbackMessage = callbackMessage;
-    data_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    lstrcpynW(data_.szTip, L"Virtual Screen Recorder", ARRAYSIZE(data_.szTip));
+    data_.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(kIconResource));
+    lstrcpynW(data_.szTip, i18n::Text(i18n::Str::TrayReady), ARRAYSIZE(data_.szTip));
     if (Shell_NotifyIconW(NIM_ADD, &data_)) {
         added_ = true;
     }
 }
 
 HICON TrayIcon::MakeStateIcon(const StatusSnapshot& snap) {
-    // Runtime-drawn state icons avoid binary assets; a filled circle whose
-    // color encodes the state (FR-085).
     const int size = GetSystemMetrics(SM_CXSMICON);
-    const int px = size > 0 ? size : kIconPx;
+    const int px = size > 0 ? size : 16;
+    const float scale = static_cast<float>(px) / 16.0f;
 
-    HDC screen = GetDC(nullptr);
-    HDC mem = CreateCompatibleDC(screen);
-    HBITMAP bmp = CreateCompatibleBitmap(screen, px, px);
-    HGDIOBJ oldBmp = SelectObject(mem, bmp);
-    HBRUSH brush = CreateSolidBrush(StateColor(snap));
-    HGDIOBJ oldBrush = SelectObject(mem, brush);
-    RECT full = {0, 0, px, px};
-    FillRect(mem, &full, brush);
-    SelectObject(mem, oldBrush);
-    DeleteObject(brush);
-    SelectObject(mem, oldBmp);
-    DeleteDC(mem);
-    ReleaseDC(nullptr, screen);
+    Gdiplus::Bitmap bitmap(px, px, PixelFormat32bppARGB);
+    {
+        Gdiplus::Graphics graphics(&bitmap);
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        graphics.SetCompositingMode(Gdiplus::CompositingModeSourceOver);
+        graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+        ui::DrawLogo(graphics, Gdiplus::RectF(0.5f, 0.5f, px - 1.0f, px - 1.0f),
+                     3.0f * scale);
 
-    HICON icon = nullptr;
+        // State badge in the lower-right corner with a white ring; shape and
+        // color both change so the tray is not color-only (NFR-043).
+        const float badge = std::max(5.0f, 6.5f * scale);
+        const Gdiplus::RectF ring(px - badge - 1.0f, px - badge - 1.0f, badge, badge);
+        ui::DrawCircle(graphics, ring, Gdiplus::Color(255, 255, 255, 255),
+                       Gdiplus::Color(0, 0, 0, 0), 0.0f);
+        const Gdiplus::RectF inner(ring.X + 1.0f, ring.Y + 1.0f, ring.Width - 2.0f,
+                                   ring.Height - 2.0f);
+        ui::DrawCircle(graphics, inner, StateColor(snap),
+                       Gdiplus::Color(0, 0, 0, 0), 0.0f);
+    }
+
+    HBITMAP color = nullptr;
+    if (bitmap.GetHBITMAP(Gdiplus::Color(0, 0, 0, 0), &color) != Gdiplus::Ok ||
+        color == nullptr) {
+        return LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(kIconResource));
+    }
+    HBITMAP mask = CreateBitmap(px, px, 1, 1, nullptr);
     ICONINFO info = {};
     info.fIcon = TRUE;
-    info.hbmColor = bmp;
-    info.hbmMask = CreateBitmap(px, px, 1, 1, nullptr);
-    if (info.hbmMask != nullptr) {
-        icon = CreateIconIndirect(&info);
-        DeleteObject(info.hbmMask);
-    }
-    DeleteObject(bmp);
-    return icon;
+    info.hbmColor = color;
+    info.hbmMask = mask;
+    HICON icon = CreateIconIndirect(&info);
+    if (mask != nullptr) DeleteObject(mask);
+    DeleteObject(color);
+    return icon != nullptr
+               ? icon
+               : LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(kIconResource));
 }
 
 void TrayIcon::Update(const StatusSnapshot& snap) {
     if (!added_) return;
 
-    // FR-083: tooltip shows recording state and elapsed time while recording.
-    wchar_t tip[128] = L"Virtual Screen Recorder";
+    std::wstring tip;
+    const std::wstring elapsed = i18n::FormatDuration(snap.activeElapsedMs);
     switch (snap.state) {
-        case AppState::Recording: {
-            const std::int64_t s = snap.activeElapsedMs / 1000;
-            swprintf_s(tip, L"Recording %02d:%02d:%02d", static_cast<int>(s / 3600),
-                       static_cast<int>((s / 60) % 60), static_cast<int>(s % 60));
+        case AppState::Recording:
+            tip = i18n::Format(i18n::Str::TrayRecordingTooltip, {elapsed});
             break;
-        }
         case AppState::Paused:
-            swprintf_s(tip, L"Paused at %02d:%02d",
-                       static_cast<int>(snap.activeElapsedMs / 60000),
-                       static_cast<int>((snap.activeElapsedMs / 1000) % 60));
+            tip = i18n::Format(i18n::Str::TrayPausedTooltip, {elapsed});
             break;
         case AppState::Faulted:
-            lstrcpynW(tip, L"Virtual Screen Recorder - error", ARRAYSIZE(tip));
+            tip = i18n::Text(i18n::Str::TrayErrorTooltip);
             break;
         default:
+            tip = i18n::Text(i18n::Str::TrayReady);
             break;
     }
-    lstrcpynW(data_.szTip, tip, ARRAYSIZE(data_.szTip));
+    lstrcpynW(data_.szTip, tip.c_str(), ARRAYSIZE(data_.szTip));
 
     const UINT stateKey = static_cast<UINT>(snap.state);
+    bool changed = false;
     if (stateKey != lastIconState_) {
-        if (data_.hIcon != nullptr) {
-            DestroyIcon(data_.hIcon);
-            data_.hIcon = nullptr;
+        HICON newIcon = MakeStateIcon(snap);
+        if (newIcon != nullptr) {
+            if (data_.hIcon != nullptr) DestroyIcon(data_.hIcon);
+            data_.hIcon = newIcon;
         }
-        data_.hIcon = MakeStateIcon(snap);
         lastIconState_ = stateKey;
+        changed = true;
     }
-    Shell_NotifyIconW(NIM_MODIFY, &data_);
+    if (tip != lastTip_) {
+        lastTip_ = tip;
+        changed = true;
+    }
+    if (changed) Shell_NotifyIconW(NIM_MODIFY, &data_);
 }
 
 void TrayIcon::Remove() {
@@ -118,6 +136,8 @@ void TrayIcon::Remove() {
         DestroyIcon(data_.hIcon);
         data_.hIcon = nullptr;
     }
+    lastIconState_ = 0xFFFFFFFF;
+    lastTip_.clear();
 }
 
 } // namespace vsr::app

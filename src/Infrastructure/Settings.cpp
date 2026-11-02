@@ -150,6 +150,45 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         if (v.GetType() == json::Type::Boolean) settings.enableCrashDumps = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
     }
+    {
+        const json::Value& v = root.Find("uiLanguage");
+        if (v.GetType() == json::Type::String) {
+            const std::string value = v.AsString();
+            if (value == "system" || value == "zh-CN" || value == "en-US") {
+                settings.uiLanguage = value;
+            } else {
+                anyFallback = true;
+            }
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("showCompletionNotification");
+        if (v.GetType() == json::Type::Boolean) {
+            settings.showCompletionNotification = v.AsBool();
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("autoOpenOutputFolder");
+        if (v.GetType() == json::Type::Boolean) settings.autoOpenOutputFolder = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("previewPaneRatio");
+        if (v.GetType() == json::Type::Number) {
+            const double ratio = v.AsNumber(0.40);
+            if (ratio >= 0.15 && ratio <= 0.85) {
+                settings.previewPaneRatio = ratio;
+            } else {
+                anyFallback = true;
+            }
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
 
     // Preserve unknown fields verbatim (FR-091).
     for (const auto& kv : root.AsObject()) {
@@ -163,7 +202,11 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "recordMicrophone" ||
                            kv.first == "audioOutputDeviceId" ||
                            kv.first == "audioInputDeviceId" ||
-                           kv.first == "enableCrashDumps";
+                           kv.first == "enableCrashDumps" ||
+                           kv.first == "uiLanguage" ||
+                           kv.first == "showCompletionNotification" ||
+                           kv.first == "autoOpenOutputFolder" ||
+                           kv.first == "previewPaneRatio";
         if (!known) {
             unknown_.Set(kv.first, kv.second);
         }
@@ -191,6 +234,10 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("audioOutputDeviceId", json::Value(WideToUtf8(settings.audioOutputDeviceId)));
     root.Set("audioInputDeviceId", json::Value(WideToUtf8(settings.audioInputDeviceId)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
+    root.Set("uiLanguage", json::Value(settings.uiLanguage));
+    root.Set("showCompletionNotification", json::Value(settings.showCompletionNotification));
+    root.Set("autoOpenOutputFolder", json::Value(settings.autoOpenOutputFolder));
+    root.Set("previewPaneRatio", json::Value(settings.previewPaneRatio));
 
     // Re-attach preserved unknown keys verbatim (FR-091).
     if (unknown_.GetType() == json::Type::Object) {

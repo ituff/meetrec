@@ -36,7 +36,7 @@
            while normal launches show only the UI. -->
       <SubSystem>Windows</SubSystem>
       <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
-      <AdditionalDependencies>windowsapp.lib;dwmapi.lib;shcore.lib;mfplat.lib;mfuuid.lib;mfreadwrite.lib;mfsrcsnk.lib;d3d11.lib;dxgi.lib;dxguid.lib;SwDevice.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>windowsapp.lib;dwmapi.lib;shcore.lib;mfplat.lib;mfuuid.lib;mfreadwrite.lib;mfsrcsnk.lib;d3d11.lib;dxgi.lib;dxguid.lib;SwDevice.lib;gdiplus.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)VirtualScreenRecorder.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
@@ -44,15 +44,32 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Application.cpp" />
+    <ClCompile Include="AppMenu.cpp" />
+    <ClCompile Include="AudioDevices.cpp" />
+    <ClCompile Include="Localization.cpp" />
     <ClCompile Include="MainWindow.cpp" />
     <ClCompile Include="PreviewPanel.cpp" />
+    <ClCompile Include="SettingsWindow.cpp" />
+    <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="TrayIcon.cpp" />
+    <ClCompile Include="UiDraw.cpp" />
+    <ClCompile Include="WindowPicker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
+    <ClInclude Include="AppMenu.h" />
+    <ClInclude Include="AudioDevices.h" />
+    <ClInclude Include="Localization.h" />
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="PreviewPanel.h" />
+    <ClInclude Include="SettingsWindow.h" />
+    <ClInclude Include="ToastWindow.h" />
     <ClInclude Include="TrayIcon.h" />
+    <ClInclude Include="UiDraw.h" />
+    <ClInclude Include="WindowPicker.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="MeetRec.ico" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="App.rc" />

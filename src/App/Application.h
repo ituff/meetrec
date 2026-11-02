@@ -81,6 +81,7 @@ private:
     std::shared_ptr<IClock> clock_;
     std::unique_ptr<Coordinator> coordinator_;
     std::unique_ptr<MainWindow> mainWindow_;
+    ULONG_PTR gdiplusToken_ = 0;
     bool minimizeToTray_ = true;
     std::wstring outputDirectory_;
 };
