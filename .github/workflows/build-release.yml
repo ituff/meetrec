@@ -131,8 +131,12 @@ jobs:
           $ffmpeg = Join-Path $stage 'ffmpeg.exe'
           if (-not (Test-Path $exe)) { throw "Packaged MeetRec.exe missing: $exe" }
           if (-not (Test-Path $ffmpeg)) { throw "Packaged ffmpeg.exe missing: $ffmpeg" }
-          & $exe --version
-          if ($LASTEXITCODE -ne 0) { throw "Packaged MeetRec.exe --version failed" }
+          # MeetRec is a GUI-subsystem binary; use Start-Process -Wait so
+          # PowerShell actually waits and exposes the exit code.
+          $probe = Start-Process -FilePath $exe -ArgumentList '--version' -Wait -PassThru -NoNewWindow
+          if ($probe.ExitCode -ne 0) {
+            throw "Packaged MeetRec.exe --version failed ($($probe.ExitCode))"
+          }
           $out = "artifacts/smoke-encode"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $sample = Join-Path $out 'smoke.mp4'
