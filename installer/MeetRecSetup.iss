@@ -1,7 +1,7 @@
 ; ============================================================================
 ;  Virtual Screen Recorder - internal MVP installer (T090; ADR-006)
 ;  Inno Setup 6.x. Build:
-;    iscc /DConfiguration=Release installer\VirtualScreenRecorderSetup.iss
+;    iscc /DConfiguration=Release installer\MeetRecSetup.iss
 ;
 ;  Silent switches (FR-007): /SILENT /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 ;  The driver payload must be test-signed (scripts\testsign.ps1) and the
@@ -9,10 +9,10 @@
 ;  This is clearly labeled in the wizard (internal build only).
 ; ============================================================================
 
-#define AppName "Virtual Screen Recorder"
-#define AppVersion "1.0.0.0"
-#define AppPublisher "VirtualScreenRecorder Project"
-#define AppExe "VirtualScreenRecorder.exe"
+#define AppName "MeetRec"
+#define AppVersion "1.1.0.0"
+#define AppPublisher "Allen Cheng"
+#define AppExe "MeetRec.exe"
 #ifndef Configuration
 #define Configuration "Release"
 #endif
@@ -22,11 +22,11 @@ AppId={{6B1E5D2A-93C7-4A6E-9C04-2F8D51A7B301}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\VirtualScreenRecorder
-DefaultGroupName=Virtual Screen Recorder
+DefaultDirName={autopf}\MeetRec
+DefaultGroupName=MeetRec
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=VirtualScreenRecorderSetup
+OutputBaseFilename=MeetRecSetup
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -44,7 +44,7 @@ TestSigningWarning=INTERNAL TEST BUILD: The bundled virtual display driver is te
 
 [Files]
 ; Application (FR-003: runs unelevated; manifest requests asInvoker).
-Source: "..\artifacts\{#Configuration}\app\VirtualScreenRecorder.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\artifacts\{#Configuration}\app\MeetRec.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Driver payload (staged into {app}\driver, installed via pnputil below).
 Source: "..\artifacts\{#Configuration}\driver\VirtualDisplayDriver.dll"; DestDir: "{app}\driver"; Flags: ignoreversion
 Source: "..\artifacts\{#Configuration}\driver\VirtualDisplayDriver.inf"; DestDir: "{app}\driver"; Flags: ignoreversion
@@ -107,22 +107,22 @@ var
   Build: Integer;
 begin
   Result := '';
-  // Preflight: Windows 11 x64 only (FR-001, NFR-030).
+  // Preflight: Windows 10 2004+ / Windows 11 x64 (FR-001, NFR-030).
   if (not RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows NT\CurrentVersion',
        'CurrentBuildNumber', BuildStr))
      or (not TryStrToInt(BuildStr, Build))
-     or (Build < 22000) then
+     or (Build < 19041) then
   begin
-    Result := 'Virtual Screen Recorder requires Windows 11 (x64, build 22000 or later).';
+    Result := 'MeetRec requires Windows 10 version 2004 (x64) or later.';
     Exit;
   end;
 
   // Stop a running recorder before replacing files (upgrade handling).
   if FindWindowByClassName('VsrMainWindow') <> 0 then
   begin
-    MsgBox('Virtual Screen Recorder is running. Close it (and stop any recording) before installing.',
+    MsgBox('MeetRec is running. Close it (and stop any recording) before installing.',
       mbError, MB_OK);
-    Result := 'Virtual Screen Recorder is running. Close it before installing.';
+    Result := 'MeetRec is running. Close it before installing.';
   end;
 end;
 

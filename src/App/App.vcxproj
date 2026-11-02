@@ -24,7 +24,7 @@
   <PropertyGroup>
     <OutDir>$(SolutionDir)artifacts\$(Configuration)\app\</OutDir>
     <IntDir>$(SolutionDir)artifacts\obj\$(Configuration)\$(ProjectName)\</IntDir>
-    <TargetName>VirtualScreenRecorder</TargetName>
+    <TargetName>MeetRec</TargetName>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <ItemDefinitionGroup>

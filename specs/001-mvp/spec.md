@@ -3,7 +3,7 @@
 - **Spec ID:** VSR-MVP-001
 - **Version:** 1.0
 - **Status:** Ready for implementation
-- **Target platform:** Windows 11 x64
+- **Target platform:** Windows 10 2004+ x64 and Windows 11 x64 (x64 only)
 - **Primary audience:** Codex and human reviewers
 - **Architecture baseline:** Native C++20, Win32, C++/WinRT, Windows.Graphics.Capture, Direct3D 11, Media Foundation, UMDF 2/IddCx
 
@@ -162,7 +162,7 @@ All commands that are invalid for the current state shall be disabled in the UI 
 
 The MVP is successful when all of the following are demonstrated on the supported test matrix:
 
-- Setup installs and launches successfully on a clean Windows 11 x64 test machine.
+- Setup installs and launches successfully on a clean Windows 10 2004+ x64 or Windows 11 x64 test machine.
 - One virtual display appears as an extended monitor.
 - A selected application can be moved to the virtual display and restored.
 - A 30-minute 1080p30 recording completes and plays in Windows Media Player.
@@ -184,7 +184,8 @@ The MVP is successful when all of the following are demonstrated on the supporte
 
 ## 11. Supported environment
 
-- Windows 11 x64, versions still supported by Microsoft at release time.
+- Windows 10 2004+ x64 or Windows 11 x64. Windows 10 reached end of regular support on 2025-10-14; it remains technically supported by this project on a best-effort basis.
+- 32-bit x86 is not supported.
 - Interactive local desktop session.
 - Direct3D 11 capable GPU and driver.
 - Local NTFS output target for acceptance testing.

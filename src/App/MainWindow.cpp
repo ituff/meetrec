@@ -204,7 +204,7 @@ bool MainWindow::Create() {
                             CW_USEDEFAULT, width, height, nullptr, nullptr, instance, this);
     if (hwnd_ == nullptr) return false;
 
-    // Windows 11 rounded corners and a stable light frame; the drawing is
+    // Windows 11 rounded corners (ignored on Windows 10); the drawing is
     // fully ours, so the system caption is removed in WM_NCCALCSIZE.
     DWORD corner = DWMWCP_ROUND;
     DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
@@ -2664,7 +2664,7 @@ void MainWindow::OpenPath(const std::wstring& path, bool selectFile) {
 
 void MainWindow::OnDiagnosticsClicked() {
     DiagnosticsContext context;
-    context.appVersion = L"1.0.0.0";
+    context.appVersion = L"1.1.0.0";
     context.osBuild = Application::OsBuildString();
     auto package = CreateDiagnosticsPackage(context);
     if (package) {

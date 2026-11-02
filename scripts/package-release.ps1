@@ -1,16 +1,16 @@
 # MeetRec - builds the portable, ffmpeg-bundled Windows x64 release package.
 #
 # Usage:
-#   powershell -File scripts\package-release.ps1 -Version 1.0.0
+#   powershell -File scripts\package-release.ps1 -Version 1.1.0
 #   powershell -File scripts\package-release.ps1 -FfmpegDir D:\ffmpeg\bin
 #
-# The application discovers ffmpeg.exe next to VirtualScreenRecorder.exe, so
+# The application discovers ffmpeg.exe next to MeetRec.exe, so
 # the whole folder is the install: unzip = install. The package includes the
 # ffmpeg GPLv3 license and a source pointer for the exact build.
 
 param(
     [string]$Configuration = "Release",
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.0",
     [string]$FfmpegDir = "C:\ffmpeg\bin",
     [string]$OutputRoot = ""
 )
@@ -20,7 +20,7 @@ $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $root "artifacts\dist"
 }
-$app = Join-Path $root "artifacts\$Configuration\app\VirtualScreenRecorder.exe"
+$app = Join-Path $root "artifacts\$Configuration\app\MeetRec.exe"
 if (-not (Test-Path $app)) {
     throw "Missing application binary: $app. Build with -Configuration $Configuration first."
 }
@@ -40,7 +40,7 @@ if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 if (Test-Path $zip) { Remove-Item -Force $zip }
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "licenses") | Out-Null
 
-Copy-Item $app (Join-Path $stage "VirtualScreenRecorder.exe")
+Copy-Item $app (Join-Path $stage "MeetRec.exe")
 foreach ($pattern in @("ffmpeg.exe", "*.dll")) {
     Get-ChildItem $FfmpegDir -Filter $pattern -File | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $stage $_.Name)

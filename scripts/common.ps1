@@ -69,7 +69,7 @@ function Write-BuildManifest {
     )
     $vsPath = Get-VsInstallation
     $manifest = [ordered]@{
-        product        = "VirtualScreenRecorder"
+        product        = "MeetRec"
         configuration  = $Configuration
         commit         = Get-GitCommitId
         builtAtUtc     = (Get-Date).ToUniversalTime().ToString("o")

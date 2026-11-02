@@ -1,7 +1,8 @@
 // MeetRec - owner-drawn native popup menus.
 //
 // Windows owns the popup mechanics (keyboard, scrolling, dismissal, shadows,
-// rounded corners on Windows 11); the items are painted in the product theme.
+// rounded corners on Windows 11; Windows 10 uses square native menus); the
+// items are painted in the product theme.
 #pragma once
 
 #include <windows.h>

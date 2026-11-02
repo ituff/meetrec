@@ -54,7 +54,7 @@ struct OsVersionInfoW {
 };
 
 bool QueryOsVersion(OsVersionInfoW& info) {
-    // FR-004: OS gate. Windows 11 reports build >= 22000.
+    // FR-004: OS gate. Windows 10 2004 (19041) is the oldest supported build; Windows 11 is build >= 22000.
     typedef unsigned long(__stdcall * RtlGetVersionFn)(OsVersionInfoW*);
     info.dwOSVersionInfoSize = sizeof(info);
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
@@ -63,9 +63,9 @@ bool QueryOsVersion(OsVersionInfoW& info) {
     return fn != nullptr && fn(&info) == 0;
 }
 
-bool IsWindows11OrLater() {
+bool IsSupportedWindows() {
     OsVersionInfoW info = {};
-    return QueryOsVersion(info) && info.dwMajorVersion >= 10 && info.dwBuildNumber >= 22000;
+    return QueryOsVersion(info) && info.dwMajorVersion >= 10 && info.dwBuildNumber >= 19041;
 }
 
 void ShowStartupError(const std::wstring& text) {
@@ -122,9 +122,9 @@ bool Application::InitRuntime() {
     // T103: crash dumps are strictly opt-in and stay local.
     CrashReporter::Install(settings.enableCrashDumps);
 
-    if (!IsWindows11OrLater()) {
+    if (!IsSupportedWindows()) {
         Error e(ErrorCode::InitOsUnsupported,
-                L"MeetRec requires Windows 11 (x64).",
+                L"MeetRec requires Windows 10 version 2004 (x64) or later.",
                 L"OS version check failed at startup", S_OK, false);
         log::Error("App", "STARTUP_OS_UNSUPPORTED", L"", e.technicalMessage);
         ShowStartupError(std::wstring(i18n::ErrorTitle(e.code)) + L"\n" +
@@ -190,8 +190,8 @@ int Application::RunSelfCheck() {
     bool coreOk = true;
 
     // 1. OS gate (FR-004).
-    sections.push_back({L"OS version", IsWindows11OrLater(), OsBuildString()});
-    coreOk = coreOk && IsWindows11OrLater();
+    sections.push_back({L"OS version", IsSupportedWindows(), OsBuildString()});
+    coreOk = coreOk && IsSupportedWindows();
 
     // 2. Settings (FR-090..FR-092). A missing file is a normal first run.
     {
@@ -874,7 +874,7 @@ int wmain(int argc, wchar_t* argv[]) {
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
-        wprintf(L"MeetRec 1.0.0.0 (MVP)\n");
+        wprintf(L"MeetRec 1.1.0.0 (MVP)\n");
 #ifdef VSR_BUILD_COMMIT
         wprintf(L"build: %s\n", VSR_BUILD_COMMIT);
 #endif

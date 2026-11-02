@@ -1,7 +1,7 @@
 # Manual test checklist (T082, T091, T092)
 
 Release qualification checklist for the MVP. Each row records the expected evidence and a
-result. Run on every reference machine (at least two Windows 11 x64 machines, two GPU vendors
+result. Run on every reference machine (at least two Windows 10 2004+/Windows 11 x64 machines, two GPU vendors
 where available — T092). Automated portions are marked ⚙; everything else is manual evidence.
 
 ## 1. Installation and startup (AC-001, AC-009)

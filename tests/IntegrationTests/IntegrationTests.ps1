@@ -14,7 +14,7 @@ param(
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$app = Join-Path $root "artifacts\$Configuration\app\VirtualScreenRecorder.exe"
+$app = Join-Path $root "artifacts\$Configuration\app\MeetRec.exe"
 $validator = Join-Path $root "artifacts\$Configuration\tests\MediaValidator.exe"
 $resultsDir = Join-Path $root "artifacts\test-results"
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null

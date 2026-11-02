@@ -4,8 +4,8 @@
 1 ICON "MeetRec.ico"
 
 1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -14,10 +14,10 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "FileDescription", "MeetRec"
-      VALUE "FileVersion", "1.0.0.0"
+      VALUE "FileVersion", "1.1.0.0"
       VALUE "ProductName", "MeetRec"
-      VALUE "ProductVersion", "1.0.0.0"
-      VALUE "OriginalFilename", "VirtualScreenRecorder.exe"
+      VALUE "ProductVersion", "1.1.0.0"
+      VALUE "OriginalFilename", "MeetRec.exe"
     END
   END
   BLOCK "VarFileInfo"

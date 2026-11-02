@@ -71,7 +71,7 @@ virtual-screen-recorder/
 └─ artifacts/
 ```
 
-All first-party application libraries are statically linked into `VirtualScreenRecorder.exe`. The UMDF driver remains separately packaged as required by Windows.
+All first-party application libraries are statically linked into `MeetRec.exe`. The UMDF driver remains separately packaged as required by Windows.
 
 ## 4. Component design
 
@@ -351,7 +351,7 @@ Do not log window content. Window titles should be omitted or sanitized in diagn
 
 Internal MVP installer responsibilities:
 
-- Require x64 Windows 11
+- Require x64 Windows 10 2004+ or Windows 11
 - Install application under Program Files
 - Install driver package with elevated system tooling
 - Create Start Menu shortcut
@@ -426,12 +426,12 @@ Pin and document exact tested versions in `README.md` and CI configuration.
 
 ```text
 artifacts/<configuration>/
-├─ app/VirtualScreenRecorder.exe
+├─ app/MeetRec.exe
 ├─ driver/VirtualDisplayDriver.dll
 ├─ driver/VirtualDisplayDriver.inf
 ├─ driver/VirtualDisplayDriver.cat
 ├─ symbols/
-└─ installer/VirtualScreenRecorderSetup.exe
+└─ installer/MeetRecSetup.exe
 ```
 
 ## 8. Testing design

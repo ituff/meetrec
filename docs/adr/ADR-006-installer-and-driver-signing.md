@@ -16,7 +16,7 @@ production-signed driver catalog that Windows accepts without Test Mode (NFR-021
 ## Decision
 
 - **Installer technology: Inno Setup** (`installer/VirtualScreenRecorderSetup.iss`).
-  - Preflight: Windows 11 x64 check (build ≥ 22000), no active recording process.
+  - Preflight: Windows 10 2004+ / Windows 11 x64 check (build ≥ 19041), no active recording process.
   - Copies the app, stages the driver payload, and installs the driver package via
     `pnputil /add-driver ... /install` in an elevated step; return codes are surfaced and
     logged (`installer` log).

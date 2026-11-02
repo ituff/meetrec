@@ -1,6 +1,6 @@
 # Installer (internal MVP)
 
-`VirtualScreenRecorderSetup.iss` is an [Inno Setup 6](https://jrsoftware.org/isinfo.php) project
+`MeetRecSetup.iss` is an [Inno Setup 6](https://jrsoftware.org/isinfo.php) project
 producing **one Setup executable** that installs the desktop application and stages the
 test-signed virtual display driver (FR-001, FR-002; ADR-006).
 
@@ -13,17 +13,17 @@ test-signed virtual display driver (FR-001, FR-002; ADR-006).
    ```
 2. Compile:
    ```powershell
-   iscc /DConfiguration=Release installer\VirtualScreenRecorderSetup.iss
+   iscc /DConfiguration=Release installer\MeetRecSetup.iss
    ```
-   Output: `installer\Output\VirtualScreenRecorderSetup.exe`
+   Output: `installer\Output\MeetRecSetup.exe`
 
 ## What it does
 
 | Step | Detail |
 |---|---|
-| Preflight | Windows 11 x64 (build ≥ 22000); recorder not running (upgrade safety) |
+| Preflight | Windows 10 2004+ / Windows 11 x64; recorder not running (upgrade safety) |
 | Elevation | Requires admin (Program Files + `pnputil` driver staging, FR-002) |
-| Files | `VirtualScreenRecorder.exe` → `{pf}\VirtualScreenRecorder`; driver payload → `{pf}\VirtualScreenRecorder\driver` |
+| Files | `MeetRec.exe` → `{pf}\MeetRec`; driver payload → `{pf}\MeetRec\driver` |
 | Driver | `pnputil /add-driver VirtualDisplayDriver.inf /install` — the driver store is staged; the *application* creates the actual device on demand (`SwDeviceCreate`), so no display appears until a recording starts |
 | Shortcuts | Start Menu group |
 | Post-install | Optional app launch (skipped in silent mode) |
@@ -32,8 +32,8 @@ test-signed virtual display driver (FR-001, FR-002; ADR-006).
 ## Silent deployment (FR-007)
 
 ```text
-VirtualScreenRecorderSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-VirtualScreenRecorderSetup.exe /UNINSTALL /SILENT      (via the uninstall entry point)
+MeetRecSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+MeetRecSetup.exe /UNINSTALL /SILENT      (via the uninstall entry point)
 ```
 
 Exit codes follow Inno Setup conventions (`0` success; `3010`-style reboot hints come from the

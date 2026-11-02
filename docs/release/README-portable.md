@@ -1,25 +1,27 @@
-# MeetRec 1.0.0 — Windows 11 x64 便携版
+# MeetRec 1.1.0 — Windows 10/11 x64 便携版
 
 MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成干净的 MP4，可同时混入系统声音（对方）和麦克风（我的声音）。
 
 ## 快速开始
 
 1. 将整个压缩包解压到一个可写目录（例如 `D:\Apps\MeetRec`）。
-2. 双击 `VirtualScreenRecorder.exe`。
+2. 双击 `MeetRec.exe`。
 3. 选择要录制的会议/演示窗口。
 4. 确认系统声音和麦克风电平条有跳动，点击“开始录制”。
 5. 结束后点击“结束并保存”，在结果卡中打开文件或文件夹。
 
-> 请保持文件夹完整：`ffmpeg.exe` 及其 DLL 必须和 `VirtualScreenRecorder.exe` 放在同一目录。只复制 exe 会导致无法使用内置的 ffmpeg 录制后端。
+> 请保持文件夹完整：`ffmpeg.exe` 及其 DLL 必须和 `MeetRec.exe` 放在同一目录。只复制 exe 会导致无法使用内置的 ffmpeg 录制后端。
 
 ## 系统要求
 
-- Windows 11 x64（build 22000 或更高）
+- Windows 10 2004（build 19041）或更高版本，x64
+- 或 Windows 11 x64
 - Intel/AMD x64 处理器
 - Direct3D 11 显卡
 - **不需要管理员权限，不需要虚拟显示器驱动，不需要安装**
+- 已静态链接 C++ 运行库，不需要安装 VC++ Redistributable
 
-**没有 32 位版本。** Windows 11 不再提供 32 位版本；本发行版只有 x64。ARM64 设备可以尝试 x64 模拟，但不在官方支持范围内。
+**没有 32 位版本。** Windows 10 的 32 位版本和 ARM64 均不在支持范围；本发行版只有 x64。Windows 10 已于 2025-10-14 结束常规支持，建议升级 Windows 11。
 
 ## 数据位置
 
@@ -54,10 +56,10 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 
 ---
 
-# MeetRec 1.0.0 — Windows 11 x64 (portable)
+# MeetRec 1.1.0 — Windows 10/11 x64 (portable)
 
-Unzip the whole folder and run `VirtualScreenRecorder.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe` and its DLLs are included and must stay next to the application binary so the ffmpeg recording backend can be discovered.
+Unzip the whole folder and run `MeetRec.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe` and its DLLs are included and must stay next to the application binary so the ffmpeg recording backend can be discovered. The C++ runtime is linked statically, so no VC++ Redistributable is needed.
 
-Requirements: Windows 11 x64 (build 22000+), Direct3D 11 GPU. There is no 32-bit build; Windows 11 is x64-only. ARM64 is not officially supported.
+Requirements: Windows 10 2004+ x64 or Windows 11 x64; Direct3D 11 GPU. There is no 32-bit build; 32-bit Windows 10 and ARM64 are not supported. Windows 10 reached end of regular support on 2025-10-14.
 
 Settings/logs: `%LOCALAPPDATA%\VirtualScreenRecorder`. Default recordings go to the user's Videos folder (the exact path is shown in the app). The build is not code-signed; SmartScreen may warn about an unknown publisher. See `licenses/` for the bundled FFmpeg GPLv3 license and exact source revision.

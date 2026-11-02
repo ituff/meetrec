@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.0.0.0" processorArchitecture="*" name="VirtualScreenRecorder.App" type="win32"/>
-  <description>Virtual Screen Recorder</description>
+  <assemblyIdentity version="1.1.0.0" processorArchitecture="*" name="MeetRec.App" type="win32"/>
+  <description>MeetRec</description>
   <!-- FR-003: the application runs as the standard interactive user. -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>

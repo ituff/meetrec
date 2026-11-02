@@ -21,7 +21,7 @@ and what would change versus the Inno Setup internal installer?
 
 - Intune/SCCM deploy the existing EXE with silent switches (Intune Win32 app packaging wraps
   EXE/MSI with detection rules — supported and common).
-- Detection: file version of `VirtualScreenRecorder.exe` + registry `AppId` key.
+- Detection: file version of `MeetRec.exe` + registry `AppId` key.
 - Cost: near zero. Limits: EXE wrappers are second-class in some reporting surfaces; upgrades
   rely on our own uninstall step.
 

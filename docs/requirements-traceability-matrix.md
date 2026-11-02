@@ -106,7 +106,7 @@ source inspection, `DRV-*` = driver manual log.
 | NFR-023 | Controlled DLL loading / safe search | CODE (no LoadLibrary of user paths); manifest; review |
 | NFR-024 | Unicode paths validated | CODE wide APIs throughout; UT unicode JSON |
 | NFR-025 | No DRM/capture bypass | CODE inspection (no such capability present) |
-| NFR-030 | Windows 11 x64 target | UT build config (x64-only); MAN-1 |
+| NFR-030 | Windows 10 2004+ / Windows 11 x64 target | UT build config (x64-only); MAN-1 |
 | NFR-031 | C++20 documented toolchain | Build compiles with /std:c++20; README pins versions; build manifest |
 | NFR-032 | /W4 /WX first-party code | Directory.Build.props; full build passes (CODE) |
 | NFR-033 | Static libs → one exe | CODE project layout; App.vcxproj references |

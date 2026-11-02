@@ -128,7 +128,7 @@ constexpr Entry kZh[] = {
     {Str::EmptyRecordingHint, L"没有录到画面，文件可能无法播放。请换一个窗口重试。"},
 
     {Str::ErrInitOsUnsupportedTitle, L"系统版本不受支持"},
-    {Str::ErrInitOsUnsupportedBody, L"MeetRec 需要 Windows 11 (x64)。"},
+    {Str::ErrInitOsUnsupportedBody, L"MeetRec 需要 Windows 10 2004 (x64) 或更高版本。"},
     {Str::ErrInitDriverMissingTitle, L"无法连接录制显示器"},
     {Str::ErrInitDriverMissingBody, L"窗口录制不需要虚拟显示器。请重新选择窗口后重试。"},
     {Str::ErrInitD3dTitle, L"无法初始化图形设备"},
@@ -363,7 +363,8 @@ constexpr Entry kEn[] = {
      L"No video frames were recorded; the file may not play. Try another window."},
 
     {Str::ErrInitOsUnsupportedTitle, L"Windows version not supported"},
-    {Str::ErrInitOsUnsupportedBody, L"MeetRec requires Windows 11 (x64)."},
+    {Str::ErrInitOsUnsupportedBody,
+     L"MeetRec requires Windows 10 version 2004 (x64) or later."},
     {Str::ErrInitDriverMissingTitle, L"Recording display unavailable"},
     {Str::ErrInitDriverMissingBody,
      L"Window recording doesn't need a virtual display. Choose the window again and retry."},

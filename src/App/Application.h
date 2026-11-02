@@ -61,7 +61,7 @@ public:
                       encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,
                       encoder::WriterBackend backend = encoder::WriterBackend::Auto);
 
-    // "Windows 11 build 26100" style string for diagnostics.
+    // "Windows build 26100" style string for diagnostics.
     static std::wstring OsBuildString();
 
     Coordinator& GetCoordinator() noexcept { return *coordinator_; }

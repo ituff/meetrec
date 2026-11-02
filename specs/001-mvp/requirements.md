@@ -132,7 +132,7 @@
 
 ### 2.4 Compatibility and maintainability
 
-- **NFR-030 [MUST]** Production target is Windows 11 x64.
+- **NFR-030 [MUST]** Production target is Windows 10 2004+ x64 or Windows 11 x64 (x64 only).
 - **NFR-031 [MUST]** The solution shall compile with C++20 using a documented Visual Studio and WDK toolchain.
 - **NFR-032 [MUST]** Warnings shall be treated as errors for first-party application code, with documented exceptions for imported sample code.
 - **NFR-033 [MUST]** Application modules shall be built as static libraries and linked into one desktop executable.
@@ -207,7 +207,7 @@ Every user-visible terminal failure shall include one stable error code.
 
 ### AC-001 Clean installation
 
-**Given** a clean supported Windows 11 x64 machine  
+**Given** a clean supported Windows 10 2004+ x64 or Windows 11 x64 machine  
 **When** the signed installer is run with elevation  
 **Then** the app and driver are installed, the app launches as standard user, and the virtual monitor is discoverable.
 

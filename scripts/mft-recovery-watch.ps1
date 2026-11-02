@@ -13,7 +13,7 @@
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot
-$app = Join-Path $root "artifacts\Release\app\VirtualScreenRecorder.exe"
+$app = Join-Path $root "artifacts\Release\app\MeetRec.exe"
 $validator = Join-Path $root "artifacts\Release\tests\MediaValidator.exe"
 $log = Join-Path $env:TEMP "vsr-mft-watch.log"
 $clipDir = Join-Path $env:TEMP "vsr-mft-watch-clips"

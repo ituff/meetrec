@@ -102,8 +102,9 @@ recorder now detects and contains (see `docs/task-completion-notes.md`, session 
 
 ## Environment
 
-- Windows 11 x64 only; interactive sessions only. Remote Desktop, Windows Sandbox, and
-  unattended/services contexts are unsupported (NFR-030, spec.md §11).
+- Windows 10 2004+ x64 or Windows 11 x64; interactive sessions only. Remote Desktop,
+  Windows Sandbox, and unattended/services contexts are unsupported (NFR-030, spec.md §11).
+- 32-bit x86 and ARM64 are not supported.
 - Mixed-DPI environments are supported (Per-Monitor V2), but applications that misbehave when
   moved between DPI boundaries may render oddly after placement — the recorder restores their
   original placement on stop.

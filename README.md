@@ -1,14 +1,15 @@
 # MeetRec (Virtual Screen Recorder)
 
-MeetRec is a lightweight Windows 11 **window recorder for meetings and demos**: pick one
+MeetRec is a lightweight Windows 10/11 **window recorder for meetings and demos**: pick one
 application window, optionally mix in system audio (the other participants) and your
 microphone, and save a clean **H.264 MP4**. Other windows, notifications, and desktop
 activity never appear in the recording. Window recording captures the target in place and
 does not require the virtual display driver.
 
 The product UI is the custom-drawn native Win32 interface specified in
-[`docs/design/`](docs/design/). The executable name and settings paths remain
-`VirtualScreenRecorder` for compatibility.
+[`docs/design/`](docs/design/). The executable is `MeetRec.exe`; the settings/log
+directory keeps the legacy `VirtualScreenRecorder` name so existing users retain their
+configuration.
 
 - **Spec:** [`specs/001-mvp/spec.md`](specs/001-mvp/spec.md) (VSR-MVP-001 v1.0)
 - **Requirements:** [`specs/001-mvp/requirements.md`](specs/001-mvp/requirements.md)
@@ -19,15 +20,15 @@ The product UI is the custom-drawn native Win32 interface specified in
 
 | | |
 |---|---|
-| OS | Windows 11 x64 (build 22000+) |
+| OS | Windows 10 2004+ x64 (build 19041+) or Windows 11 x64 |
 | Session | Interactive local desktop session |
 | GPU | Direct3D 11 capable GPU with current vendor driver |
 | Filesystem | Local NTFS output target for acceptance testing |
 
-Not supported in the MVP: Remote Desktop, Windows Sandbox, GPU-less servers, Windows 10,
-multi-monitor virtual displays, HDR. Window recording is the supported mode; the virtual
-display path remains for legacy development entry points. See
-[docs/known-limitations.md](docs/known-limitations.md).
+Not supported: Remote Desktop, Windows Sandbox, GPU-less servers, 32-bit x86,
+multi-monitor virtual displays, HDR. Windows 10 is supported on x64 only. Window
+recording is the supported mode; the virtual display path remains for legacy development
+entry points. See [docs/known-limitations.md](docs/known-limitations.md).
 
 ## Product UI and i18n
 
@@ -102,7 +103,7 @@ Outputs follow the artifact convention (design.md §7.3):
 
 ```text
 artifacts/<Configuration>/
-  app/VirtualScreenRecorder.exe       # controller application
+  app/MeetRec.exe       # controller application
   driver/VirtualDisplayDriver.*       # UMDF driver package (WDK builds only)
   tests/UnitTests.exe                 # unit test runner
   tests/MediaValidator.exe            # test-only MP4 validation tool
@@ -113,11 +114,11 @@ artifacts/<Configuration>/
 ## Running (development)
 
 ```text
-VirtualScreenRecorder.exe                       # controller UI (also creates the tray icon)
-VirtualScreenRecorder.exe --dev-record --seconds 10 --preset standard --output D:\Clips
-VirtualScreenRecorder.exe --dev-record-window --seconds 10 --preset standard --output D:\Clips
-VirtualScreenRecorder.exe --self-check          # capability report (read-only diagnostics)
-VirtualScreenRecorder.exe --encode-test --seconds 10 --preset high --output D:\Clips
+MeetRec.exe                       # controller UI (also creates the tray icon)
+MeetRec.exe --dev-record --seconds 10 --preset standard --output D:\Clips
+MeetRec.exe --dev-record-window --seconds 10 --preset standard --output D:\Clips
+MeetRec.exe --self-check          # capability report (read-only diagnostics)
+MeetRec.exe --encode-test --seconds 10 --preset high --output D:\Clips
 ```
 
 Common flags for the recording modes: `--seconds N`, `--preset low|standard|high`,
@@ -228,7 +229,7 @@ Win32 Controller + Tray
        └─ Settings / Structured Log / Diagnostics
 ```
 
-All first-party modules are static libraries linked into `VirtualScreenRecorder.exe`
+All first-party modules are static libraries linked into `MeetRec.exe`
 (NFR-033); the driver remains a separate binary (NFR-034).
 
 ## Testing
@@ -260,7 +261,7 @@ docs/
   driver-manual-test-log.md# driver install/mode/reboot evidence log
   requirements-traceability-matrix.md
 installer/
-  VirtualScreenRecorderSetup.iss  # Inno Setup project (internal MVP)
+  MeetRecSetup.iss  # Inno Setup project (internal MVP)
 scripts/
   build.ps1 / test.ps1 / clean.ps1 / common.ps1
   testsign.ps1 / install-driver.ps1 / remove-driver.ps1

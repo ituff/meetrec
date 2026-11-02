@@ -34,5 +34,5 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "Driver staged. Launch VirtualScreenRecorder.exe and start a recording; the app creates the virtual display device on demand."
+Write-Host "Driver staged. Launch MeetRec.exe and start a recording; the app creates the virtual display device on demand."
 exit 0

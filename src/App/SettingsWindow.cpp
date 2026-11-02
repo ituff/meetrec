@@ -759,7 +759,7 @@ void SettingsWindow::BrowseForFolder() {
 
 void SettingsWindow::ShowDiagnostics() {
     DiagnosticsContext context;
-    context.appVersion = L"1.0.0.0";
+    context.appVersion = L"1.1.0.0";
     context.osBuild = Application::OsBuildString();
     auto package = CreateDiagnosticsPackage(context);
     if (package) {
@@ -1264,7 +1264,7 @@ void SettingsWindow::DrawAbout(Gdiplus::Graphics& graphics) {
                  ui::FontRole::Big, ui::colors::Text(), ui::Align::Near,
                  ui::VAlign::Center, false);
     ui::DrawText(graphics, fonts_,
-                 std::wstring(i18n::Text(i18n::Str::AboutVersion)) + L" 1.0.0.0",
+                 std::wstring(i18n::Text(i18n::Str::AboutVersion)) + L" 1.1.0.0",
                  layout_.aboutVersion, ui::FontRole::Small, ui::colors::TextSecondary(),
                  ui::Align::Near, ui::VAlign::Center, false);
     std::wstring build = std::wstring(i18n::Text(i18n::Str::AboutBuild)) + L" ";
