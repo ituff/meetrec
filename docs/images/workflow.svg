@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="330" viewBox="0 0 1000 330" role="img" aria-label="MeetRec recording workflow">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <linearGradient id="cardbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f4f7fd"/>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="330" rx="16" fill="#f8fafc"/>
+
+  <!-- cards -->
+  <!-- step 1 -->
+  <g>
+    <rect x="22" y="58" width="212" height="158" rx="14" fill="url(#cardbg)" stroke="#dbe3f0"/>
+    <circle cx="52" cy="90" r="15" fill="#2563eb"/>
+    <text x="52" y="96" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#ffffff">1</text>
+    <text x="78" y="97" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="19" font-weight="700" fill="#1e293b">选择窗口</text>
+    <text x="78" y="117" font-family="Segoe UI, sans-serif" font-size="12.5" fill="#64748b">Pick a window</text>
+    <text x="40" y="150" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">搜索窗口标题,</text>
+    <text x="40" y="170" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">或用「只看会议应用」</text>
+    <text x="40" y="190" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">一键过滤会议软件</text>
+    <text x="40" y="207" font-family="Segoe UI, sans-serif" font-size="11" fill="#94a3b8">Search, or filter meeting apps</text>
+  </g>
+  <line x1="234" y1="137" x2="262" y2="137" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr)"/>
+
+  <!-- step 2 -->
+  <g>
+    <rect x="262" y="58" width="212" height="158" rx="14" fill="url(#cardbg)" stroke="#dbe3f0"/>
+    <circle cx="292" cy="90" r="15" fill="#2563eb"/>
+    <text x="292" y="96" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#ffffff">2</text>
+    <text x="318" y="97" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="19" font-weight="700" fill="#1e293b">检查音频</text>
+    <text x="318" y="117" font-family="Segoe UI, sans-serif" font-size="12.5" fill="#64748b">Check audio</text>
+    <!-- level meter -->
+    <rect x="280" y="136" width="12" height="6" rx="2" fill="#22c55e"/>
+    <rect x="296" y="136" width="12" height="6" rx="2" fill="#22c55e"/>
+    <rect x="312" y="136" width="12" height="6" rx="2" fill="#22c55e"/>
+    <rect x="328" y="136" width="12" height="6" rx="2" fill="#e2e8f0"/>
+    <rect x="344" y="136" width="12" height="6" rx="2" fill="#e2e8f0"/>
+    <rect x="360" y="136" width="12" height="6" rx="2" fill="#e2e8f0"/>
+    <text x="280" y="162" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">系统声音 + 麦克风电平条,</text>
+    <text x="280" y="182" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">录制前就能确认有声源</text>
+    <text x="280" y="207" font-family="Segoe UI, sans-serif" font-size="11" fill="#94a3b8">Live level meters before you hit record</text>
+  </g>
+  <line x1="474" y1="137" x2="502" y2="137" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr)"/>
+
+  <!-- step 3 -->
+  <g>
+    <rect x="502" y="58" width="212" height="158" rx="14" fill="url(#cardbg)" stroke="#dbe3f0"/>
+    <circle cx="532" cy="90" r="15" fill="#e11d48"/>
+    <text x="532" y="96" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#ffffff">3</text>
+    <text x="558" y="97" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="19" font-weight="700" fill="#1e293b">开始录制</text>
+    <text x="558" y="117" font-family="Segoe UI, sans-serif" font-size="12.5" fill="#64748b">Start / pause / resume</text>
+    <circle cx="524" cy="146" r="10" fill="#e11d48"/>
+    <rect x="548" y="140" width="110" height="12" rx="6" fill="#e2e8f0"/>
+    <rect x="548" y="140" width="52" height="12" rx="6" fill="#f43f5e"/>
+    <text x="520" y="176" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">支持暂停/继续,</text>
+    <text x="520" y="196" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">可最小化到托盘</text>
+    <text x="520" y="207" font-family="Segoe UI, sans-serif" font-size="11" fill="#94a3b8">Tray-friendly, pause anytime</text>
+  </g>
+  <line x1="714" y1="137" x2="742" y2="137" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr)"/>
+
+  <!-- step 4 -->
+  <g>
+    <rect x="742" y="58" width="236" height="158" rx="14" fill="url(#cardbg)" stroke="#dbe3f0"/>
+    <circle cx="772" cy="90" r="15" fill="#16a34a"/>
+    <text x="772" y="96" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#ffffff">4</text>
+    <text x="798" y="97" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="19" font-weight="700" fill="#1e293b">结束并保存</text>
+    <text x="798" y="117" font-family="Segoe UI, sans-serif" font-size="12.5" fill="#64748b">Stop &amp; save</text>
+    <rect x="760" y="134" width="200" height="34" rx="8" fill="#1e293b"/>
+    <text x="860" y="156" text-anchor="middle" font-family="Consolas, monospace" font-size="11.5" fill="#4ade80">Recording_20261104_143252.mp4</text>
+    <text x="760" y="190" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">结果卡:打开文件 / 文件夹,</text>
+    <text x="760" y="210" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">或再录一个</text>
+  </g>
+
+  <!-- bottom note -->
+  <rect x="22" y="244" width="956" height="52" rx="12" fill="#eef4ff" stroke="#c7d7f5"/>
+  <circle cx="52" cy="270" r="9" fill="#2563eb"/>
+  <text x="70" y="266" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14.5" font-weight="600" fill="#1e3a8a">其他窗口、通知和桌面活动永远不会进入录制画面;窗口录制不需要虚拟显示器驱动。</text>
+  <text x="70" y="286" font-family="Segoe UI, sans-serif" font-size="12" fill="#5b76b3">Other windows, notifications and desktop activity never appear in the recording — no virtual display driver required.</text>
+</svg>

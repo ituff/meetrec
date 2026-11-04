@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="280" viewBox="0 0 1000 280" role="img" aria-label="MeetRec audio mixing diagram">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <linearGradient id="cardbg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f4f7fd"/>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="280" rx="16" fill="#f8fafc"/>
+
+  <!-- source A: system audio -->
+  <g>
+    <rect x="30" y="40" width="270" height="92" rx="14" fill="url(#cardbg2)" stroke="#dbe3f0"/>
+    <!-- speaker icon -->
+    <path d="M52 78 L64 78 L80 62 L80 110 L64 94 L52 94 Z" fill="#2563eb"/>
+    <path d="M88 70 A 14 14 0 0 1 88 102" stroke="#2563eb" stroke-width="3" fill="none"/>
+    <path d="M96 62 A 22 22 0 0 1 96 110" stroke="#93b4f0" stroke-width="3" fill="none"/>
+    <text x="112" y="72" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="#1e293b">系统声音</text>
+    <text x="112" y="92" font-family="Segoe UI, sans-serif" font-size="12" fill="#64748b">System audio (loopback)</text>
+    <text x="48" y="122" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12.5" fill="#475569">对方与参会者的声音 · participants</text>
+  </g>
+  <line x1="300" y1="86" x2="420" y2="126" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr2)"/>
+
+  <!-- source B: microphone -->
+  <g>
+    <rect x="30" y="152" width="270" height="92" rx="14" fill="url(#cardbg2)" stroke="#dbe3f0"/>
+    <!-- mic icon -->
+    <rect x="62" y="166" width="14" height="26" rx="7" fill="#16a34a"/>
+    <path d="M54 184 A 15 15 0 0 0 84 184" stroke="#16a34a" stroke-width="3" fill="none"/>
+    <line x1="69" y1="198" x2="69" y2="210" stroke="#16a34a" stroke-width="3"/>
+    <line x1="60" y1="212" x2="78" y2="212" stroke="#16a34a" stroke-width="3"/>
+    <text x="112" y="184" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="#1e293b">麦克风</text>
+    <text x="112" y="204" font-family="Segoe UI, sans-serif" font-size="12" fill="#64748b">Microphone</text>
+    <text x="48" y="234" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12.5" fill="#475569">我的声音 · my voice</text>
+  </g>
+  <line x1="300" y1="198" x2="420" y2="158" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr2)"/>
+
+  <!-- mixer -->
+  <g>
+    <rect x="422" y="106" width="170" height="72" rx="14" fill="#eef4ff" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="507" y="136" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" fill="#1e3a8a">混音</text>
+    <text x="507" y="158" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12" fill="#5b76b3">Mix into one track</text>
+  </g>
+  <line x1="592" y1="142" x2="648" y2="142" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr2)"/>
+
+  <!-- AAC track -->
+  <g>
+    <rect x="650" y="106" width="150" height="72" rx="14" fill="url(#cardbg2)" stroke="#dbe3f0"/>
+    <text x="725" y="136" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#1e293b">AAC 64 kbps</text>
+    <text x="725" y="158" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#64748b">单声道 · mono</text>
+  </g>
+  <line x1="800" y1="142" x2="838" y2="142" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr2)"/>
+
+  <!-- MP4 -->
+  <g>
+    <rect x="840" y="106" width="130" height="72" rx="14" fill="#1e293b"/>
+    <text x="905" y="136" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="17" font-weight="700" fill="#ffffff">MP4</text>
+    <text x="905" y="158" text-anchor="middle" font-family="Consolas, monospace" font-size="12" fill="#4ade80">H.264 + AAC</text>
+  </g>
+
+  <!-- notes -->
+  <rect x="30" y="240" width="940" height="26" rx="8" fill="#eef4ff"/>
+  <text x="500" y="258" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a">两个声源相互独立:任一声源可单独开启;两者都关闭时录制为纯视频 · Sources are independent — either alone, or video-only if both are off</text>
+</svg>

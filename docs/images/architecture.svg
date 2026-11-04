@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="540" viewBox="0 0 1000 540" role="img" aria-label="MeetRec architecture diagram">
+  <defs>
+    <marker id="arr3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="540" rx="16" fill="#f8fafc"/>
+
+  <!-- controller -->
+  <rect x="330" y="20" width="340" height="52" rx="12" fill="#1e293b"/>
+  <text x="500" y="45" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="#ffffff">Win32 控制器 + 托盘</text>
+  <text x="500" y="63" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12" fill="#94a3b8">Controller + Tray</text>
+  <line x1="500" y1="72" x2="500" y2="92" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+
+  <!-- coordinator -->
+  <rect x="290" y="94" width="420" height="56" rx="12" fill="#2563eb"/>
+  <text x="500" y="119" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="#ffffff">应用协调器 / 状态机</text>
+  <text x="500" y="138" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12" fill="#dbeafe">Application Coordinator / State Machine</text>
+
+  <!-- bus -->
+  <line x1="500" y1="150" x2="500" y2="172" stroke="#64748b" stroke-width="2.5"/>
+  <line x1="140" y1="172" x2="860" y2="172" stroke="#64748b" stroke-width="2.5"/>
+  <line x1="140" y1="172" x2="140" y2="192" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+  <line x1="375" y1="172" x2="375" y2="192" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+  <line x1="610" y1="172" x2="610" y2="192" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+  <line x1="860" y1="172" x2="860" y2="192" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+
+  <!-- module row -->
+  <g>
+    <rect x="30" y="194" width="220" height="64" rx="12" fill="#ffffff" stroke="#dbe3f0"/>
+    <rect x="30" y="194" width="5" height="64" rx="2" fill="#2563eb"/>
+    <text x="48" y="221" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="15" font-weight="700" fill="#1e293b">DisplayControl</text>
+    <text x="48" y="243" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#64748b">虚拟显示器 · virtual display</text>
+  </g>
+  <g>
+    <rect x="280" y="194" width="200" height="64" rx="12" fill="#ffffff" stroke="#dbe3f0"/>
+    <rect x="280" y="194" width="5" height="64" rx="2" fill="#2563eb"/>
+    <text x="298" y="221" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#1e293b">WindowPlacementManager</text>
+    <text x="298" y="243" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#64748b">窗口管理 · Win32 windows</text>
+  </g>
+  <g>
+    <rect x="500" y="194" width="220" height="64" rx="12" fill="#ffffff" stroke="#dbe3f0"/>
+    <rect x="500" y="194" width="5" height="64" rx="2" fill="#e11d48"/>
+    <text x="518" y="221" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#1e293b">CaptureSession</text>
+    <text x="518" y="243" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12" fill="#64748b">窗口捕获 · window capture</text>
+  </g>
+  <g>
+    <rect x="750" y="194" width="220" height="64" rx="12" fill="#ffffff" stroke="#dbe3f0"/>
+    <rect x="750" y="194" width="5" height="64" rx="2" fill="#2563eb"/>
+    <text x="768" y="221" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="15" font-weight="700" fill="#1e293b">设置 / 日志 / 诊断</text>
+    <text x="768" y="243" font-family="Segoe UI, sans-serif" font-size="12" fill="#64748b">Settings / Log / Diagnostics</text>
+  </g>
+
+  <!-- detail row -->
+  <line x1="140" y1="258" x2="140" y2="312" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arr3)"/>
+  <line x1="610" y1="258" x2="610" y2="312" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+
+  <g>
+    <rect x="30" y="314" width="220" height="76" rx="12" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="6 4"/>
+    <text x="140" y="339" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#334155">UMDF 2 / IddCx 驱动</text>
+    <text x="140" y="357" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12" fill="#64748b">indirect display driver</text>
+    <text x="140" y="377" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11.5" fill="#b45309">可选 · optional(仅虚拟显示器)</text>
+  </g>
+
+  <g>
+    <rect x="500" y="314" width="220" height="76" rx="12" fill="#1e293b"/>
+    <text x="610" y="341" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#ffffff">Windows.Graphics.Capture</text>
+    <text x="610" y="361" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12" fill="#94a3b8">→ D3D11 textures</text>
+    <text x="610" y="379" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11.5" fill="#fbbf24">窗口录制走此路径 · no driver needed</text>
+  </g>
+
+  <!-- encode chain -->
+  <line x1="610" y1="390" x2="610" y2="430" stroke="#64748b" stroke-width="2.5"/>
+  <line x1="610" y1="430" x2="330" y2="430" stroke="#64748b" stroke-width="2.5"/>
+  <line x1="330" y1="430" x2="330" y2="446" stroke="#64748b" stroke-width="2.5" marker-end="url(#arr3)"/>
+
+  <g>
+    <rect x="150" y="448" width="700" height="72" rx="12" fill="#ffffff" stroke="#dbe3f0"/>
+    <rect x="150" y="448" width="5" height="72" rx="2" fill="#16a34a"/>
+    <text x="170" y="474" font-family="Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#1e293b">EncoderPipeline</text>
+    <text x="330" y="474" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12.5" fill="#64748b">有界帧队列 · BoundedFrameQueue</text>
+    <text x="170" y="500" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#475569">D3D11 VideoProcessor (BGRA→NV12) → H.264(ffmpeg x264 / Media Foundation)→ MP4</text>
+    <text x="170" y="514" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11.5" fill="#16a34a">音频:WASAPI 系统声音 + 麦克风 → 混音 → AAC 64 kbps 单声道</text>
+  </g>
+</svg>
