@@ -7,7 +7,7 @@
 ![Output](https://img.shields.io/badge/output-H.264%20%2B%20AAC%20MP4-16A34A)
 ![i18n](https://img.shields.io/badge/UI-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87%20%7C%20English-2563EB)
 
-[English](#english) · [简体中文](#简体中文) · [使用手册 User Manual](docs/user-manual.zh.md)
+[English](#english) · [简体中文](#简体中文) · [📖 使用手册 Wiki / User Manual](https://github.com/ituff/meetrec/wiki)
 
 </div>
 
@@ -82,7 +82,10 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 4. No admin rights, no VC++ runtime, no driver required (C++ runtime is statically linked and
    ffmpeg is bundled).
 
-A step-by-step illustrated manual lives in
+A step-by-step illustrated manual is published on the
+**[Wiki](https://github.com/ituff/meetrec/wiki)**
+([中文](https://github.com/ituff/meetrec/wiki/Manual-zh) /
+[English](https://github.com/ituff/meetrec/wiki/Manual-en)); offline copies live in
 [`docs/user-manual.zh.md`](docs/user-manual.zh.md) /
 [`docs/user-manual.en.md`](docs/user-manual.en.md).
 
@@ -217,7 +220,7 @@ docs/
   known-limitations.md       # user-facing limitations and unsupported scenarios
   manual-test-checklist.md   # release qualification checklist
   requirements-traceability-matrix.md
-  user-manual.zh.md / user-manual.en.md   # step-by-step illustrated user manual
+  user-manual.zh.md / user-manual.en.md   # user manuals (Wiki copies)
 specs/001-mvp/               # spec, requirements, design, tasks (VSR-MVP-001 v1.0)
 installer/MeetRecSetup.iss   # Inno Setup project (internal MVP)
 scripts/                     # build / test / clean / driver staging
@@ -298,7 +301,9 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
    *更多信息 → 仍要运行*。
 4. 无需管理员、无需 VC++ 运行库(已静态链接)、无需驱动(已内置 ffmpeg)。
 
-图文并茂的分步使用手册见
+图文并茂的分步使用手册发布在 **[Wiki](https://github.com/ituff/meetrec/wiki)**
+([中文](https://github.com/ituff/meetrec/wiki/Manual-zh) /
+[English](https://github.com/ituff/meetrec/wiki/Manual-en));离线副本见
 [`docs/user-manual.zh.md`](docs/user-manual.zh.md) /
 [`docs/user-manual.en.md`](docs/user-manual.en.md)。
 
@@ -424,7 +429,7 @@ docs/
   known-limitations.md       # 面向用户的限制与不支持场景
   manual-test-checklist.md   # 发布资格审查清单
   requirements-traceability-matrix.md
-  user-manual.zh.md / user-manual.en.md   # 图文并茂的分步使用手册
+  user-manual.zh.md / user-manual.en.md   # 使用手册(Wiki 同步副本)
 specs/001-mvp/               # 规格、需求、设计、任务(VSR-MVP-001 v1.0)
 installer/MeetRecSetup.iss   # Inno Setup 工程(内部 MVP)
 scripts/                     # 构建 / 测试 / 清理 / 驱动部署
