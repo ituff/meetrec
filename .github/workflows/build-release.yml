@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Package version override (defaults to App.rc)"
+        description: "Package version override (defaults to src/App/Version.h)"
         required: false
         default: ""
 
@@ -38,11 +38,20 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $rc = Get-Content src/App/App.rc -Raw
-          if ($rc -notmatch 'FILEVERSION\s+(\d+),(\d+),(\d+),(\d+)') {
-            throw "Could not read FILEVERSION from src/App/App.rc"
+          $header = Get-Content src/App/Version.h -Raw
+          if ($header -notmatch '#define\s+VSR_APP_VERSION_MAJOR\s+(\d+)') {
+            throw "Could not read VSR_APP_VERSION_MAJOR from src/App/Version.h"
           }
-          $appVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          $major = $Matches[1]
+          if ($header -notmatch '#define\s+VSR_APP_VERSION_MINOR\s+(\d+)') {
+            throw "Could not read VSR_APP_VERSION_MINOR from src/App/Version.h"
+          }
+          $minor = $Matches[1]
+          if ($header -notmatch '#define\s+VSR_APP_VERSION_PATCH\s+(\d+)') {
+            throw "Could not read VSR_APP_VERSION_PATCH from src/App/Version.h"
+          }
+          $patch = $Matches[1]
+          $appVersion = "$major.$minor.$patch"
           $requested = "${{ inputs.version }}"
           $version = if ([string]::IsNullOrWhiteSpace($requested)) {
             $appVersion
@@ -52,7 +61,7 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
             if ($tagVersion -ne $appVersion) {
-              throw "Tag v$tagVersion does not match App.rc version $appVersion"
+              throw "Tag v$tagVersion does not match Version.h version $appVersion"
             }
             $version = $appVersion
           }
