@@ -151,6 +151,27 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("autoCheckUpdates");
+        if (v.GetType() == json::Type::Boolean) settings.autoCheckUpdates = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("lastUpdateCheckUnix");
+        if (v.GetType() == json::Type::Number) {
+            settings.lastUpdateCheckUnix = v.AsInt(0);
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("lastNotifiedUpdateVersion");
+        if (v.GetType() == json::Type::String) {
+            settings.lastNotifiedUpdateVersion = v.AsString();
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("uiLanguage");
         if (v.GetType() == json::Type::String) {
             const std::string value = v.AsString();
@@ -203,6 +224,9 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "audioOutputDeviceId" ||
                            kv.first == "audioInputDeviceId" ||
                            kv.first == "enableCrashDumps" ||
+                           kv.first == "autoCheckUpdates" ||
+                           kv.first == "lastUpdateCheckUnix" ||
+                           kv.first == "lastNotifiedUpdateVersion" ||
                            kv.first == "uiLanguage" ||
                            kv.first == "showCompletionNotification" ||
                            kv.first == "autoOpenOutputFolder" ||
@@ -234,6 +258,11 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("audioOutputDeviceId", json::Value(WideToUtf8(settings.audioOutputDeviceId)));
     root.Set("audioInputDeviceId", json::Value(WideToUtf8(settings.audioInputDeviceId)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
+    root.Set("autoCheckUpdates", json::Value(settings.autoCheckUpdates));
+    root.Set("lastUpdateCheckUnix",
+             json::Value(static_cast<double>(settings.lastUpdateCheckUnix)));
+    root.Set("lastNotifiedUpdateVersion",
+             json::Value(settings.lastNotifiedUpdateVersion));
     root.Set("uiLanguage", json::Value(settings.uiLanguage));
     root.Set("showCompletionNotification", json::Value(settings.showCompletionNotification));
     root.Set("autoOpenOutputFolder", json::Value(settings.autoOpenOutputFolder));

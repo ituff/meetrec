@@ -12,12 +12,14 @@
 #include <gdiplus.h>
 
 #include <atomic>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <Application/Coordinator.h>
+#include <Update/ReleaseInfo.h>
 #include <WindowManagement/WindowEnumerator.h>
 
 #include "AudioDevices.h"
@@ -31,6 +33,8 @@ class PreviewPanel;
 class SettingsWindow;
 class WindowPicker;
 class ToastWindow;
+class CompressWindow;
+class UpdateWindow;
 
 class MainWindow {
 public:
@@ -44,6 +48,13 @@ public:
     void ShowAndActivate();
     HWND Hwnd() const noexcept { return hwnd_; }
     void RefreshUi();
+    // Opens (or activates) the compressor window from the menus and the
+    // --compress-window development entry.
+    void ShowCompressWindow();
+    void QueueCompressFiles(const std::vector<std::wstring>& files);
+    void SetOpenUpdateWindowOnAvailable(bool open) noexcept {
+        openUpdateWindowOnAvailable_ = open;
+    }
 
 private:
     enum class Page { Main, Result, Error };
@@ -204,6 +215,10 @@ private:
     void SetFocusHit(Hit hit, bool keyboard);
 
     void ShowSettingsPage(int page);
+    void StartUpdateCheck(bool manual);
+    void ShowUpdateDialog();
+    void OpenUpdateWindow();
+    void ApplyUpdateAndExit(const std::filesystem::path& zipPath);
     void ShowMoreMenu();
     void ShowTrayMenu();
     void ShowAudioHelp();
@@ -278,6 +293,8 @@ private:
     std::unique_ptr<SettingsWindow> settings_;
     std::unique_ptr<WindowPicker> picker_;
     std::unique_ptr<ToastWindow> toast_;
+    std::unique_ptr<CompressWindow> compressor_;
+    std::unique_ptr<UpdateWindow> updateWindow_;
 
     HWND hwnd_ = nullptr;
     UINT dpi_ = 96;
@@ -310,6 +327,9 @@ private:
     bool minimizeToTray_ = true;
     bool showNotification_ = true;
     bool autoOpenFolder_ = false;
+    bool autoCheckUpdates_ = true;
+    long long lastUpdateCheckUnix_ = 0;
+    std::string lastNotifiedUpdateVersion_;
     std::string uiLanguage_ = "system";
     float previewRatio_ = 0.40f;
     float layoutAvailableWidth_ = 0.0f;
@@ -378,6 +398,16 @@ private:
     std::atomic<bool> stopOpDone_{false};
     std::thread stopOp_;
     std::atomic<bool> browseRunning_{false};
+
+    // Update checks run off the UI thread; the result arrives as a posted
+    // message, so the window never blocks on GitHub.
+    std::atomic<bool> updateCheckRunning_{false};
+    bool updateAvailable_ = false;
+    update::ReleaseInfo updateRelease_;
+    std::wstring updateVersion_;
+    ULONGLONG nextUpdateCheckTick_ = 0;
+    bool pendingUpdateToast_ = false;
+    bool openUpdateWindowOnAvailable_ = false;
 
     // Window the user last chose; a thumbnail refresh runs off the UI thread.
     std::shared_ptr<std::atomic<int>> thumbGeneration_;

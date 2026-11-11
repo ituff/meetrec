@@ -1,7 +1,7 @@
 # MeetRec - builds the portable, ffmpeg-bundled Windows x64 release package.
 #
 # Usage:
-#   powershell -File scripts\package-release.ps1 -Version 1.1.0
+#   powershell -File scripts\package-release.ps1 -Version 1.2.0
 #   powershell -File scripts\package-release.ps1 -FfmpegDir D:\ffmpeg\bin
 #
 # The application discovers ffmpeg.exe next to MeetRec.exe, so
@@ -10,7 +10,7 @@
 
 param(
     [string]$Configuration = "Release",
-    [string]$Version = "1.1.0",
+    [string]$Version = "1.2.0",
     [string]$FfmpegDir = "C:\ffmpeg\bin",
     [string]$FfmpegLicense = "",
     [string]$FfmpegSourceUrl = "https://github.com/FFmpeg/FFmpeg",
@@ -31,6 +31,11 @@ if (-not (Test-Path $app)) {
 $ffmpeg = Join-Path $FfmpegDir "ffmpeg.exe"
 if (-not (Test-Path $ffmpeg)) {
     throw "Missing ffmpeg.exe at $ffmpeg. Pass -FfmpegDir <dir>."
+}
+# The compressor probes old recordings with ffprobe before transcoding.
+$ffprobe = Join-Path $FfmpegDir "ffprobe.exe"
+if (-not (Test-Path $ffprobe)) {
+    throw "Missing ffprobe.exe at $ffprobe (same folder as ffmpeg.exe)."
 }
 if ([string]::IsNullOrWhiteSpace($FfmpegLicense)) {
     $FfmpegLicense = Join-Path (Split-Path -Parent $FfmpegDir) "LICENSE.txt"
@@ -53,7 +58,7 @@ if (Test-Path $zip) { Remove-Item -Force $zip }
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "licenses") | Out-Null
 
 Copy-Item $app (Join-Path $stage "MeetRec.exe")
-foreach ($pattern in @("ffmpeg.exe", "*.dll")) {
+foreach ($pattern in @("ffmpeg.exe", "ffprobe.exe", "*.dll")) {
     Get-ChildItem $FfmpegDir -Filter $pattern -File | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $stage $_.Name)
     }
@@ -78,8 +83,9 @@ License: GNU General Public License v3 (see licenses/FFmpeg-GPLv3.txt).
 Source / build provider:
   $FfmpegSourceUrl
 
-MeetRec runs ffmpeg.exe as a separate child process (pipe transport); it does
-not link FFmpeg libraries into the application binary.
+MeetRec runs ffmpeg.exe and ffprobe.exe as separate child processes (pipe and
+probe transport); it does not link FFmpeg libraries into the application
+binary.
 "@
 [System.IO.File]::WriteAllText(
     (Join-Path $stage "licenses\FFmpeg-SOURCE.txt"),

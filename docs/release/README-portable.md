@@ -1,4 +1,4 @@
-# MeetRec 1.1.0 — Windows 10/11 x64 便携版
+# MeetRec 1.2.0 — Windows 10/11 x64 便携版
 
 MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成干净的 MP4，可同时混入系统声音（对方）和麦克风（我的声音）。
 
@@ -9,8 +9,9 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 3. 选择要录制的会议/演示窗口。
 4. 确认系统声音和麦克风电平条有跳动，点击“开始录制”。
 5. 结束后点击“结束并保存”，在结果卡中打开文件或文件夹。
+6. 旧录屏可在「更多 → 压缩视频...」中重新压缩；程序会自动检查 GitHub 更新，可在「更多」菜单中下载并安装。
 
-> 请保持文件夹完整：`ffmpeg.exe` 及其 DLL 必须和 `MeetRec.exe` 放在同一目录。只复制 exe 会导致无法使用内置的 ffmpeg 录制后端。
+> 请保持文件夹完整：`ffmpeg.exe`、`ffprobe.exe` 及其 DLL 必须和 `MeetRec.exe` 放在同一目录。只复制 exe 会导致无法使用内置的 ffmpeg 录制后端和视频压缩功能。
 
 ## 系统要求
 
@@ -56,9 +57,11 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 
 ---
 
-# MeetRec 1.1.0 — Windows 10/11 x64 (portable)
+# MeetRec 1.2.0 — Windows 10/11 x64 (portable)
 
-Unzip the whole folder and run `MeetRec.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe` and its DLLs are included and must stay next to the application binary so the ffmpeg recording backend can be discovered. The C++ runtime is linked statically, so no VC++ Redistributable is needed.
+Unzip the whole folder and run `MeetRec.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe`, `ffprobe.exe`, and their DLLs are included and must stay next to the application binary so the ffmpeg recording backend and the video compressor can be discovered. The C++ runtime is linked statically, so no VC++ Redistributable is needed.
+
+Compress older recordings from *More → Compress videos...*. The app checks GitHub Releases for updates automatically and offers download/install from the *More* menu.
 
 Requirements: Windows 10 2004+ x64 or Windows 11 x64; Direct3D 11 GPU. There is no 32-bit build; 32-bit Windows 10 and ARM64 are not supported. Windows 10 reached end of regular support on 2025-10-14.
 

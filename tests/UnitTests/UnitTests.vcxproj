@@ -47,6 +47,8 @@
     <ClCompile Include="StateMachineTests.cpp" />
     <ClCompile Include="TestMain.cpp" />
     <ClCompile Include="TimelineTests.cpp" />
+    <ClCompile Include="TranscodeTests.cpp" />
+    <ClCompile Include="UpdateTests.cpp" />
     <ClCompile Include="WatchdogTests.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -54,6 +56,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Application\Application.vcxproj" />
+    <ProjectReference Include="..\..\src\Transcode\Transcode.vcxproj" />
+    <ProjectReference Include="..\..\src\Update\Update.vcxproj" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

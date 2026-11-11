@@ -25,6 +25,7 @@ enum class ErrorCode {
     OutputNotWritable,      // VSR-OUTPUT-NOT-WRITABLE
     OutputDiskLow,          // VSR-OUTPUT-DISK-LOW
     FinalizeFailed,         // VSR-FINALIZE-FAILED
+    TranscodeFailed,        // VSR-TRANSCODE-FAILED
     InternalState,          // VSR-INTERNAL-STATE
 };
 

@@ -22,6 +22,7 @@
 
 #include "AppMenu.h"
 #include "Application.h"
+#include "Version.h"
 
 #if __has_include("VersionGenerated.h")
 #include "VersionGenerated.h"
@@ -134,7 +135,7 @@ void SettingsWindow::CreateWindowIfNeeded() {
     const int workWidth = info.rcWork.right - info.rcWork.left;
     const int workHeight = info.rcWork.bottom - info.rcWork.top;
     const int width = std::min(ui::Scale(620, dpi_), workWidth - ui::Scale(32, dpi_));
-    const int height = std::min(ui::Scale(520, dpi_), workHeight - ui::Scale(32, dpi_));
+    const int height = std::min(ui::Scale(560, dpi_), workHeight - ui::Scale(32, dpi_));
     const int x = info.rcWork.left + (workWidth - width) / 2;
     const int y = info.rcWork.top + (workHeight - height) / 2;
     const std::wstring title = std::wstring(i18n::Text(i18n::Str::AppName)) + L" - " +
@@ -324,10 +325,16 @@ void SettingsWindow::UpdateLayout() {
             Gdiplus::RectF(contentX + S(30), contentTop + S(250), contentWidth, S(22));
         layout.trayNote =
             Gdiplus::RectF(contentX + S(30), contentTop + S(272), contentWidth, S(18));
+        layout.autoUpdateBox =
+            Gdiplus::RectF(contentX, contentTop + S(304), S(18), S(18));
+        layout.autoUpdateLabel =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(302), contentWidth, S(22));
+        layout.autoUpdateNote =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(324), contentWidth, S(18));
         layout.languageLabel =
-            Gdiplus::RectF(contentX, contentTop + S(306), contentWidth, S(18));
+            Gdiplus::RectF(contentX, contentTop + S(356), contentWidth, S(18));
         layout.languageField =
-            Gdiplus::RectF(contentX, contentTop + S(330), S(240), S(34));
+            Gdiplus::RectF(contentX, contentTop + S(380), S(240), S(34));
     } else if (page_ == Page::Audio) {
         layout.audioHint = Gdiplus::RectF(contentX, contentTop, contentWidth, S(42));
         for (int i = 0; i < 2; ++i) {
@@ -425,6 +432,10 @@ void SettingsWindow::BuildHits() {
             Gdiplus::RectF(layout_.trayBox.X, layout_.trayBox.Y,
                            layout_.trayLabel.GetRight() - layout_.trayBox.X,
                            layout_.trayBox.Height));
+        add(Hit::AutoUpdate,
+            Gdiplus::RectF(layout_.autoUpdateBox.X, layout_.autoUpdateBox.Y,
+                           layout_.autoUpdateLabel.GetRight() - layout_.autoUpdateBox.X,
+                           layout_.autoUpdateBox.Height));
         add(Hit::Language, layout_.languageField);
     } else if (page_ == Page::Audio) {
         add(Hit::SystemAudio, layout_.audioToggle[0]);
@@ -522,6 +533,11 @@ void SettingsWindow::Activate(Hit id) {
             break;
         case Hit::MinimizeTray:
             settings_.minimizeToTray = !settings_.minimizeToTray;
+            SaveAndNotify();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            break;
+        case Hit::AutoUpdate:
+            settings_.autoCheckUpdates = !settings_.autoCheckUpdates;
             SaveAndNotify();
             InvalidateRect(hwnd_, nullptr, FALSE);
             break;
@@ -759,7 +775,7 @@ void SettingsWindow::BrowseForFolder() {
 
 void SettingsWindow::ShowDiagnostics() {
     DiagnosticsContext context;
-    context.appVersion = L"1.1.0.0";
+    context.appVersion = VSR_APP_VERSION_W;
     context.osBuild = Application::OsBuildString();
     auto package = CreateDiagnosticsPackage(context);
     if (package) {
@@ -1195,6 +1211,12 @@ void SettingsWindow::DrawGeneral(Gdiplus::Graphics& graphics) {
     ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::MinimizeToTrayNote),
                  layout_.trayNote, ui::FontRole::Small, ui::colors::TextSecondary(),
                  ui::Align::Near, ui::VAlign::Center, true);
+    DrawCheckRow(graphics, layout_.autoUpdateBox, layout_.autoUpdateLabel,
+                 i18n::Text(i18n::Str::SettingsAutoUpdate),
+                 settings_.autoCheckUpdates, Hit::AutoUpdate);
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::SettingsAutoUpdateNote),
+                 layout_.autoUpdateNote, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, true);
 
     ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::InterfaceLanguage),
                  layout_.languageLabel, ui::FontRole::BodyStrong, ui::colors::Text(),
@@ -1264,7 +1286,8 @@ void SettingsWindow::DrawAbout(Gdiplus::Graphics& graphics) {
                  ui::FontRole::Big, ui::colors::Text(), ui::Align::Near,
                  ui::VAlign::Center, false);
     ui::DrawText(graphics, fonts_,
-                 std::wstring(i18n::Text(i18n::Str::AboutVersion)) + L" 1.1.0.0",
+                 std::wstring(i18n::Text(i18n::Str::AboutVersion)) + L" " +
+                     VSR_APP_VERSION_W,
                  layout_.aboutVersion, ui::FontRole::Small, ui::colors::TextSecondary(),
                  ui::Align::Near, ui::VAlign::Center, false);
     std::wstring build = std::wstring(i18n::Text(i18n::Str::AboutBuild)) + L" ";

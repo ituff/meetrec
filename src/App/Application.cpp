@@ -6,8 +6,10 @@
 #include <WindowManagement/WindowPlacement.h>
 
 #include <chrono>
-
+#include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <algorithm>
 
 #include <thread>
 #include <vector>
@@ -28,9 +30,13 @@
 #include <Infrastructure/Paths.h>
 #include <Infrastructure/Settings.h>
 #include <Infrastructure/Strings.h>
+#include <Transcode/TranscodeService.h>
+#include <Update/UpdateApplier.h>
+#include <Update/UpdateChecker.h>
 
 #include "Localization.h"
 #include "MainWindow.h"
+#include "Version.h"
 
 #include <Application/OutputFile.h>
 
@@ -98,6 +104,12 @@ Application& Application::Instance() noexcept {
 }
 
 Application::Application() = default;
+
+void Application::SetOpenCompressorOnStart(bool open,
+                                           const std::vector<std::wstring>& files) {
+    openCompressorOnStart_ = open;
+    openCompressorFiles_ = files;
+}
 
 bool Application::InitRuntime() {
     // Logger (FR-093..FR-095).
@@ -488,6 +500,13 @@ int Application::RunInteractive() {
         return 1;
     }
     mainWindow_->ShowAndActivate();
+    if (openCompressorOnStart_) {
+        mainWindow_->ShowCompressWindow();
+        if (!openCompressorFiles_.empty()) {
+            mainWindow_->QueueCompressFiles(openCompressorFiles_);
+        }
+    }
+    if (openUpdateWindowOnStart_) mainWindow_->SetOpenUpdateWindowOnAvailable(true);
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
@@ -513,7 +532,9 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                               encoder::EncoderPreference encoderPreference,
                               bool captureAudio, encoder::WriterBackend backend,
                               const std::wstring& audioOutputDeviceId,
-                              const std::wstring& audioInputDeviceId) {
+                              const std::wstring& audioInputDeviceId,
+                              const std::wstring& competeFile,
+                              std::uint64_t* droppedFramesOut) {
     // T040: command-line development entry point recording the virtual
     // display for a fixed duration, without UI or window movement.
     AttachParentConsole();
@@ -529,6 +550,39 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
             params.fps, params.crf, params.bitrateBps, params.gopSeconds,
             params.audioBitrateBps / 1000, params.audioChannels, seconds,
             captureAudio ? L"on" : L"off");
+
+    // ADR-007 "recording wins": start a real transcode job in this process and
+    // suspend it once recording begins, so the competition path and the
+    // dropped-frame counter are exercised together.
+    std::unique_ptr<transcode::TranscodeService> competitor;
+    if (!competeFile.empty()) {
+        competitor = std::make_unique<transcode::TranscodeService>();
+        if (competitor->Add(std::filesystem::path(competeFile), {}) == 0) {
+            wprintf(L"[dev-compete] FAILED: could not queue %s\n", competeFile.c_str());
+            ShutdownRuntime();
+            return 7;
+        }
+        competitor->Start(transcode::Quality::Standard, transcode::Resolution::Keep);
+        bool running = false;
+        for (int i = 0; i < 100 && !running; ++i) {
+            const auto snapshot = competitor->Snapshot();
+            running = !snapshot.jobs.empty() &&
+                      snapshot.jobs.front().state == transcode::JobState::Running;
+            if (!running) Sleep(100);
+        }
+        if (!running) {
+            wprintf(L"[dev-compete] FAILED: the transcode job never started\n");
+            ShutdownRuntime();
+            return 7;
+        }
+        Sleep(1200);
+        const auto snapshot = competitor->Snapshot();
+        const double progress =
+            snapshot.jobs.empty() ? -1.0 : snapshot.jobs.front().progress;
+        wprintf(L"[dev-compete] transcode running before recording (progress %.0f%%)\n",
+                progress * 100.0);
+        fflush(stdout);
+    }
 
     // Window targets record driverless; only the display-only dev path needs
     // the virtual display to be up.
@@ -569,6 +623,17 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
         wprintf(L"[dev-record] FAILED: %s (code %hs)\n", e.userMessage.c_str(), ToString(e.code));
         ShutdownRuntime();
         return 3;
+    }
+    if (competitor) {
+        // Worst-case UI timing: the compressor's 200 ms poll runs after the
+        // recording has already started.
+        Sleep(200);
+        competitor->Suspend();
+        const auto suspended = competitor->Snapshot();
+        wprintf(L"[dev-compete] transcode suspended after 200 ms of recording; job=%hs\n",
+                suspended.jobs.empty() ? "none"
+                                       : transcode::ToString(suspended.jobs.front().state));
+        fflush(stdout);
     }
 
     // Wait for the Recording state; the requested duration counts from the
@@ -620,6 +685,21 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
             static_cast<unsigned long long>(finalSnap.capturedFrames),
             static_cast<unsigned long long>(finalSnap.encodedFrames),
             static_cast<unsigned long long>(finalSnap.droppedFrames));
+    if (competitor) {
+        const auto after = competitor->Snapshot();
+        const bool requeued = !after.jobs.empty() &&
+                              after.jobs.front().state == transcode::JobState::Queued;
+        wprintf(L"[dev-compete] transcode after recording: job=%hs (requeued=%s)\n",
+                after.jobs.empty() ? "none"
+                                   : transcode::ToString(after.jobs.front().state),
+                requeued ? L"yes" : L"no");
+        if (!requeued) {
+            wprintf(L"[dev-compete] FAILED: the transcode job was not requeued\n");
+            ShutdownRuntime();
+            return 7;
+        }
+    }
+    if (droppedFramesOut != nullptr) *droppedFramesOut = finalSnap.droppedFrames;
     ShutdownRuntime();
     return finalSnap.hasError ? 5 : 0;
 }
@@ -735,7 +815,9 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
                                     encoder::EncoderPreference encoderPreference,
                                     bool captureAudio, encoder::WriterBackend backend,
                                     const std::wstring& audioOutputDeviceId,
-                                    const std::wstring& audioInputDeviceId) {
+                                    const std::wstring& audioInputDeviceId,
+                                    const std::wstring& competeFile,
+                                    std::uint64_t* droppedFramesOut) {
     wprintf(L"[dev-record-window] starting\n");
     fflush(stdout);
     AttachParentConsole();
@@ -782,12 +864,170 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
     }
 
     const int code = RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference,
-                                  captureAudio, backend, audioOutputDeviceId, audioInputDeviceId);
+                                  captureAudio, backend, audioOutputDeviceId,
+                                  audioInputDeviceId, competeFile, droppedFramesOut);
 
     PostMessageW(hwnd, WM_CLOSE, 0, 0);
     WaitForSingleObject(child, 5000);
     CloseHandle(child);
     return code;
+}
+
+int Application::RunDevCompete(const std::wstring& competeFile, int seconds,
+                               const std::wstring& presetName,
+                               const std::wstring& outputDir) {
+    AttachParentConsole();
+    std::uint64_t baselineDrops = 0;
+    std::uint64_t competingDrops = 0;
+
+    wprintf(L"[dev-compete] phase 1/2: baseline recording (no transcode)\n");
+    fflush(stdout);
+    const int baseline = RunDevRecordWindow(seconds, presetName, outputDir,
+                                            encoder::EncoderPreference::Auto, false,
+                                            encoder::WriterBackend::Auto, {}, {}, {},
+                                            &baselineDrops);
+    if (baseline != 0) {
+        wprintf(L"[dev-compete] FAILED: baseline recording returned %d\n", baseline);
+        return baseline;
+    }
+
+    wprintf(L"[dev-compete] phase 2/2: recording with a transcode job\n");
+    fflush(stdout);
+    const int competing = RunDevRecordWindow(seconds, presetName, outputDir,
+                                             encoder::EncoderPreference::Auto, false,
+                                             encoder::WriterBackend::Auto, {}, {},
+                                             competeFile, &competingDrops);
+    if (competing != 0) {
+        wprintf(L"[dev-compete] FAILED: competition recording returned %d\n", competing);
+        return competing;
+    }
+
+    const std::uint64_t tolerance = std::max<std::uint64_t>(3, baselineDrops / 4);
+    wprintf(L"[dev-compete] drops baseline=%llu competing=%llu tolerance=%llu\n",
+            static_cast<unsigned long long>(baselineDrops),
+            static_cast<unsigned long long>(competingDrops),
+            static_cast<unsigned long long>(tolerance));
+    if (competingDrops > baselineDrops + tolerance) {
+        wprintf(L"[dev-compete] FAILED: the transcode added dropped frames\n");
+        return 6;
+    }
+    if (competingDrops == 0) {
+        wprintf(L"[dev-compete] PASS: zero dropped frames with transcode suspended\n");
+    } else {
+        wprintf(L"[dev-compete] PASS: no extra drops vs baseline; the baseline loss is "
+                L"pre-existing capture/encoder backpressure\n");
+    }
+    return 0;
+}
+
+int Application::RunCompressTest(const std::wstring& input, const std::wstring& presetName,
+                                 const std::wstring& outputDir) {
+    AttachParentConsole();
+    (void)setvbuf(stdout, nullptr, _IONBF, 0);
+
+    const transcode::Quality quality =
+        transcode::QualityFromString(WideToUtf8(presetName).c_str());
+    transcode::TranscodeService service;
+    if (service.Add(std::filesystem::path(input),
+                    outputDir.empty() ? std::filesystem::path()
+                                      : std::filesystem::path(outputDir)) == 0) {
+        wprintf(L"[compress] FAILED: could not queue %s\n", input.c_str());
+        return 2;
+    }
+    service.Start(quality, transcode::Resolution::Keep);
+
+    const ULONGLONG deadline = GetTickCount64() + 6ull * 60ull * 60ull * 1000ull;
+    double lastPercent = -1.0;
+    for (;;) {
+        Sleep(200);
+        const transcode::ServiceSnapshot snapshot = service.Snapshot();
+        if (snapshot.jobs.empty()) return 2;
+        const transcode::JobSnapshot& job = snapshot.jobs.front();
+        if (job.state == transcode::JobState::Running && job.progress >= 0.0 &&
+            std::abs(job.progress - lastPercent) >= 0.05) {
+            lastPercent = job.progress;
+            wprintf(L"[compress] %d%%\n", static_cast<int>(job.progress * 100.0));
+        }
+        if (job.state == transcode::JobState::Completed) {
+            wprintf(L"[compress] OK: %s (%llu bytes)\n", job.outputPath.c_str(),
+                    static_cast<unsigned long long>(job.outputBytes));
+            return 0;
+        }
+        if (job.state == transcode::JobState::Failed) {
+            wprintf(L"[compress] FAILED: %s\n", job.error.c_str());
+            return 1;
+        }
+        if (GetTickCount64() > deadline) {
+            wprintf(L"[compress] FAILED: timed out\n");
+            return 3;
+        }
+    }
+}
+
+int Application::RunUpdateCheck() {
+    AttachParentConsole();
+    auto check = update::CheckForUpdate(VSR_APP_VERSION_UTF8);
+    if (!check) {
+        wprintf(L"[update] FAILED: %s\n", check.GetError().userMessage.c_str());
+        return 1;
+    }
+    const auto& release = check.Value().release;
+    wprintf(L"[update] current=%s latest=%s available=%s\n", VSR_APP_VERSION_W,
+            Utf8ToWide(release.version.ToString()).c_str(),
+            check.Value().available ? L"yes" : L"no");
+    if (!release.zipUrl.empty()) {
+        wprintf(L"[update] package=%s\n", release.zipUrl.c_str());
+    }
+    return 0;
+}
+
+int Application::RunUpdateSelfTest() {
+    AttachParentConsole();
+    auto check = update::CheckForUpdate(VSR_APP_VERSION_UTF8);
+    if (!check) {
+        wprintf(L"[update-self-test] FAILED: %s\n", check.GetError().userMessage.c_str());
+        return 1;
+    }
+    if (!check.Value().available) {
+        wprintf(L"[update-self-test] no update available (current %s)\n",
+                VSR_APP_VERSION_W);
+        return 0;
+    }
+    const auto& release = check.Value().release;
+    std::atomic<bool> cancel{false};
+    const std::filesystem::path destination =
+        update::UpdatesDirectory() / Utf8ToWide(release.version.ToString());
+    auto downloaded = update::DownloadVerified(
+        release, destination, cancel, [](std::uint64_t done, std::uint64_t total) {
+            if (total > 0 && done == total) {
+                wprintf(L"[update-self-test] downloaded %llu bytes\n",
+                        static_cast<unsigned long long>(done));
+            }
+        });
+    if (!downloaded) {
+        wprintf(L"[update-self-test] FAILED: %s\n",
+                downloaded.GetError().userMessage.c_str());
+        return 1;
+    }
+
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    const std::filesystem::path exe = exePath;
+    auto script = update::WriteApplyScript(downloaded.Value(), exe.parent_path(), exe,
+                                           GetCurrentProcessId());
+    if (!script) {
+        wprintf(L"[update-self-test] FAILED: %s\n", script.GetError().userMessage.c_str());
+        return 1;
+    }
+    auto launched = update::LaunchApplyScript(script.Value());
+    if (!launched) {
+        wprintf(L"[update-self-test] FAILED: %s\n",
+                launched.GetError().userMessage.c_str());
+        return 1;
+    }
+    wprintf(L"[update-self-test] staged %s; exiting for the updater\n",
+            downloaded.Value().c_str());
+    return 0;
 }
 
 } // namespace vsr::app
@@ -873,8 +1113,32 @@ int wmain(int argc, wchar_t* argv[]) {
         return code;
     }
 
+    if (argc >= 2 && wcscmp(argv[1], L"--update-check") == 0) {
+        const int code = Application::Instance().RunUpdateCheck();
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--update-self-test") == 0) {
+        const int code = Application::Instance().RunUpdateSelfTest();
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 3 && wcscmp(argv[1], L"--compress") == 0) {
+        std::wstring preset = L"standard";
+        std::wstring outputDir;
+        for (int i = 3; i + 1 < argc; i += 2) {
+            if (wcscmp(argv[i], L"--preset") == 0) preset = argv[i + 1];
+            else if (wcscmp(argv[i], L"--output") == 0) outputDir = argv[i + 1];
+        }
+        const int code = Application::Instance().RunCompressTest(argv[2], preset, outputDir);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
     if (argc >= 2 && wcscmp(argv[1], L"--version") == 0) {
-        wprintf(L"MeetRec 1.1.0.0 (MVP)\n");
+        wprintf(L"MeetRec %s\n", VSR_APP_VERSION_W);
 #ifdef VSR_BUILD_COMMIT
         wprintf(L"build: %s\n", VSR_BUILD_COMMIT);
 #endif
@@ -888,6 +1152,15 @@ int wmain(int argc, wchar_t* argv[]) {
                                                               nullptr, o.encoder, o.audio,
                                                               o.backend, o.audioOutId,
                                                               o.audioInId);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 3 && wcscmp(argv[1], L"--dev-compete") == 0) {
+        // ADR-007 verification: baseline vs. recording with a transcode job.
+        const DevRecordOptions o = ParseDevRecordOptions(argc, argv);
+        const int code = Application::Instance().RunDevCompete(
+            argv[2], o.seconds, o.preset, o.outputDir);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -916,6 +1189,19 @@ int wmain(int argc, wchar_t* argv[]) {
                                                                     o.audioOutId, o.audioInId);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--compress-window") == 0) {
+        // Development/QA: start with the compressor window open; any further
+        // arguments are files to queue.
+        std::vector<std::wstring> files;
+        for (int i = 2; i < argc; ++i) files.emplace_back(argv[i]);
+        Application::Instance().SetOpenCompressorOnStart(true, files);
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--update-window") == 0) {
+        // Development/QA: open the update window when a check finds an update.
+        Application::Instance().SetOpenUpdateWindowOnStart(true);
     }
 
     const int code = Application::Instance().RunInteractive();

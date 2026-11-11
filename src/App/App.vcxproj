@@ -46,6 +46,7 @@
     <ClCompile Include="Application.cpp" />
     <ClCompile Include="AppMenu.cpp" />
     <ClCompile Include="AudioDevices.cpp" />
+    <ClCompile Include="CompressWindow.cpp" />
     <ClCompile Include="Localization.cpp" />
     <ClCompile Include="MainWindow.cpp" />
     <ClCompile Include="PreviewPanel.cpp" />
@@ -53,12 +54,14 @@
     <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="TrayIcon.cpp" />
     <ClCompile Include="UiDraw.cpp" />
+    <ClCompile Include="UpdateWindow.cpp" />
     <ClCompile Include="WindowPicker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
     <ClInclude Include="AppMenu.h" />
     <ClInclude Include="AudioDevices.h" />
+    <ClInclude Include="CompressWindow.h" />
     <ClInclude Include="Localization.h" />
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="PreviewPanel.h" />
@@ -66,6 +69,8 @@
     <ClInclude Include="ToastWindow.h" />
     <ClInclude Include="TrayIcon.h" />
     <ClInclude Include="UiDraw.h" />
+    <ClInclude Include="UpdateWindow.h" />
+    <ClInclude Include="Version.h" />
     <ClInclude Include="WindowPicker.h" />
   </ItemGroup>
   <ItemGroup>
@@ -79,6 +84,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Application\Application.vcxproj" />
+    <ProjectReference Include="..\Transcode\Transcode.vcxproj" />
+    <ProjectReference Include="..\Update\Update.vcxproj" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

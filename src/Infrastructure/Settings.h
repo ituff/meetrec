@@ -57,6 +57,11 @@ struct Settings {
     double previewPaneRatio = 0.40;
     // T103: local crash dumps are strictly opt-in and never uploaded.
     bool enableCrashDumps = false;
+    // Automatic GitHub release checks (at most once per day). The timestamp is
+    // Unix seconds; the notified version prevents repeat toasts.
+    bool autoCheckUpdates = true;
+    long long lastUpdateCheckUnix = 0;
+    std::string lastNotifiedUpdateVersion;
 };
 
 class SettingsStore {

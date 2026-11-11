@@ -1,6 +1,6 @@
 # MeetRec User Manual
 
-> Applies to: MeetRec 1.1 · Windows 10 2004+ x64 / Windows 11 x64
+> Applies to: MeetRec 1.2 · Windows 10 2004+ x64 / Windows 11 x64
 > A step-by-step, illustrated guide to everyday use; this manual will also be published to the
 > GitHub Wiki once the repository goes public.
 
@@ -11,10 +11,11 @@
 3. [The main window at a glance](#3-the-main-window-at-a-glance)
 4. [Step by step: record a meeting](#4-step-by-step-record-a-meeting)
 5. [Recording from the tray](#5-recording-from-the-tray)
-6. [Settings reference](#6-settings-reference)
-7. [Troubleshooting](#7-troubleshooting)
-8. [Known limitations](#8-known-limitations)
-9. [FAQ](#9-faq)
+6. [Compressing older recordings](#6-compressing-older-recordings)
+7. [Settings reference](#7-settings-reference)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Known limitations](#9-known-limitations)
+10. [FAQ](#10-faq)
 
 ---
 
@@ -164,20 +165,77 @@ The result card shows file name, duration, size and path, with three actions:
 - While recording, a **non-activating** toast shows the current target and duration; clicking
   it returns to the main window without stealing focus.
 
-## 6. Settings reference
+## 6. Compressing older recordings
+
+Besides recording new meetings, MeetRec can re-encode **videos recorded earlier by other apps**
+with the same screen-content recipe and write a smaller H.264 MP4.
+
+### 6.1 Open the compressor
+
+Choose *⋯ More → Compress videos...* in the main window, or *Compress videos...* from the tray
+menu. The compressor is a separate window, so you can keep preparing the next meeting while it
+works.
+
+### 6.2 Add files
+
+- Click *Add videos...* to pick one or more files, or drag files onto the window.
+- Common formats are supported: MP4, MKV, MOV, AVI, WMV, FLV, TS, WebM.
+- Duration, resolution, size and codec are read automatically; if probing fails you can still
+  try to compress.
+
+### 6.3 Quality and resolution
+
+| Quality | Best for | Notes |
+|---|---|---|
+| Light | Smallest files, text/slides | Lowest bitrate ceiling |
+| Standard | Meeting recordings (recommended) | Capped CRF + screen-content tuning |
+| High | Motion-heavy demos | Higher bitrate, more detail |
+
+*Resolution* keeps the source size by default. Choosing 720p or 1080p downscales while keeping
+the aspect ratio; files get noticeably smaller but text becomes softer.
+
+### 6.4 Output folder and estimate
+
+- Output goes next to the source by default, named `<name>-min.mp4`.
+- *Change...* selects one folder for every queued file.
+- Name collisions get `-2`, `-3`, ...; **the source and existing files are never overwritten**.
+- The line below the settings shows an upper bound for the output size; when the source bitrate
+  is already low, MeetRec warns that gains may be limited.
+
+### 6.5 Start compressing
+
+*Start compressing* processes the queue one file at a time:
+
+- Each row shows progress and speed; the footer shows the current file and an ETA.
+- *Cancel current* stops the running file and puts it back in the queue; start again to resume.
+- *Open file* plays the result, and double-clicking a finished row does the same.
+- **Compression pauses automatically while MeetRec is recording** and resumes afterwards, so the
+  two encoders never compete for CPU.
+
+### 6.6 Notes
+
+- Compression is lossy re-encoding; already-small files may not shrink much.
+- Failures show a reason and never modify the source.
+- `ffprobe.exe` must sit next to `MeetRec.exe` (the release package includes it).
+
+## 7. Settings reference
 
 Open *⚙ Settings* from the main window header. Four pages:
 
 | Page | Options |
 |---|---|
-| **General** | UI language (system / 简体中文 / English), general behavior |
+| **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
 | **Recording** | Save location, file name format, post-recording actions (show completion notification / auto-open folder / minimize to tray) |
 | **About** | Version, author and project links |
 
-## 7. Troubleshooting
+When a new version is available, the *More* menu offers to check for updates; you can download and
+install it, or open the release page. Installing exits MeetRec, replaces the portable files and
+restarts. Automatic checks run at most once per calendar day.
 
-### 7.1 The error card
+## 8. Troubleshooting
+
+### 8.1 The error card
 
 When a recording fails, the main window shows an **error card** with the error code and
 explanation plus three actions:
@@ -187,7 +245,7 @@ explanation plus three actions:
 - **Diagnostics** — create a redacted diagnostics package (no recorded content) under
   `Diagnostics\` for support.
 
-### 7.2 Error code reference
+### 8.2 Error code reference
 
 | Code | Meaning | What to do |
 |---|---|---|
@@ -198,13 +256,14 @@ explanation plus three actions:
 | `VSR-TARGET-INVALID` / `VSR-TARGET-LOST` | Target window invalid or closed | Select the window again |
 | `VSR-ENCODER-UNAVAILABLE` | No usable H.264 encoder | Check GPU driver; run with the bundled ffmpeg |
 | `VSR-ENCODER-WRITE-FAILED` / `VSR-FINALIZE-FAILED` | Encoder/mux write error | Check the save location is writable and has space |
+| `VSR-TRANSCODE-FAILED` | Compression failed (unreadable source or ffmpeg error) | Check the source plays; create a diagnostics package |
 | `VSR-OUTPUT-DISK-LOW` | Disk below the free-space guard | Free space on the output drive |
 | `VSR-OUTPUT-NOT-WRITABLE` | Output location not writable | Choose a directory you can write to (e.g. D:\) |
 | `VSR-DISPLAY-DISCONNECTED` | Virtual display removed mid-recording | Content recorded so far is saved safely; just start again |
 | `VSR-INIT-DRIVER-MISSING` / `VSR-DISPLAY-NOT-FOUND` | Virtual display driver unavailable | Window recording needs no driver; driver install is a dev-only scenario |
 | `VSR-INTERNAL-STATE` | Unexpected internal state | Create a diagnostics package and report |
 
-### 7.3 Common symptoms
+### 8.3 Common symptoms
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -217,7 +276,7 @@ explanation plus three actions:
 | Preview black but recording fine | Some protected windows cannot be previewed | Harmless — trust the recorded file |
 | exe does not start / SmartScreen blocks | Unsigned binary notice | *More info → Run anyway*; verify the folder was extracted completely |
 
-## 8. Known limitations
+## 9. Known limitations
 
 - No HDR / H.265 / AV1 / 4K; output is SDR 8-bit H.264 MP4
 - Some Windows builds draw a yellow border around captured content; it may be visible in the
@@ -226,7 +285,7 @@ explanation plus three actions:
 - MeetRec never bypasses DRM or app-side capture suppression
 - Full list: [known-limitations.md](known-limitations.md)
 
-## 9. FAQ
+## 10. FAQ
 
 **Q: Do I need administrator rights?**
 A: No. Portable by design; window recording needs no driver at all.

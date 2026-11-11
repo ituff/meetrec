@@ -58,6 +58,10 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 - **Full state machine**: Ready, Preparing, Recording, Paused, Saving, a result card
   (file name/duration/size/path with Open file / Open folder / Record again) and an actionable
   error card with Retry / Help / Diagnostics.
+- **Compress older recordings** (menu → **Compress videos...**): re-encode existing MP4/MKV
+  screen recordings from any app with the same screen-content recipe, at below-normal
+  priority and paused while MeetRec is recording. Originals are never modified; output is
+  `<name>-min.mp4`.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
@@ -75,8 +79,8 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 
 1. Grab `MeetRec-<version>-win64-with-ffmpeg.zip` from
    [Releases](https://github.com/ituff/meetrec/releases/latest).
-2. Extract the **whole** folder to a writable directory (e.g. `D:\Apps\MeetRec`) — `ffmpeg.exe`
-   and its DLLs must stay next to `MeetRec.exe`.
+2. Extract the **whole** folder to a writable directory (e.g. `D:\Apps\MeetRec`) — `ffmpeg.exe`,
+   `ffprobe.exe` and their DLLs must stay next to `MeetRec.exe`.
 3. Double-click `MeetRec.exe`. On the first launch Windows SmartScreen may warn about an
    unsigned publisher — choose *More info → Run anyway*.
 4. No admin rights, no VC++ runtime, no driver required (C++ runtime is statically linked and
@@ -173,6 +177,14 @@ MeetRec.exe --dev-record ...             # headless virtual-display recording
 MeetRec.exe --dev-record-window ...      # headless window recording
 MeetRec.exe --self-check                 # read-only capability report (support tool)
 MeetRec.exe --encode-test ...            # full encode-pipeline validation without a driver
+MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
+                                         # compress one existing recording
+MeetRec.exe --compress-window [FILE...]  # open the compressor window, optionally pre-filled
+MeetRec.exe --dev-compete FILE [--seconds N] [--output DIR]
+                                         # baseline vs. transcode/recording drop test
+MeetRec.exe --update-check               # print the latest GitHub release vs. this build
+MeetRec.exe --update-self-test           # check, download, verify and apply an update
+MeetRec.exe --update-window              # open the update window when a check finds one
 ```
 
 | Flag | Meaning |
@@ -279,6 +291,9 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   声源;录制中电平条持续更新。
 - **完整状态覆盖**:就绪、准备中、录制中、已暂停、正在保存、结果卡(文件名/时长/大小/路径,
   打开文件 / 打开文件夹 / 再录一个)以及可操作的错误卡(重试 / 查看帮助 / 创建诊断包)。
+- **压缩旧录屏**(菜单 → **压缩视频...**):把其他软件录制的 MP4/MKV 用同一套屏幕内容编码
+  配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。原文件不会被修改,输出为
+  `<原名>-min.mp4`。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。
@@ -295,7 +310,7 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 
 1. 从 [Releases](https://github.com/ituff/meetrec/releases/latest) 下载
    `MeetRec-<版本>-win64-with-ffmpeg.zip`。
-2. 将**整个**压缩包解压到可写目录(例如 `D:\Apps\MeetRec`)——`ffmpeg.exe` 及其 DLL 必须
+2. 将**整个**压缩包解压到可写目录(例如 `D:\Apps\MeetRec`)——`ffmpeg.exe`、`ffprobe.exe` 及其 DLL 必须
    与 `MeetRec.exe` 在同一目录。
 3. 双击 `MeetRec.exe`。首次运行 Windows SmartScreen 可能提示"未知发布者",选择
    *更多信息 → 仍要运行*。
@@ -386,6 +401,14 @@ MeetRec.exe --dev-record ...             # 无界面虚拟显示器录制
 MeetRec.exe --dev-record-window ...      # 无界面窗口录制
 MeetRec.exe --self-check                 # 只读能力报告(支持/诊断工具)
 MeetRec.exe --encode-test ...            # 无驱动的完整编码管线验证
+MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
+                                         # 压缩单个已有录制文件
+MeetRec.exe --compress-window [FILE...]  # 打开压缩窗口,可预填文件
+MeetRec.exe --dev-compete FILE [--seconds N] [--output DIR]
+                                         # 基线 vs. 转码竞争的丢帧对比测试
+MeetRec.exe --update-check               # 打印最新 GitHub Release 与本版本
+MeetRec.exe --update-self-test           # 检查、下载、校验并应用更新
+MeetRec.exe --update-window              # 检查到更新时直接打开更新窗口
 ```
 
 | 参数 | 含义 |

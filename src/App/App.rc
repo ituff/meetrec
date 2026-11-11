@@ -1,11 +1,12 @@
 #include <winver.h>
+#include "Version.h"
 
 // Application icon (resource id 1): blue tile + white camcorder mark.
 1 ICON "MeetRec.ico"
 
 1 VERSIONINFO
-FILEVERSION 1,1,0,0
-PRODUCTVERSION 1,1,0,0
+FILEVERSION VSR_APP_VERSION_FILE
+PRODUCTVERSION VSR_APP_VERSION_FILE
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -14,9 +15,9 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "FileDescription", "MeetRec"
-      VALUE "FileVersion", "1.1.0.0"
+      VALUE "FileVersion", VSR_APP_VERSION_STR
       VALUE "ProductName", "MeetRec"
-      VALUE "ProductVersion", "1.1.0.0"
+      VALUE "ProductVersion", VSR_APP_VERSION_STR
       VALUE "OriginalFilename", "MeetRec.exe"
     END
   END

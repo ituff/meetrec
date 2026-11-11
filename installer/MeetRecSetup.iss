@@ -10,7 +10,7 @@
 ; ============================================================================
 
 #define AppName "MeetRec"
-#define AppVersion "1.1.0.0"
+#define AppVersion "1.2.0.0"
 #define AppPublisher "Allen Cheng"
 #define AppExe "MeetRec.exe"
 #ifndef Configuration

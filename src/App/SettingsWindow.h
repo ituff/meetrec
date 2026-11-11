@@ -44,6 +44,7 @@ private:
         Notification,
         AutoOpen,
         MinimizeTray,
+        AutoUpdate,
         Language,
         SystemAudio,
         Mic,
@@ -87,6 +88,9 @@ private:
         Gdiplus::RectF trayBox;
         Gdiplus::RectF trayLabel;
         Gdiplus::RectF trayNote;
+        Gdiplus::RectF autoUpdateBox;
+        Gdiplus::RectF autoUpdateLabel;
+        Gdiplus::RectF autoUpdateNote;
         Gdiplus::RectF languageLabel;
         Gdiplus::RectF languageField;
 

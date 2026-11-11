@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <filesystem>
 #include <vector>
 
@@ -25,12 +26,17 @@
 #include <Infrastructure/Paths.h>
 #include <Infrastructure/Settings.h>
 #include <Infrastructure/Strings.h>
+#include <Update/UpdateApplier.h>
+#include <Update/UpdateChecker.h>
 
 #include "AppMenu.h"
 #include "Application.h"
+#include "CompressWindow.h"
 #include "PreviewPanel.h"
 #include "SettingsWindow.h"
 #include "ToastWindow.h"
+#include "UpdateWindow.h"
+#include "Version.h"
 #include "WindowPicker.h"
 
 #pragma comment(lib, "comctl32.lib")
@@ -45,6 +51,7 @@ constexpr UINT WM_APP_BROWSE_RESULT = WM_APP + 3;
 constexpr UINT WM_APP_THUMBNAIL = WM_APP + 4;
 constexpr UINT WM_APP_SETTINGS_CHANGED = WM_APP + 5;
 constexpr UINT WM_APP_PICKER_RESULT = WM_APP + 6;
+constexpr UINT WM_APP_UPDATE_CHECK_RESULT = WM_APP + 7;
 constexpr int kAppIconResource = 1;
 
 constexpr UINT kCmdQualityBase = 2000;
@@ -54,12 +61,24 @@ constexpr UINT kCmdMoreHelp = 2202;
 constexpr UINT kCmdMoreAbout = 2203;
 constexpr UINT kCmdMoreDiagnostics = 2204;
 constexpr UINT kCmdMoreExit = 2205;
+constexpr UINT kCmdMoreCompress = 2206;
+constexpr UINT kCmdMoreUpdate = 2207;
 constexpr UINT kCmdTrayOpen = 2301;
 constexpr UINT kCmdTrayToggle = 2302;
 constexpr UINT kCmdTrayStop = 2303;
 constexpr UINT kCmdTraySettings = 2304;
 constexpr UINT kCmdTrayHelp = 2305;
 constexpr UINT kCmdTrayExit = 2306;
+constexpr UINT kCmdTrayCompress = 2307;
+constexpr UINT kCmdTrayUpdate = 2308;
+
+struct UpdateCheckPayload {
+    bool manual = false;
+    bool ok = false;
+    bool available = false;
+    update::ReleaseInfo release;
+    std::wstring error;
+};
 
 Gdiplus::RectF RectFOf(const RECT& rect) {
     return Gdiplus::RectF(static_cast<float>(rect.left), static_cast<float>(rect.top),
@@ -266,6 +285,7 @@ void MainWindow::OnCreate() {
     tray_.Create(hwnd_, WM_APP_TRAY);
     tray_.Update(lastSnapshot_);
     SetTimer(hwnd_, timerId_, 200, nullptr);
+    if (autoCheckUpdates_) nextUpdateCheckTick_ = GetTickCount64() + 6000;
 
     activateMessage_ = RegisterWindowMessageW(L"VsrActivateExistingInstance");
     taskbarCreatedMessage_ = RegisterWindowMessageW(L"TaskbarCreated");
@@ -642,7 +662,55 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_APP_SETTINGS_CHANGED:
             ApplySettingsFromStore();
+            if (compressor_) compressor_->OnLanguageChanged();
             return 0;
+        case WM_APP_UPDATE_CHECK_RESULT: {
+            auto* payload = reinterpret_cast<UpdateCheckPayload*>(lp);
+            if (payload == nullptr) return 0;
+            updateCheckRunning_.store(false);
+            lastUpdateCheckUnix_ = static_cast<long long>(std::time(nullptr));
+            PersistSettings();
+            if (!payload->ok) {
+                log::Warning("Update", "CHECK_FAILED", L"", payload->error);
+                if (payload->manual) {
+                    const std::wstring body = i18n::Format(
+                        i18n::Str::UpdateCheckFailedBody, {payload->error});
+                    MessageBoxW(hwnd_, body.c_str(),
+                                i18n::Text(i18n::Str::UpdateCheckFailedTitle),
+                                MB_OK | MB_ICONWARNING);
+                }
+                delete payload;
+                return 0;
+            }
+            if (!payload->available) {
+                if (payload->manual) {
+                    const std::wstring body = i18n::Format(
+                        i18n::Str::UpdateLatestBody, {VSR_APP_VERSION_W});
+                    MessageBoxW(hwnd_, body.c_str(),
+                                i18n::Text(i18n::Str::UpdateLatestTitle),
+                                MB_OK | MB_ICONINFORMATION);
+                }
+                delete payload;
+                return 0;
+            }
+            updateAvailable_ = true;
+            updateRelease_ = payload->release;
+            updateVersion_ = Utf8ToWide(payload->release.version.ToString());
+            log::Info("Update", "UPDATE_AVAILABLE", L"", updateVersion_);
+            if (lastNotifiedUpdateVersion_ != payload->release.version.ToString()) {
+                lastNotifiedUpdateVersion_ = payload->release.version.ToString();
+                PersistSettings();
+                pendingUpdateToast_ = true;
+            }
+            if (openUpdateWindowOnAvailable_) {
+                openUpdateWindowOnAvailable_ = false;
+                OpenUpdateWindow();
+            } else if (payload->manual) {
+                ShowUpdateDialog();
+            }
+            delete payload;
+            return 0;
+        }
         case WM_APP_PICKER_RESULT: {
             OnPickerResult(static_cast<int>(wp) - 1);
             return 0;
@@ -805,6 +873,21 @@ void MainWindow::OnTimer() {
     }
     if (toast_ != nullptr && toastLiveElapsed_ && toast_->IsVisible()) {
         toast_->SetSecondLine(ElapsedText());
+    }
+    if (autoCheckUpdates_ && nextUpdateCheckTick_ != 0 &&
+        GetTickCount64() >= nextUpdateCheckTick_ && !updateCheckRunning_.load()) {
+        nextUpdateCheckTick_ = 0;
+        const long long now = static_cast<long long>(std::time(nullptr));
+        if (openUpdateWindowOnAvailable_ || lastUpdateCheckUnix_ == 0 ||
+            now - lastUpdateCheckUnix_ >= 24 * 60 * 60) {
+            StartUpdateCheck(false);
+        }
+    }
+    if (pendingUpdateToast_ && snap.state == AppState::Ready && !updateVersion_.empty()) {
+        pendingUpdateToast_ = false;
+        ShowToast(i18n::Text(i18n::Str::UpdateToastTitle), updateVersion_,
+                  i18n::Format(i18n::Str::UpdateToastBody, {updateVersion_}), false,
+                  false);
     }
     RefreshLevelMonitor();
     UpdateTray();
@@ -2084,6 +2167,9 @@ void MainWindow::LoadSettings() {
     minimizeToTray_ = settings.minimizeToTray;
     showNotification_ = settings.showCompletionNotification;
     autoOpenFolder_ = settings.autoOpenOutputFolder;
+    autoCheckUpdates_ = settings.autoCheckUpdates;
+    lastUpdateCheckUnix_ = settings.lastUpdateCheckUnix;
+    lastNotifiedUpdateVersion_ = settings.lastNotifiedUpdateVersion;
     RefreshAudioDevices(settings.audioOutputDeviceId, settings.audioInputDeviceId);
     Application::Instance().SetMinimizeToTray(minimizeToTray_);
     Application::Instance().SetOutputDirectory(outputDirectory_);
@@ -2120,6 +2206,9 @@ void MainWindow::ApplySettingsFromStore() {
     minimizeToTray_ = settings.minimizeToTray;
     showNotification_ = settings.showCompletionNotification;
     autoOpenFolder_ = settings.autoOpenOutputFolder;
+    autoCheckUpdates_ = settings.autoCheckUpdates;
+    lastUpdateCheckUnix_ = settings.lastUpdateCheckUnix;
+    lastNotifiedUpdateVersion_ = settings.lastNotifiedUpdateVersion;
     if (preview_ != nullptr) {
         preview_->SetEnabled(showPreview_);
         if (!showPreview_) preview_->Clear();
@@ -2158,6 +2247,9 @@ void MainWindow::PersistSettings() {
     settings.minimizeToTray = minimizeToTray_;
     settings.showCompletionNotification = showNotification_;
     settings.autoOpenOutputFolder = autoOpenFolder_;
+    settings.autoCheckUpdates = autoCheckUpdates_;
+    settings.lastUpdateCheckUnix = lastUpdateCheckUnix_;
+    settings.lastNotifiedUpdateVersion = lastNotifiedUpdateVersion_;
     settings.uiLanguage = uiLanguage_;
     settings.previewPaneRatio = previewRatio_;
     if (!store.Save(settings)) {
@@ -2297,10 +2389,154 @@ void MainWindow::ShowSettingsPage(int page) {
     settings_->Show(static_cast<SettingsWindow::Page>(page));
 }
 
+void MainWindow::ShowCompressWindow() {
+    if (!compressor_) {
+        compressor_ = std::make_unique<CompressWindow>(hwnd_, [this] {
+            const AppState state = coordinator_.GetStatus().state;
+            return state == AppState::Preparing || state == AppState::Recording ||
+                   state == AppState::Paused || state == AppState::Stopping;
+        });
+    }
+    compressor_->Show();
+}
+
+void MainWindow::QueueCompressFiles(const std::vector<std::wstring>& files) {
+    if (!compressor_) ShowCompressWindow();
+    if (compressor_) compressor_->QueueFiles(files);
+}
+
+void MainWindow::StartUpdateCheck(bool manual) {
+    if (updateCheckRunning_.exchange(true)) return;
+    const HWND target = hwnd_;
+    std::thread([target, manual] {
+        auto result = update::CheckForUpdate(VSR_APP_VERSION_UTF8);
+        auto* payload = new UpdateCheckPayload();
+        payload->manual = manual;
+        if (result) {
+            payload->ok = true;
+            payload->available = result.Value().available;
+            payload->release = result.Value().release;
+        } else {
+            payload->error = result.GetError().userMessage;
+        }
+        if (!PostMessageW(target, WM_APP_UPDATE_CHECK_RESULT, 0,
+                          reinterpret_cast<LPARAM>(payload))) {
+            delete payload;
+        }
+    }).detach();
+}
+
+void MainWindow::ShowUpdateDialog() {
+    if (!updateAvailable_) {
+        StartUpdateCheck(true);
+        return;
+    }
+    const AppState state = coordinator_.GetStatus().state;
+    if (state == AppState::Preparing || state == AppState::Recording ||
+        state == AppState::Paused || state == AppState::Stopping) {
+        MessageBoxW(hwnd_, i18n::Text(i18n::Str::UpdateWhileRecording),
+                    i18n::Text(i18n::Str::UpdateDownloadTitle),
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (updateWindow_ && updateWindow_->Hwnd() != nullptr) {
+        SetForegroundWindow(updateWindow_->Hwnd());
+        return;
+    }
+
+    const std::wstring body = i18n::Format(
+        i18n::Str::UpdateAvailableBody, {VSR_APP_VERSION_W, updateVersion_});
+    const int choice = MessageBoxW(hwnd_, body.c_str(),
+                                   i18n::Text(i18n::Str::UpdateAvailableTitle),
+                                   MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
+    if (choice != IDYES) {
+        if (!updateRelease_.htmlUrl.empty()) {
+            ShellExecuteW(nullptr, L"open", updateRelease_.htmlUrl.c_str(), nullptr,
+                          nullptr, SW_SHOWNORMAL);
+        }
+        return;
+    }
+    OpenUpdateWindow();
+}
+
+void MainWindow::OpenUpdateWindow() {
+    if (!updateAvailable_) return;
+    const AppState state = coordinator_.GetStatus().state;
+    if (state == AppState::Preparing || state == AppState::Recording ||
+        state == AppState::Paused || state == AppState::Stopping) {
+        MessageBoxW(hwnd_, i18n::Text(i18n::Str::UpdateWhileRecording),
+                    i18n::Text(i18n::Str::UpdateDownloadTitle),
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (updateWindow_ && updateWindow_->Hwnd() != nullptr) {
+        SetForegroundWindow(updateWindow_->Hwnd());
+        return;
+    }
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    const std::filesystem::path installDir =
+        std::filesystem::path(exePath).parent_path();
+    if (!update::IsDirectoryWritable(installDir)) {
+        MessageBoxW(hwnd_, i18n::Text(i18n::Str::UpdateNotWritableBody),
+                    i18n::Text(i18n::Str::UpdateFailedTitle),
+                    MB_OK | MB_ICONWARNING);
+        if (!updateRelease_.htmlUrl.empty()) {
+            ShellExecuteW(nullptr, L"open", updateRelease_.htmlUrl.c_str(), nullptr,
+                          nullptr, SW_SHOWNORMAL);
+        }
+        return;
+    }
+    if (!updateWindow_) {
+        updateWindow_ = std::make_unique<UpdateWindow>(
+            hwnd_, updateRelease_,
+            [this](const std::filesystem::path& zip) { ApplyUpdateAndExit(zip); });
+    }
+    updateWindow_->Show();
+}
+
+void MainWindow::ApplyUpdateAndExit(const std::filesystem::path& zipPath) {
+    const AppState state = coordinator_.GetStatus().state;
+    if (state == AppState::Preparing || state == AppState::Recording ||
+        state == AppState::Paused || state == AppState::Stopping) {
+        MessageBoxW(hwnd_, i18n::Text(i18n::Str::UpdateWhileRecording),
+                    i18n::Text(i18n::Str::UpdateDownloadTitle),
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    const std::filesystem::path exe = exePath;
+    const std::filesystem::path installDir = exe.parent_path();
+
+    auto script = update::WriteApplyScript(zipPath, installDir, exe,
+                                           GetCurrentProcessId());
+    if (!script) {
+        MessageBoxW(hwnd_, script.GetError().userMessage.c_str(),
+                    i18n::Text(i18n::Str::UpdateFailedTitle), MB_OK | MB_ICONERROR);
+        return;
+    }
+    auto launched = update::LaunchApplyScript(script.Value());
+    if (!launched) {
+        MessageBoxW(hwnd_, launched.GetError().userMessage.c_str(),
+                    i18n::Text(i18n::Str::UpdateFailedTitle), MB_OK | MB_ICONERROR);
+        return;
+    }
+    log::Info("Update", "UPDATE_INSTALLING", L"", zipPath.filename().wstring());
+    DestroyWindow(hwnd_);
+}
+
 void MainWindow::ShowMoreMenu() {
     std::vector<menu::Item> items;
     items.push_back({i18n::Text(i18n::Str::TraySettings), L"", ui::Icon::Gear,
                      kCmdMoreSettings, true, false, false, false});
+    items.push_back({i18n::Text(i18n::Str::CompressMenu), L"", ui::Icon::Video,
+                     kCmdMoreCompress, true, false, false, false});
+    items.push_back(
+        {updateAvailable_ ? i18n::Format(i18n::Str::UpdateMenuAvailable, {updateVersion_})
+                          : std::wstring(i18n::Text(i18n::Str::UpdateMenuCheck)),
+         L"", updateAvailable_ ? ui::Icon::External : ui::Icon::Refresh, kCmdMoreUpdate,
+         true, false, false, false});
     items.push_back({i18n::Text(i18n::Str::TrayHelp), L"", ui::Icon::Help,
                      kCmdMoreHelp, true, false, false, false});
     items.push_back({i18n::Text(i18n::Str::About), L"", ui::Icon::Info,
@@ -2321,6 +2557,12 @@ void MainWindow::ShowMoreMenu() {
     switch (command) {
         case kCmdMoreSettings:
             ShowSettingsPage(0);
+            break;
+        case kCmdMoreCompress:
+            ShowCompressWindow();
+            break;
+        case kCmdMoreUpdate:
+            ShowUpdateDialog();
             break;
         case kCmdMoreHelp:
             OnErrorHelp();
@@ -2383,6 +2625,13 @@ void MainWindow::ShowTrayMenu() {
     items.push_back({L"", L"", ui::Icon::None, 0, true, false, false, true});
     items.push_back({i18n::Text(i18n::Str::TraySettings), L"", ui::Icon::Gear,
                      kCmdTraySettings, true, false, false, false});
+    items.push_back({i18n::Text(i18n::Str::CompressMenu), L"", ui::Icon::Video,
+                     kCmdTrayCompress, true, false, false, false});
+    items.push_back(
+        {updateAvailable_ ? i18n::Format(i18n::Str::UpdateMenuAvailable, {updateVersion_})
+                          : std::wstring(i18n::Text(i18n::Str::UpdateMenuCheck)),
+         L"", updateAvailable_ ? ui::Icon::External : ui::Icon::Refresh, kCmdTrayUpdate,
+         true, false, false, false});
     items.push_back({i18n::Text(i18n::Str::TrayHelp), L"", ui::Icon::Help,
                      kCmdTrayHelp, true, false, false, false});
     items.push_back({L"", L"", ui::Icon::None, 0, true, false, false, true});
@@ -2406,6 +2655,12 @@ void MainWindow::ShowTrayMenu() {
             break;
         case kCmdTraySettings:
             ShowSettingsPage(0);
+            break;
+        case kCmdTrayCompress:
+            ShowCompressWindow();
+            break;
+        case kCmdTrayUpdate:
+            ShowUpdateDialog();
             break;
         case kCmdTrayHelp:
             OnErrorHelp();

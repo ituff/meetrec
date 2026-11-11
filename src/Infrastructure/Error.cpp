@@ -19,6 +19,7 @@ const char* ToString(ErrorCode code) noexcept {
         case ErrorCode::OutputNotWritable:    return "VSR-OUTPUT-NOT-WRITABLE";
         case ErrorCode::OutputDiskLow:        return "VSR-OUTPUT-DISK-LOW";
         case ErrorCode::FinalizeFailed:       return "VSR-FINALIZE-FAILED";
+        case ErrorCode::TranscodeFailed:      return "VSR-TRANSCODE-FAILED";
         case ErrorCode::InternalState:        return "VSR-INTERNAL-STATE";
     }
     return "VSR-INTERNAL-STATE";
