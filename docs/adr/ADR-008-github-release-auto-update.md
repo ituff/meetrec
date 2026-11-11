@@ -77,7 +77,13 @@ We will implement an in-app updater driven by the GitHub Releases API:
   asset selection, prerelease rejection, and SHA-256 of a known vector. Suite: 102 tests,
   0 failing.
 - Live GitHub API check from the built app returned the current release (1.1.0) and correctly
-  reported "no update" for the 1.2.0 build.
+  reported "no update" for the 1.2.0 build. After publishing v1.2.0, the check resolves the
+  real release and its asset URLs.
+- The published `MeetRec-1.2.0-win64-with-ffmpeg.zip` server-side digest
+  (`sha256:7724df2b…`) matches `SHA256SUMS.txt` and the hash embedded in the release body.
+  A download through the GitHub release redirect was observed streaming into the updater's
+  cache; the full 75 MB transfer was limited by the build machine's network, so the complete
+  install path was exercised with the local mock below.
 - A local mock release server (v9.9.9, zip + `SHA256SUMS.txt`) exercised the complete path:
   check → download → SHA-256 verify → generated script → extract/copy → restart. The copied
   test install gained the zip's marker file and the restarted `MeetRec.exe` ran from the

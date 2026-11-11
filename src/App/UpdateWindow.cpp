@@ -280,8 +280,9 @@ LRESULT UpdateWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (GetCapture() == hwnd) ReleaseCapture();
             POINT point = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
             if (pressed != Hit::None && HitTest(point) == pressed) {
-                if (pressed == Hit::Close) RequestClose();
-                else if (pressed == Hit::Cancel) {
+                if (pressed == Hit::Close || pressed == Hit::CloseButton) {
+                    RequestClose();
+                } else if (pressed == Hit::Cancel) {
                     cancel_.store(true);
                     state_ = State::Cancelled;
                     Invalidate();
@@ -489,7 +490,7 @@ void UpdateWindow::Draw(Gdiplus::Graphics& graphics) {
     } else if (state_ == State::Failed || state_ == State::Cancelled) {
         ui::DrawButton(graphics, fonts_, layout_.button,
                        i18n::Text(i18n::Str::UpdateClose), ui::ButtonStyle::Secondary,
-                       hover_ == Hit::Cancel, pressed_ == Hit::Cancel, true);
+                       hover_ == Hit::CloseButton, pressed_ == Hit::CloseButton, true);
     }
 }
 
@@ -498,7 +499,8 @@ UpdateWindow::Hit UpdateWindow::HitTest(POINT point) const {
         if (!Contains(target.rect, point)) continue;
         if (target.id == Hit::Cancel) {
             if (state_ == State::Ready) return Hit::ApplyNow;
-            if (state_ != State::Downloading) return Hit::None;
+            if (state_ == State::Downloading) return Hit::Cancel;
+            return Hit::CloseButton;
         }
         return target.id;
     }

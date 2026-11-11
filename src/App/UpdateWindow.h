@@ -39,7 +39,7 @@ public:
 
 private:
     enum class State { Downloading, Ready, Failed, Cancelled };
-    enum class Hit { None, Close, Cancel, ApplyNow };
+    enum class Hit { None, Close, CloseButton, Cancel, ApplyNow };
     struct HitTarget {
         Hit id = Hit::None;
         Gdiplus::RectF rect;
