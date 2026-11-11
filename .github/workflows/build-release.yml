@@ -204,8 +204,12 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip $sums --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-            gh release edit $tag --title $title --notes-file $bodyPath
+            # A tag can be re-pointed at a new commit; GitHub turns the old
+            # release into a draft. Publish it explicitly before marking latest.
+            gh release edit $tag --title $title --notes-file $bodyPath --draft=false
             if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
+            gh release edit $tag --latest
+            if ($LASTEXITCODE -ne 0) { throw "gh release latest failed" }
           } else {
             gh release create $tag $zip $sums --title $title --notes-file $bodyPath --latest --verify-tag
             if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
