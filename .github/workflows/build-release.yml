@@ -204,7 +204,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip $sums --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-            gh release edit $tag --title $title --notes-file $bodyPath --latest
+            gh release edit $tag --title $title --notes-file $bodyPath
             if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
           } else {
             gh release create $tag $zip $sums --title $title --notes-file $bodyPath --latest --verify-tag
