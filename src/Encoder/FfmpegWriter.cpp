@@ -217,11 +217,83 @@ Result<HANDLE> FfmpegWriter::SpawnChild(const std::wstring& ffmpegPath,
     return Result<HANDLE>(pi.hProcess);
 }
 
+Result<void> FfmpegWriter::WaitForChildConnection(HANDLE pipe, HANDLE child,
+                                                  const char* what,
+                                                  const wchar_t* label) {
+    OVERLAPPED ov = {};
+    ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (ov.hEvent == nullptr) {
+        return EncodeHresultError("CreateEvent(pipe connect)",
+                                  HRESULT_FROM_WIN32(GetLastError()));
+    }
+
+    // With FILE_FLAG_OVERLAPPED, ConnectNamedPipe returns zero with
+    // ERROR_PIPE_CONNECTED when the client won the race and ERROR_IO_PENDING
+    // while the connect is outstanding. A nonzero return means the pipe is
+    // already connected, so GetLastError() must not be consulted then (it
+    // would read a stale error and wait on an event that never signals).
+    const BOOL connectedNow = ConnectNamedPipe(pipe, &ov);
+    const DWORD initialError = connectedNow ? ERROR_SUCCESS : GetLastError();
+    bool connected = connectedNow != FALSE || initialError == ERROR_PIPE_CONNECTED;
+    Result<void> result{};
+    if (!connected && initialError != ERROR_IO_PENDING) {
+        result = ChildError(what, L"ConnectNamedPipe failed: " +
+                                    std::to_wstring(initialError) + L"; stderr: " +
+                                    StderrTail());
+    }
+
+    const ULONGLONG startedMs = GetTickCount64();
+    while (!connected && result.IsOk()) {
+        // Short slices: a child that exits (bad arguments, missing DLL, AV
+        // block) is reported immediately instead of masquerading as a slow
+        // startup after the full deadline.
+        const DWORD wait = WaitForSingleObject(ov.hEvent, 100);
+        if (wait == WAIT_OBJECT_0) {
+            DWORD bytes = 0;
+            if (GetOverlappedResult(pipe, &ov, &bytes, FALSE) ||
+                GetLastError() == ERROR_PIPE_CONNECTED) {
+                connected = true;
+            } else {
+                result = ChildError(what, L"pipe connect failed: " +
+                                            std::to_wstring(GetLastError()) + L"; stderr: " +
+                                            StderrTail());
+            }
+            break;
+        }
+        if (wait == WAIT_FAILED) {
+            result = EncodeHresultError("WaitForSingleObject(pipe connect)",
+                                        HRESULT_FROM_WIN32(GetLastError()));
+            break;
+        }
+        DWORD exitCode = 0;
+        if (child != nullptr && GetExitCodeProcess(child, &exitCode) &&
+            exitCode != STILL_ACTIVE) {
+            result = ChildError("ffmpeg exited during startup",
+                                L"exit code " + std::to_wstring(exitCode) + L"; stderr: " +
+                                    StderrTail());
+            break;
+        }
+        if (GetTickCount64() - startedMs >= kConnectTimeoutMs) {
+            result = ChildError(what,
+                                std::wstring(L"ffmpeg did not open its ") + label +
+                                    L" input within " +
+                                    std::to_wstring(kConnectTimeoutMs / 1000) +
+                                    L" s (child still running); stderr: " + StderrTail());
+            break;
+        }
+    }
+
+    if (!result.IsOk()) CancelIoEx(pipe, &ov);
+    CloseHandle(ov.hEvent);
+    return result;
+}
+
 Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& ffmpegPath,
                                                            const PresetParams& preset,
                                                            const std::filesystem::path&
                                                                partialPath,
                                                            const AudioFormat* audioFormat) {
+    const ULONGLONG startupBegin = GetTickCount64();
     SECURITY_ATTRIBUTES inherit = {};
     inherit.nLength = sizeof(inherit);
     inherit.bInheritHandle = TRUE;
@@ -310,30 +382,21 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
     }
 
     // Each child must open its (single) input pipe.
-    OVERLAPPED connectVideo = {};
-    connectVideo.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    ConnectNamedPipe(writer->videoPipe_, &connectVideo);
-    if (GetLastError() != ERROR_PIPE_CONNECTED) { // client beat us to it
-        if (WaitForSingleObject(connectVideo.hEvent, kConnectTimeoutMs) != WAIT_OBJECT_0) {
-            writer->KillChild();
-            return ChildError("video pipe connect timeout",
-                              L"ffmpeg did not open its input pipe in time.");
-        }
+    auto videoConnected =
+        writer->WaitForChildConnection(writer->videoPipe_, writer->child_,
+                                       "video pipe connect", L"video");
+    if (!videoConnected) {
+        writer->KillChild();
+        return videoConnected.TakeError();
     }
-    CloseHandle(connectVideo.hEvent);
     if (writer->audioPipe_ != nullptr) {
-        OVERLAPPED connectAudio = {};
-        connectAudio.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-        ConnectNamedPipe(writer->audioPipe_, &connectAudio);
-        if (GetLastError() != ERROR_PIPE_CONNECTED) {
-            if (WaitForSingleObject(connectAudio.hEvent, kConnectTimeoutMs) !=
-                WAIT_OBJECT_0) {
-                writer->KillChild();
-                return ChildError("audio pipe connect timeout",
-                                  L"ffmpeg did not open its audio input in time.");
-            }
+        auto audioConnected =
+            writer->WaitForChildConnection(writer->audioPipe_, writer->audioChild_,
+                                           "audio pipe connect", L"audio");
+        if (!audioConnected) {
+            writer->KillChild();
+            return audioConnected.TakeError();
         }
-        CloseHandle(connectAudio.hEvent);
     }
 
     // Early-exit probe: a bad encoder argument or missing binary exits here,
@@ -352,6 +415,9 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
     log::Info("Encoder", "FFMPEG_WRITER_CREATED", L"", L"ffmpeg encode pipeline ready.",
               {{"path", WideToUtf8(partialPath.wstring())},
                {"videoEncoder", WideToUtf8(std::wstring(videoEncoder))},
+               {"ffmpegPath", WideToUtf8(ffmpegPath)},
+               {"startupMs",
+                std::to_string(static_cast<unsigned long long>(GetTickCount64() - startupBegin))},
                {"audio", writer->audioEnabled_ ? "1" : "0"},
                {"width", std::to_string(preset.width)},
                {"height", std::to_string(preset.height)},
@@ -379,6 +445,18 @@ FfmpegWriter::~FfmpegWriter() {
     if (stderrThread_.joinable()) stderrThread_.join();
     if (videoPipe_ != nullptr) CloseHandle(videoPipe_);
     if (audioPipe_ != nullptr) CloseHandle(audioPipe_);
+
+    // A writer destroyed without Finalize never produced a usable output
+    // (startup failure or a session rolled back before recording began).
+    // Remove its intermediates so failed starts leave no orphan files.
+    if (!finalized_.load(std::memory_order_relaxed)) {
+        std::error_code ec;
+        const std::filesystem::path paths[] = {videoIntermediate_, audioIntermediate_,
+                                               partialPath_};
+        for (const auto& path : paths) {
+            if (!path.empty()) std::filesystem::remove(path, ec);
+        }
+    }
 }
 
 void FfmpegWriter::KillChild(HANDLE& child) noexcept {

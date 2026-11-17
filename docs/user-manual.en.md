@@ -139,6 +139,13 @@ As soon as a window is selected the level meters go live — **verify before you
 3. While recording, the audio setup controls are temporarily disabled (to avoid accidental
    changes), but the level meters keep moving so you can watch both sources.
 
+> 🎙 Mute during a recording: the microphone button left of **Pause**, the tray item
+> *Mute recording mic*, or the global **Ctrl+Alt+M** shortcut mutes the microphone in the
+> **recording only** — the meeting app still hears you. Press it again to restore. Muting the
+> microphone in Windows Sound settings / Volume Mixer is detected automatically and removes it
+> from the recording. A meeting app's own Mute button is internal to that app and cannot be
+> read by MeetRec, so use the button or shortcut when you want the recording to be silent.
+
 ### Step 5 (optional): Pause / resume
 
 - Click **Pause**: nothing is recorded while paused and the timer stops; status shows *Paused*.
@@ -161,7 +168,7 @@ The result card shows file name, duration, size and path, with three actions:
 
 - You can minimize MeetRec itself while recording (**this minimizes MeetRec — not the recorded
   meeting window**, which must stay visible).
-- Tray menu: Open / Pause-Resume / Stop / Settings / Help / Exit.
+- Tray menu: Open / Pause-Resume / Mute-Unmute / Stop / Settings / Help / Exit.
 - While recording, a **non-activating** toast shows the current target and duration; clicking
   it returns to the main window without stealing focus.
 

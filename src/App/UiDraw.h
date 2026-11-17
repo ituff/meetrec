@@ -143,6 +143,7 @@ enum class Icon {
     Video,
     Speaker,
     Microphone,
+    MicrophoneMuted,
     Check,
     Alert,
     Play,

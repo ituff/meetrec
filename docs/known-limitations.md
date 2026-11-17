@@ -62,6 +62,15 @@ release notes sections with the same purpose.
   audible sound records as silence. AAC finalization has been observed to hang on Windows
   Insider builds (see the encoder section below), which is why audio stays opt-in until
   verified on retail builds.
+- **Microphone mute during a recording**: the footer microphone button, the tray menu item, or
+  `Ctrl+Alt+M` removes the microphone from the recorded mix only - the meeting app still hears
+  you. Muting the microphone in Windows Sound settings (or a headset switch that the driver
+  reports as endpoint mute) is followed automatically and also removes it from the recording.
+  A meeting app's own **Mute** button is internal to that app and is not visible to other
+  processes, so it does **not** stop the microphone track. The recorder only reads the
+  endpoint mute flag and never calls `SetMute`, so it never changes the system or meeting mute
+  state. Mute detection follows the endpoint selected in MeetRec; if the meeting app uses a
+  different microphone, its mute is not observed (select the same device in both apps).
 - Recordings pause correctly (paused time is excluded from the output, AC-005), but frames are
   not buffered during pause: what happens on the virtual display during a pause is not recorded
   and cannot be recovered.

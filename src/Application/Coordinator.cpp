@@ -62,6 +62,7 @@ std::int64_t Monotonic100Ns(const IClock& clock) {
 } // namespace
 
 Coordinator::Coordinator(std::shared_ptr<IClock> clock) : clock_(std::move(clock)) {
+    microphoneMuteState_ = std::make_shared<encoder::MicrophoneMuteState>();
     state_ = AppState::Initializing;
     // Startup checks that can fail (OS version, driver package) run through
     // EnsureVirtualDisplay()/Start() and report typed errors; the machine is
@@ -132,6 +133,11 @@ Result<void> Coordinator::Start(const StartRecordingRequest& request) {
     stopRequested_ = false;
     stopReason_ = StopReason::User;
     paused_ = false;
+    if (microphoneMuteState_) {
+        microphoneMuteState_->manual.store(false, std::memory_order_relaxed);
+        microphoneMuteState_->system.store(false, std::memory_order_relaxed);
+    }
+    microphoneCaptured_.store(false, std::memory_order_relaxed);
     displayLost_ = false;
     targetLost_ = false;
     lastOutputTimestamp_ = -1;
@@ -580,68 +586,18 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         }
     }
 
-    // 6. Queue + capture session (FR-040..FR-046). Window targets default to
-    // the GDI PrintWindow backend: WGC window capture on Insider builds
-    // delivers blank/black surfaces for hardware-composited apps while
-    // frames keep flowing (observed on CONSOLE sessions too, build 26200),
-    // which neither the freeze repair nor anything downstream can detect.
-    // GDI PrintWindow captures composed content in place and was verified
-    // end-to-end with real content. VSR_CAPTURE_BACKEND=wgc opts back in;
-    // monitor targets (dev CLI) keep WGC.
+    // 6. Frame queue (capture starts in step 8, after the encoder is ready).
     queue_ = std::make_unique<BoundedFrameQueue>(kQueueCapacity);
-    wchar_t captureBackend[8] = {};
-    const bool forceWgc =
-        GetEnvironmentVariableW(L"VSR_CAPTURE_BACKEND", captureBackend, 8) > 0 &&
-        _wcsicmp(captureBackend, L"wgc") == 0;
-    const bool useGdiForWindow = windowTarget && !forceWgc;
-    usingWgcWindowCapture_ = windowTarget && !useGdiForWindow;
-    using SessionResult = Result<std::unique_ptr<capture::ICaptureSession>>;
-    SessionResult sessionResult = SessionResult{Error{ErrorCode::CaptureInitFailed,
-                                                      L"", L"capture session not started"}};
-    if (windowTarget) {
-        if (useGdiForWindow) {
-            auto gdi = capture::GdiCaptureSession::Start(*device_, request.targetWindow,
-                                                         preset.fps, *queue_, *clock_);
-            if (gdi) {
-                sessionResult = SessionResult{std::move(gdi.Value())};
-            } else {
-                sessionResult = SessionResult{gdi.TakeError()};
-            }
-        } else {
-            auto wgc = capture::CaptureSession::Start(*device_, request.targetWindow,
-                                                      *queue_, *clock_);
-            if (wgc) {
-                sessionResult = SessionResult{std::move(wgc.Value())};
-            } else {
-                sessionResult = SessionResult{wgc.TakeError()};
-            }
-        }
-    } else {
-        auto disp = capture::CaptureSession::Start(*device_, monitor.handle, *queue_,
-                                                   *clock_);
-        if (disp) {
-            sessionResult = SessionResult{std::move(disp.Value())};
-        } else {
-            sessionResult = SessionResult{disp.TakeError()};
-        }
-    }
-    if (!sessionResult) {
-        Error e = RollbackError(sessionResult.TakeError(), "capture start");
-        if (savedPlacement_ != nullptr) {
-            (void)WindowPlacementManager().Restore(*savedPlacement_);
-            savedPlacement_.reset();
-        }
-        PublishError(e);
-        return false;
-    }
-    session_ = std::move(sessionResult.Value());
-    session_->SetCursorCaptureEnabled(request.captureCursor);
 
     // 7. Converter + writer (the .partial.mp4 is created only here, FR-057).
+    // Encoder startup deliberately precedes capture: a 1080p PrintWindow/D3D
+    // capture loop competing with the ffmpeg children's process startup was
+    // observed to push the pipe connect past its 8 s deadline (recording
+    // start failed intermittently on a busy target window). The pacer simply
+    // waits for the first frame, so starting capture afterwards is harmless.
     auto converterResult = VideoConverter::Create(*device_, preset.width, preset.height);
     if (!converterResult) {
         Error e = RollbackError(converterResult.TakeError(), "converter create");
-        session_->Stop();
         if (savedPlacement_ != nullptr) {
             (void)WindowPlacementManager().Restore(*savedPlacement_);
             savedPlacement_.reset();
@@ -681,7 +637,6 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     if (!writerResult) {
         Error e = RollbackError(writerResult.TakeError(), "writer create");
-        session_->Stop();
         if (savedPlacement_ != nullptr) {
             (void)WindowPlacementManager().Restore(*savedPlacement_);
             savedPlacement_.reset();
@@ -691,12 +646,76 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     }
     writer_ = std::move(writerResult.Value());
 
+    // 8. Capture session (FR-040..FR-046), started only after the encoder
+    // children are ready (see step 7). Window targets default to the GDI
+    // PrintWindow backend: WGC window capture on Insider builds delivers
+    // blank/black surfaces for hardware-composited apps while frames keep
+    // flowing (observed on CONSOLE sessions too, build 26200), which neither
+    // the freeze repair nor anything downstream can detect. GDI PrintWindow
+    // captures composed content in place and was verified end-to-end with
+    // real content. VSR_CAPTURE_BACKEND=wgc opts back in; monitor targets
+    // (dev CLI) keep WGC.
+    wchar_t captureBackend[8] = {};
+    const bool forceWgc =
+        GetEnvironmentVariableW(L"VSR_CAPTURE_BACKEND", captureBackend, 8) > 0 &&
+        _wcsicmp(captureBackend, L"wgc") == 0;
+    const bool useGdiForWindow = windowTarget && !forceWgc;
+    usingWgcWindowCapture_ = windowTarget && !useGdiForWindow;
+    using SessionResult = Result<std::unique_ptr<capture::ICaptureSession>>;
+    SessionResult sessionResult = SessionResult{Error{ErrorCode::CaptureInitFailed,
+                                                      L"", L"capture session not started"}};
+    if (windowTarget) {
+        if (useGdiForWindow) {
+            auto gdi = capture::GdiCaptureSession::Start(*device_, request.targetWindow,
+                                                         preset.fps, *queue_, *clock_);
+            if (gdi) {
+                sessionResult = SessionResult{std::move(gdi.Value())};
+            } else {
+                sessionResult = SessionResult{gdi.TakeError()};
+            }
+        } else {
+            auto wgc = capture::CaptureSession::Start(*device_, request.targetWindow,
+                                                      *queue_, *clock_);
+            if (wgc) {
+                sessionResult = SessionResult{std::move(wgc.Value())};
+            } else {
+                sessionResult = SessionResult{wgc.TakeError()};
+            }
+        }
+    } else {
+        auto disp = capture::CaptureSession::Start(*device_, monitor.handle, *queue_,
+                                                   *clock_);
+        if (disp) {
+            sessionResult = SessionResult{std::move(disp.Value())};
+        } else {
+            sessionResult = SessionResult{disp.TakeError()};
+        }
+    }
+    if (!sessionResult) {
+        Error e = RollbackError(sessionResult.TakeError(), "capture start");
+        // The writer never recorded a frame: destroy it without finalizing so
+        // its ffmpeg children are killed and unfinalized intermediates are
+        // removed by the writer destructor.
+        writer_.reset();
+        converter_.reset();
+        queue_.reset();
+        if (savedPlacement_ != nullptr) {
+            (void)WindowPlacementManager().Restore(*savedPlacement_);
+            savedPlacement_.reset();
+        }
+        PublishError(e);
+        return false;
+    }
+    session_ = std::move(sessionResult.Value());
+    session_->SetCursorCaptureEnabled(request.captureCursor);
+
     if ((wantSystemAudio || wantMicrophone) && audioRate_ > 0) {
         encoder::AudioCaptureOptions audioOptions{};
         audioOptions.loopback = wantSystemAudio;
         audioOptions.microphone = wantMicrophone;
         audioOptions.loopbackDeviceId = request.audioOutputDeviceId;
         audioOptions.microphoneDeviceId = request.audioInputDeviceId;
+        audioOptions.muteState = microphoneMuteState_;
         audioOptions.onLevel = [this](bool microphone, float peak) {
             (microphone ? micLevel_ : loopbackLevel_)
                 .store(peak, std::memory_order_relaxed);
@@ -710,6 +729,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
             }, audioOptions);
         if (started) {
             audioCapture_ = std::move(started.Value());
+            microphoneCaptured_.store(wantMicrophone, std::memory_order_relaxed);
             log::Info("Coordinator", "AUDIO_STREAM_ENABLED", correlationId_,
                       L"Meeting audio (system + microphone mix) will be recorded.",
                       {{"sampleRate", std::to_string(audioRate_)},
@@ -727,7 +747,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
         }
     }
 
-    // 8. Disk guard + topology watcher + timing anchors. The topology watcher
+    // 9. Disk guard + topology watcher + timing anchors. The topology watcher
     // guards the virtual display only; parked-window sessions end through the
     // target-liveness poll instead.
     diskGuard_.Begin(partialPath_.parent_path(), preset.bitrateBps);
@@ -1219,6 +1239,14 @@ StatusSnapshot Coordinator::GetStatus() const {
         s.errorUserMessage = lastError_.userMessage;
         s.preset = preset_;
         s.captureCursor = captureCursor_;
+        s.microphoneCaptured = microphoneCaptured_.load(std::memory_order_relaxed);
+        if (microphoneMuteState_) {
+            s.microphoneMutedManually =
+                microphoneMuteState_->manual.load(std::memory_order_relaxed);
+            s.microphoneMutedBySystem =
+                microphoneMuteState_->system.load(std::memory_order_relaxed);
+            s.microphoneMuted = s.microphoneMutedManually || s.microphoneMutedBySystem;
+        }
 
         if (queue_ != nullptr) {
             const auto counters = queue_->Counters();
@@ -1261,6 +1289,17 @@ bool Coordinator::TryGetPreviewFrameCpu(std::vector<std::uint8_t>& outBgra, UINT
 void Coordinator::GetAudioLevels(float& loopback, float& microphone) const noexcept {
     loopback = loopbackLevel_.load(std::memory_order_relaxed);
     microphone = micLevel_.load(std::memory_order_relaxed);
+}
+
+void Coordinator::SetMicrophoneMuted(bool muted) noexcept {
+    if (!microphoneMuteState_) return;
+    const bool previous =
+        microphoneMuteState_->manual.exchange(muted, std::memory_order_relaxed);
+    if (previous == muted) return;
+    log::Info("Coordinator", muted ? "AUDIO_MIC_MANUAL_MUTED" : "AUDIO_MIC_MANUAL_UNMUTED",
+              L"", muted ? L"Microphone muted for the recording."
+                         : L"Microphone unmuted for the recording.",
+              {{"muted", muted ? "1" : "0"}});
 }
 
 } // namespace vsr::app

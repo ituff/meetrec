@@ -16,7 +16,7 @@
     <!-- speaker icon -->
     <path d="M52 78 L64 78 L80 62 L80 110 L64 94 L52 94 Z" fill="#2563eb"/>
     <path d="M88 70 A 14 14 0 0 1 88 102" stroke="#2563eb" stroke-width="3" fill="none"/>
-    <path d="M96 62 A 22 22 0 0 1 96 110" stroke="#93b4f0" stroke-width="3" fill="none"/>
+    <path d="M90 68 A 17 17 0 0 1 90 104" stroke="#93b4f0" stroke-width="3" fill="none"/>
     <text x="112" y="72" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="16" font-weight="700" fill="#1e293b">系统声音</text>
     <text x="112" y="92" font-family="Segoe UI, sans-serif" font-size="12" fill="#64748b">System audio (loopback)</text>
     <text x="48" y="122" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="12.5" fill="#475569">对方与参会者的声音 · participants</text>
@@ -61,6 +61,6 @@
   </g>
 
   <!-- notes -->
-  <rect x="30" y="240" width="940" height="26" rx="8" fill="#eef4ff"/>
-  <text x="500" y="258" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a">两个声源相互独立:任一声源可单独开启;两者都关闭时录制为纯视频 · Sources are independent — either alone, or video-only if both are off</text>
+  <rect x="30" y="248" width="940" height="26" rx="8" fill="#eef4ff"/>
+  <text x="500" y="265" text-anchor="middle" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a">两个声源相互独立:任一声源可单独开启;两者都关闭时录制为纯视频 · Sources are independent — either alone, or video-only if both are off</text>
 </svg>

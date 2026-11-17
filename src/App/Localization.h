@@ -83,6 +83,11 @@ enum class Str {
     Pause,
     Resume,
     StopAndSave,
+    MuteMicrophone,
+    UnmuteMicrophone,
+    MicMutedHint,
+    MicSystemMutedHint,
+    MicUnmutedHint,
     PreviewOff,
     PreviewEmpty,
     PreviewLoading,
@@ -215,6 +220,8 @@ enum class Str {
     ToastRecordingTitle,
     ToastSavedTitle,
     ToastPausedTitle,
+    ToastMicMutedTitle,
+    ToastMicUnmutedTitle,
     ToastInfoClose,
 
     // Dialogs and prompts

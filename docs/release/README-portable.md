@@ -1,4 +1,4 @@
-# MeetRec 1.2.0 — Windows 10/11 x64 便携版
+# MeetRec 1.3.0 — Windows 10/11 x64 便携版
 
 MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成干净的 MP4，可同时混入系统声音（对方）和麦克风（我的声音）。
 
@@ -9,7 +9,8 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 3. 选择要录制的会议/演示窗口。
 4. 确认系统声音和麦克风电平条有跳动，点击“开始录制”。
 5. 结束后点击“结束并保存”，在结果卡中打开文件或文件夹。
-6. 旧录屏可在「更多 → 压缩视频...」中重新压缩；程序会自动检查 GitHub 更新，可在「更多」菜单中下载并安装。
+6. 旧录屏可在标题栏「压缩视频」按钮、更多菜单或托盘菜单中重新压缩；程序会自动检查 GitHub 更新，可在「更多」菜单中下载并安装。
+7. 录制中需要静音自己的声音时，点击「暂停」左侧的麦克风按钮、托盘菜单「静音录制麦克风」或按 `Ctrl+Alt+M`；这只影响录像，不会静音会议软件。在 Windows 声音设置里静音麦克风会被自动跟随。
 
 > 请保持文件夹完整：`ffmpeg.exe`、`ffprobe.exe` 及其 DLL 必须和 `MeetRec.exe` 放在同一目录。只复制 exe 会导致无法使用内置的 ffmpeg 录制后端和视频压缩功能。
 
@@ -43,25 +44,28 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 - 某些受保护/特殊合成的窗口无法显示预览；不影响录制本身。
 - 无 HDR / H.265 / AV1 / 4K 录制；仅 SDR、H.264 MP4。
 - 不绕过 DRM、锁屏、UAC 安全桌面。
+- 会议软件自己的静音按钮无法被第三方程序读取，因此不会自动同步到录像；需要静音录像时请用 MeetRec 的麦克风按钮或 `Ctrl+Alt+M`。
 - 当前发行版未签名；如用于企业分发，请先进行代码签名与内部测试。
 
 ## 内置 ffmpeg
 
 本包内置 FFmpeg 以直接使用高质量、小体积的 x264 录制后端，无需用户另行安装。
 
-- FFmpeg version N-121437-gf4a87d8ca4-20251015
+- 版本与构建信息：见 `licenses/FFmpeg-SOURCE.txt`
 - GPLv3 build（`--enable-gpl --enable-version3 --enable-libx264`）
 - 许可证：`licenses/FFmpeg-GPLv3.txt`
-- 对应源码：`licenses/FFmpeg-SOURCE.txt` / <https://github.com/FFmpeg/FFmpeg/tree/f4a87d8ca4>
+- 源码 / 构建提供方：<https://github.com/BtbN/FFmpeg-Builds>
 - MeetRec 以独立子进程 + 管道方式调用 ffmpeg，不链接 FFmpeg 库。
 
 ---
 
-# MeetRec 1.2.0 — Windows 10/11 x64 (portable)
+# MeetRec 1.3.0 — Windows 10/11 x64 (portable)
 
 Unzip the whole folder and run `MeetRec.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe`, `ffprobe.exe`, and their DLLs are included and must stay next to the application binary so the ffmpeg recording backend and the video compressor can be discovered. The C++ runtime is linked statically, so no VC++ Redistributable is needed.
 
-Compress older recordings from *More → Compress videos...*. The app checks GitHub Releases for updates automatically and offers download/install from the *More* menu.
+Compress older recordings from the title-bar **Compress videos** button, *More → Compress videos...*, or the tray menu. The app checks GitHub Releases for updates automatically and offers download/install from the *More* menu.
+
+To mute your own voice in the recording, use the microphone button left of *Pause*, the tray item *Mute recording mic*, or `Ctrl+Alt+M`. This only affects the recording; the meeting app still hears you. Muting the microphone in Windows Sound settings is followed automatically. A meeting app's own Mute button is internal to that app and cannot be detected, so use MeetRec's control when the recording should be silent.
 
 Requirements: Windows 10 2004+ x64 or Windows 11 x64; Direct3D 11 GPU. There is no 32-bit build; 32-bit Windows 10 and ARM64 are not supported. Windows 10 reached end of regular support on 2025-10-14.
 

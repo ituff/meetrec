@@ -35,6 +35,15 @@ struct StatusSnapshot {
     QualityPreset preset = QualityPreset::Standard;
     bool captureCursor = false;
 
+    // Microphone mute state for the active session. "Muted" is the effective
+    // state: either the manual control or the Windows endpoint mute.
+    // "Captured" says the session requested the microphone (the UI uses it to
+    // show the mute control; the settings toggle may have changed since).
+    bool microphoneCaptured = false;
+    bool microphoneMuted = false;
+    bool microphoneMutedManually = false;
+    bool microphoneMutedBySystem = false;
+
     // Progress.
     std::int64_t activeElapsedMs = 0;
     double approxFps = 0.0;

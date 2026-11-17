@@ -110,6 +110,11 @@ public:
     // values are harmless: the UI only reads them while recording.
     void GetAudioLevels(float& loopback, float& microphone) const noexcept;
 
+    // Manual microphone mute for the active recording. This only removes the
+    // microphone from the recorded mix; it never changes the meeting app or
+    // the Windows endpoint. Session-scoped: Start() resets it.
+    void SetMicrophoneMuted(bool muted) noexcept;
+
 private:
     // Worker entry for the active recording session.
     void SessionWorker(const StartRecordingRequest& request);
@@ -176,6 +181,12 @@ private:
     std::atomic<bool> audioReceived_{false};
     std::atomic<float> loopbackLevel_{0.0f};
     std::atomic<float> micLevel_{0.0f};
+    // True when the active session requested the microphone. Unlike the UI
+    // setting, this cannot change mid-recording.
+    std::atomic<bool> microphoneCaptured_{false};
+    // Shared with AudioCapture: manual comes from the UI/hotkey, system is
+    // polled from the capture endpoint. Created once; only the atomics change.
+    std::shared_ptr<encoder::MicrophoneMuteState> microphoneMuteState_;
     std::uint32_t audioRate_ = 48000;
     std::uint32_t audioChannels_ = 2;
     // Output-time cursor for the audio stream (100ns). Audio timestamps must

@@ -71,6 +71,8 @@ constexpr UINT kCmdTrayHelp = 2305;
 constexpr UINT kCmdTrayExit = 2306;
 constexpr UINT kCmdTrayCompress = 2307;
 constexpr UINT kCmdTrayUpdate = 2308;
+constexpr UINT kCmdTrayMute = 2309;
+constexpr int kMicMuteHotkeyId = 0x4D3A; // Ctrl+Alt+M while a recording is active
 
 struct UpdateCheckPayload {
     bool manual = false;
@@ -285,6 +287,16 @@ void MainWindow::OnCreate() {
     tray_.Create(hwnd_, WM_APP_TRAY);
     tray_.Update(lastSnapshot_);
     SetTimer(hwnd_, timerId_, 200, nullptr);
+    micMuteHotkeyRegistered_ =
+        RegisterHotKey(hwnd_, kMicMuteHotkeyId, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'M') !=
+        FALSE;
+    if (!micMuteHotkeyRegistered_) {
+        log::Warning("UI", "HOTKEY_REGISTER_FAILED", L"",
+                     L"Ctrl+Alt+M is already in use; the footer button and tray menu still "
+                     L"toggle the recording microphone.",
+                     {{"hotkey", "Ctrl+Alt+M"},
+                      {"error", std::to_string(GetLastError())}});
+    }
     if (autoCheckUpdates_) nextUpdateCheckTick_ = GetTickCount64() + 6000;
 
     activateMessage_ = RegisterWindowMessageW(L"VsrActivateExistingInstance");
@@ -362,7 +374,8 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             POINT client = screen;
             ScreenToClient(hwnd, &client);
             if (Contains(layout_.titleBar, client) &&
-                !Contains(layout_.settings, client) && !Contains(layout_.more, client) &&
+                !Contains(layout_.compress, client) && !Contains(layout_.settings, client) &&
+                !Contains(layout_.more, client) &&
                 !Contains(layout_.minimize, client) && !Contains(layout_.maximize, client) &&
                 !Contains(layout_.close, client)) {
                 return HTCAPTION;
@@ -533,6 +546,12 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             pressed_ = Hit::None;
             InvalidateAll();
             return 0;
+        case WM_HOTKEY:
+            if (wp == kMicMuteHotkeyId) {
+                OnToggleRecordingMicMute();
+                return 0;
+            }
+            break;
         case WM_KEYDOWN: {
             const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
             if (wp == VK_TAB) {
@@ -753,6 +772,10 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_DESTROY:
             KillTimer(hwnd, timerId_);
+            if (micMuteHotkeyRegistered_) {
+                UnregisterHotKey(hwnd, kMicMuteHotkeyId);
+                micMuteHotkeyRegistered_ = false;
+            }
             if (stopOp_.joinable()) stopOp_.join();
             if (levelMonitor_ != nullptr) {
                 levelMonitor_->Stop();
@@ -986,7 +1009,7 @@ void MainWindow::DrawTitleBar(Gdiplus::Graphics& graphics) {
     const float taglineX =
         layout_.logo.GetRight() + ui::ScaleF(10.0f, dpi_) + appSize.Width +
         ui::ScaleF(14.0f, dpi_);
-    const float taglineWidth = layout_.settings.X - taglineX - ui::ScaleF(12.0f, dpi_);
+    const float taglineWidth = layout_.compress.X - taglineX - ui::ScaleF(12.0f, dpi_);
     if (taglineWidth > ui::ScaleF(80.0f, dpi_)) {
         ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::AppTagline),
                      Gdiplus::RectF(taglineX, layout_.appTitle.Y, taglineWidth,
@@ -995,6 +1018,12 @@ void MainWindow::DrawTitleBar(Gdiplus::Graphics& graphics) {
                      ui::VAlign::Center, true);
     }
 
+    // The compressor's home-page entry; the "..." menu and tray menu keep
+    // their items so existing habits still work.
+    ui::DrawButton(graphics, fonts_, layout_.compress,
+                   i18n::Text(i18n::Str::CompressTitle), ui::ButtonStyle::Ghost,
+                   hover_ == Hit::CompressButton, pressed_ == Hit::CompressButton, true,
+                   ui::Icon::Video);
     const bool settingsHover = hover_ == Hit::SettingsButton;
     const bool settingsPressed = pressed_ == Hit::SettingsButton;
     ui::DrawButton(graphics, fonts_, layout_.settings, i18n::Text(i18n::Str::Settings),
@@ -1372,6 +1401,13 @@ void MainWindow::DrawFooter(Gdiplus::Graphics& graphics, const StatusSnapshot& s
             title = i18n::Text(i18n::Str::Recording);
             titleColor = ui::colors::Danger();
             showTimer = true;
+            if (snap.microphoneMutedBySystem) {
+                hasSub = true;
+                sub = i18n::Text(i18n::Str::MicSystemMutedHint);
+            } else if (snap.microphoneMutedManually) {
+                hasSub = true;
+                sub = i18n::Text(i18n::Str::MicMutedHint);
+            }
             ui::DrawCircle(graphics,
                            Gdiplus::RectF(centerX - ui::ScaleF(5.0f, dpi_),
                                           centerY - ui::ScaleF(5.0f, dpi_),
@@ -1463,6 +1499,13 @@ void MainWindow::DrawFooter(Gdiplus::Graphics& graphics, const StatusSnapshot& s
                        hover_ == Hit::Start, pressed_ == Hit::Start,
                        target_ != nullptr, ui::Icon::Record);
     } else if (snap.state == AppState::Recording) {
+        if (snap.microphoneCaptured) {
+            ui::DrawButton(graphics, fonts_, layout_.muteButton, L"",
+                           ui::ButtonStyle::Secondary, hover_ == Hit::MicMute,
+                           pressed_ == Hit::MicMute, true,
+                           snap.microphoneMutedManually ? ui::Icon::MicrophoneMuted
+                                                        : ui::Icon::Microphone);
+        }
         ui::DrawButton(graphics, fonts_, layout_.secondaryButton,
                        i18n::Text(i18n::Str::Pause), ui::ButtonStyle::Secondary,
                        hover_ == Hit::PauseResume, pressed_ == Hit::PauseResume, true,
@@ -1472,6 +1515,13 @@ void MainWindow::DrawFooter(Gdiplus::Graphics& graphics, const StatusSnapshot& s
                        hover_ == Hit::Stop, pressed_ == Hit::Stop, true,
                        ui::Icon::Square);
     } else if (snap.state == AppState::Paused) {
+        if (snap.microphoneCaptured) {
+            ui::DrawButton(graphics, fonts_, layout_.muteButton, L"",
+                           ui::ButtonStyle::Secondary, hover_ == Hit::MicMute,
+                           pressed_ == Hit::MicMute, true,
+                           snap.microphoneMutedManually ? ui::Icon::MicrophoneMuted
+                                                        : ui::Icon::Microphone);
+        }
         ui::DrawButton(graphics, fonts_, layout_.primaryButton,
                        i18n::Text(i18n::Str::Resume), ui::ButtonStyle::Primary,
                        hover_ == Hit::PauseResume, pressed_ == Hit::PauseResume, true,
@@ -1724,6 +1774,8 @@ void MainWindow::UpdateLayout() {
     layout.minimize = Gdiplus::RectF(width - S(132), 0.0f, S(44), S(44));
     layout.more = Gdiplus::RectF(width - S(172), S(5), S(36), S(34));
     layout.settings = Gdiplus::RectF(width - S(252), S(5), S(76), S(34));
+    layout.compress = Gdiplus::RectF(layout.settings.X - S(8) - S(146), S(5), S(146),
+                                     S(34));
 
     const float pad = S(16);
     const float contentTop = S(44) + S(10);
@@ -1824,6 +1876,11 @@ void MainWindow::UpdateLayout() {
             Gdiplus::RectF(pad + S(34), footerTop + S(34), S(480), S(18));
         const float buttonY = footerTop + (S(68) - S(40)) / 2.0f;
         const float stopX = width - pad - S(160);
+        layout.muteButton = Gdiplus::RectF();
+        const bool showMute =
+            (lastSnapshot_.state == AppState::Recording ||
+             lastSnapshot_.state == AppState::Paused) &&
+            lastSnapshot_.microphoneCaptured;
         if (lastSnapshot_.state == AppState::Recording) {
             layout.secondaryButton =
                 Gdiplus::RectF(stopX - S(10) - S(128), buttonY, S(128), S(40));
@@ -1836,6 +1893,27 @@ void MainWindow::UpdateLayout() {
             layout.primaryButton =
                 Gdiplus::RectF(width - pad - S(176), buttonY, S(176), S(40));
         }
+        if (showMute) {
+            const float anchorX = lastSnapshot_.state == AppState::Recording
+                                      ? layout.secondaryButton.X
+                                      : layout.primaryButton.X;
+            layout.muteButton =
+                Gdiplus::RectF(anchorX - S(10) - S(40), buttonY, S(40), S(40));
+        }
+        // Keep the status text clear of the footer buttons at the minimum
+        // window width.
+        float controlsLeft = width - pad;
+        if (lastSnapshot_.state == AppState::Recording) {
+            controlsLeft = showMute ? layout.muteButton.X : layout.secondaryButton.X;
+        } else if (lastSnapshot_.state == AppState::Paused) {
+            controlsLeft = showMute ? layout.muteButton.X : layout.primaryButton.X;
+        } else if (lastSnapshot_.state == AppState::Ready) {
+            controlsLeft = layout.primaryButton.X;
+        }
+        layout.statusTitle.Width =
+            std::max(0.0f, controlsLeft - S(8) - layout.statusTitle.X);
+        layout.statusSub.Width =
+            std::max(0.0f, controlsLeft - S(8) - layout.statusSub.X);
     } else if (page_ == Page::Result) {
         const float areaX = pad;
         const float areaY = contentTop;
@@ -1947,9 +2025,11 @@ void MainWindow::BuildHitTargets() {
             Union(layout_.previewCheckBox, layout_.previewCheckLabel));
         add(Hit::Splitter, layout_.splitter);
         if (lastSnapshot_.state == AppState::Recording) {
+            add(Hit::MicMute, layout_.muteButton);
             add(Hit::PauseResume, layout_.secondaryButton);
             add(Hit::Stop, layout_.stopButton);
         } else if (lastSnapshot_.state == AppState::Paused) {
+            add(Hit::MicMute, layout_.muteButton);
             add(Hit::PauseResume, layout_.primaryButton);
             add(Hit::Stop, layout_.stopButton);
         } else {
@@ -1965,6 +2045,7 @@ void MainWindow::BuildHitTargets() {
         add(Hit::ErrorDiagnostics, layout_.errorDiag);
     }
 
+    add(Hit::CompressButton, layout_.compress);
     add(Hit::SettingsButton, layout_.settings);
     add(Hit::MoreButton, layout_.more);
     add(Hit::MinimizeButton, layout_.minimize);
@@ -1983,6 +2064,7 @@ void MainWindow::BuildHitTargets() {
 bool MainWindow::IsHitEnabled(Hit id) const {
     const AppState state = lastSnapshot_.state;
     switch (id) {
+        case Hit::CompressButton:
         case Hit::SettingsButton:
         case Hit::MoreButton:
         case Hit::MinimizeButton:
@@ -2011,6 +2093,9 @@ bool MainWindow::IsHitEnabled(Hit id) const {
             return page_ == Page::Main && state == AppState::Ready && target_ != nullptr;
         case Hit::PauseResume:
             return page_ == Page::Main &&
+                   (state == AppState::Recording || state == AppState::Paused);
+        case Hit::MicMute:
+            return page_ == Page::Main && lastSnapshot_.microphoneCaptured &&
                    (state == AppState::Recording || state == AppState::Paused);
         case Hit::Stop:
             return page_ == Page::Main &&
@@ -2069,6 +2154,9 @@ void MainWindow::CycleFocus(bool backwards) {
 
 void MainWindow::Activate(Hit id) {
     switch (id) {
+        case Hit::CompressButton:
+            ShowCompressWindow();
+            break;
         case Hit::SettingsButton:
             ShowSettingsPage(0);
             break;
@@ -2119,6 +2207,9 @@ void MainWindow::Activate(Hit id) {
             break;
         case Hit::PauseResume:
             OnPauseResumeClicked();
+            break;
+        case Hit::MicMute:
+            OnToggleRecordingMicMute();
             break;
         case Hit::Stop:
             OnStopClicked();
@@ -2614,6 +2705,14 @@ void MainWindow::ShowTrayMenu() {
         items.push_back({i18n::Text(i18n::Str::TrayResume), L"", ui::Icon::Play,
                          kCmdTrayToggle, true, false, false, false});
     }
+    if (active && snap.microphoneCaptured) {
+        items.push_back(
+            {i18n::Text(snap.microphoneMutedManually ? i18n::Str::UnmuteMicrophone
+                                                     : i18n::Str::MuteMicrophone),
+             micMuteHotkeyRegistered_ ? L"Ctrl+Alt+M" : L"",
+             snap.microphoneMutedManually ? ui::Icon::MicrophoneMuted : ui::Icon::Microphone,
+             kCmdTrayMute, true, false, false, false});
+    }
     items.push_back(
         {i18n::Text(i18n::Str::TrayStop),
          active ? i18n::Format(snap.state == AppState::Paused
@@ -2649,6 +2748,9 @@ void MainWindow::ShowTrayMenu() {
             if (snap.state == AppState::Recording) (void)coordinator_.Pause();
             else (void)coordinator_.Resume();
             RefreshUi();
+            break;
+        case kCmdTrayMute:
+            OnToggleRecordingMicMute();
             break;
         case kCmdTrayStop:
             OnStopClicked();
@@ -2949,6 +3051,26 @@ void MainWindow::OnToggleMicrophone() {
     microphone_ = !microphone_;
     PersistSettings();
     InvalidateAll();
+}
+
+void MainWindow::OnToggleRecordingMicMute() {
+    const StatusSnapshot snap = coordinator_.GetStatus();
+    if (snap.state != AppState::Recording && snap.state != AppState::Paused) return;
+    if (!snap.microphoneCaptured) return;
+    const bool muted = !snap.microphoneMutedManually;
+    coordinator_.SetMicrophoneMuted(muted);
+    if (showNotification_) {
+        const bool systemMuted = snap.microphoneMutedBySystem;
+        const bool effectiveMuted = systemMuted || muted;
+        ShowToast(i18n::Text(effectiveMuted ? i18n::Str::ToastMicMutedTitle
+                                            : i18n::Str::ToastMicUnmutedTitle),
+                  ActiveTargetName(),
+                  i18n::Text(systemMuted ? i18n::Str::MicSystemMutedHint
+                                         : (muted ? i18n::Str::MicMutedHint
+                                                  : i18n::Str::MicUnmutedHint)),
+                  false, false);
+    }
+    RefreshUi();
 }
 
 void MainWindow::OnDeviceMenu(bool output) {

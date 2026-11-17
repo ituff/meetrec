@@ -53,15 +53,19 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
   nothing else leaks into the frame.
 - **Independent audio sources**: WASAPI loopback (system/participants) and microphone, either
   or both, mixed into one AAC track; video-only when both are off.
+- **Mute the recorded microphone** during a recording from the footer button, tray menu, or
+  `Ctrl+Alt+M`; muting the microphone in Windows Sound settings is followed automatically.
+  A meeting app's own Mute button is internal to that app and cannot be detected — this control
+  only affects the recording, never what the meeting hears.
 - **Live level meters** start as soon as a window is selected, so both sources can be verified
   *before* recording; meters stay live while capturing.
 - **Full state machine**: Ready, Preparing, Recording, Paused, Saving, a result card
   (file name/duration/size/path with Open file / Open folder / Record again) and an actionable
   error card with Retry / Help / Diagnostics.
-- **Compress older recordings** (menu → **Compress videos...**): re-encode existing MP4/MKV
-  screen recordings from any app with the same screen-content recipe, at below-normal
-  priority and paused while MeetRec is recording. Originals are never modified; output is
-  `<name>-min.mp4`.
+- **Compress older recordings** (title-bar **Compress videos** button, more menu or tray
+  menu): re-encode existing MP4/MKV screen recordings from any app with the same
+  screen-content recipe, at below-normal priority and paused while MeetRec is recording.
+  Originals are never modified; output is `<name>-min.mp4`.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
@@ -108,6 +112,11 @@ A step-by-step illustrated manual is published on the
   Windows default — recording the wrong endpoint leaves that source silent).
 - **Wear headphones**: without them the microphone also picks up the speakers and the recording
   contains an echo of the participants.
+- **Meeting-app mute does not mute the recording.** Zoom/Teams/Tencent Meeting keep their mute
+  state inside the app and leave the Windows microphone endpoint live, so MeetRec keeps
+  recording your voice. Use the footer microphone button, the tray menu, or `Ctrl+Alt+M` to
+  mute the recording (it does not affect what the meeting hears). Muting the microphone in
+  Windows Sound settings is detected and removes it from the recording automatically.
 - **Do not minimize** the target window while recording — Windows may stop redrawing it and the
   video freezes (the UI shows this hint).
 - If your voice is quieter than the participants, set `VSR_MIC_GAIN` (0.25–8.0, default 1.0).
@@ -287,13 +296,16 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 - **只录一个窗口**:基于 Windows.Graphics.Capture,原位录制目标窗口,其他内容不会入镜。
 - **音频声源相互独立**:WASAPI loopback(系统/对方)与麦克风,可任选或同时开启,混入一条
   AAC 音轨;两者都关闭时录制为纯视频。
+- **录制中可静音麦克风**:底部麦克风按钮、托盘菜单或 `Ctrl+Alt+M`;在 Windows 声音设置里
+  静音麦克风会被自动跟随。会议软件自己的静音按钮对其他程序不可见——此开关只影响录像,
+  不会改变会议里对方听到的声音。
 - **实时电平条**:选中窗口后立即显示系统声音与麦克风电平(共享模式检测),录制前即可确认
   声源;录制中电平条持续更新。
 - **完整状态覆盖**:就绪、准备中、录制中、已暂停、正在保存、结果卡(文件名/时长/大小/路径,
   打开文件 / 打开文件夹 / 再录一个)以及可操作的错误卡(重试 / 查看帮助 / 创建诊断包)。
-- **压缩旧录屏**(菜单 → **压缩视频...**):把其他软件录制的 MP4/MKV 用同一套屏幕内容编码
-  配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。原文件不会被修改,输出为
-  `<原名>-min.mp4`。
+- **压缩旧录屏**(标题栏 **压缩视频** 按钮、更多菜单或托盘菜单均可打开):把其他软件录制的
+  MP4/MKV 用同一套屏幕内容编码配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。
+  原文件不会被修改,输出为 `<原名>-min.mp4`。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。
@@ -336,6 +348,10 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   (Teams/Zoom/腾讯会议有自己的设备选择,可能与 Windows 默认不同——录错端点会导致该声源
   无声)。
 - **戴耳机**:外放会让麦克风同时录到对方声音,录制里出现参会者回声。
+- **会议软件里按静音不会静音录像。** Zoom/Teams/腾讯会议的静音状态只在它自己进程内,
+  Windows 采集端点仍在工作,所以 MeetRec 仍会录到你的声音。需要静音时用底部麦克风按钮、
+  托盘菜单或 `Ctrl+Alt+M`(只影响录像,不影响会议软件)。在 Windows 声音设置里静音麦克风
+  会被自动识别并从录像中剔除。
 - 录制期间**不要最小化**目标窗口——Windows 可能停止重绘导致画面冻结(界面内有提示)。
 - 如果自己的声音比参会者轻,可设置 `VSR_MIC_GAIN`(0.25–8.0,默认 1.0)。
 

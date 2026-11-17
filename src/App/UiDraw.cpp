@@ -377,6 +377,23 @@ void DrawIcon(Gdiplus::Graphics& graphics, Icon icon, const Gdiplus::RectF& rect
                               y + h * 0.86f);
             return;
         }
+        case Icon::MicrophoneMuted: {
+            const Gdiplus::RectF capsule(x + w * 0.36f, y + h * 0.16f, w * 0.28f, h * 0.42f);
+            FillRoundRect(graphics, capsule, w * 0.14f, color);
+            graphics.DrawArc(&pen, x + w * 0.26f, y + h * 0.34f, w * 0.48f, h * 0.40f, 0.0f,
+                             180.0f);
+            graphics.DrawLine(&pen, x + w * 0.50f, y + h * 0.74f, x + w * 0.50f,
+                              y + h * 0.86f);
+            graphics.DrawLine(&pen, x + w * 0.36f, y + h * 0.86f, x + w * 0.64f,
+                              y + h * 0.86f);
+            // Diagonal slash in the button foreground color.
+            Gdiplus::Pen slash(color, strokeWidth * 1.25f);
+            slash.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound,
+                             Gdiplus::DashCapRound);
+            graphics.DrawLine(&slash, x + w * 0.18f, y + h * 0.18f, x + w * 0.82f,
+                              y + h * 0.82f);
+            return;
+        }
         case Icon::Check:
             graphics.DrawLine(&pen, x + w * 0.20f, y + h * 0.52f, x + w * 0.42f,
                               y + h * 0.72f);
@@ -583,7 +600,7 @@ void DrawButton(Gdiplus::Graphics& graphics, const Fonts& fonts, const Gdiplus::
     }
 
     const float iconSize = ScaleF(16.0f, fonts.Dpi());
-    const float gap = icon == Icon::None ? 0.0f : ScaleF(7.0f, fonts.Dpi());
+    const float gap = (icon == Icon::None || label.empty()) ? 0.0f : ScaleF(7.0f, fonts.Dpi());
     const Gdiplus::SizeF textSize = MeasureText(graphics, fonts, label, FontRole::Button);
     const float totalWidth = (icon == Icon::None ? 0.0f : iconSize + gap) + textSize.Width;
     float x = rect.X + (rect.Width - totalWidth) / 2.0f;

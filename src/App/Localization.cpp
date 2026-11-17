@@ -81,6 +81,11 @@ constexpr Entry kZh[] = {
     {Str::Pause, L"暂停"},
     {Str::Resume, L"继续录制"},
     {Str::StopAndSave, L"结束并保存"},
+    {Str::MuteMicrophone, L"静音录制麦克风"},
+    {Str::UnmuteMicrophone, L"取消录制麦克风静音"},
+    {Str::MicMutedHint, L"录制中已静音：不会录入你的声音（不影响会议）"},
+    {Str::MicSystemMutedHint, L"Windows 已静音麦克风：录像中不会录入你的声音"},
+    {Str::MicUnmutedHint, L"录制麦克风已开启：录像会继续录入你的声音"},
     {Str::PreviewOff, L"预览已关闭"},
     {Str::PreviewEmpty, L"选择窗口后显示预览"},
     {Str::PreviewLoading, L"正在准备预览..."},
@@ -213,6 +218,8 @@ constexpr Entry kZh[] = {
     {Str::ToastRecordingTitle, L"正在录制"},
     {Str::ToastSavedTitle, L"录制已保存"},
     {Str::ToastPausedTitle, L"已暂停"},
+    {Str::ToastMicMutedTitle, L"录制麦克风已静音"},
+    {Str::ToastMicUnmutedTitle, L"录制麦克风已开启"},
     {Str::ToastInfoClose, L"关闭通知"},
 
     {Str::ConfirmCloseRecordingTitle, L"录制正在进行"},
@@ -229,7 +236,8 @@ constexpr Entry kZh[] = {
      L"会议软件（Teams、Zoom、腾讯会议等）可能有自己的设备选择，\n"
      L"它不一定和 Windows 默认设备相同。\n\n"
      L"请打开会议软件的“设置 → 设备”，确认它正在使用的麦克风，\n"
-     L"然后在主界面选择同一个设备。建议戴耳机，避免回声。"},
+     L"然后在主界面选择同一个设备。建议戴耳机，避免回声。\n"
+     L"录制中按 Ctrl+Alt+M 只静音录像中的麦克风，不影响会议软件。"},
     {Str::PathInvalidTitle, L"保存位置不可用"},
     {Str::PathInvalidBody, L"请选择一个存在且可写的文件夹。"},
     {Str::SavingCloseBlocked, L"正在保存录制，请稍候。"},
@@ -396,6 +404,13 @@ constexpr Entry kEn[] = {
     {Str::Pause, L"Pause"},
     {Str::Resume, L"Resume recording"},
     {Str::StopAndSave, L"Stop & save"},
+    {Str::MuteMicrophone, L"Mute recording mic"},
+    {Str::UnmuteMicrophone, L"Unmute recording mic"},
+    {Str::MicMutedHint,
+     L"Muted in the recording: your voice is not recorded (meeting unaffected)"},
+    {Str::MicSystemMutedHint,
+     L"Microphone muted in Windows: your voice is not recorded"},
+    {Str::MicUnmutedHint, L"Recording microphone is on: your voice is recorded again"},
     {Str::PreviewOff, L"Preview is off"},
     {Str::PreviewEmpty, L"Select a window to see the preview"},
     {Str::PreviewLoading, L"Preparing the preview..."},
@@ -544,6 +559,8 @@ constexpr Entry kEn[] = {
     {Str::ToastRecordingTitle, L"Recording"},
     {Str::ToastSavedTitle, L"Recording saved"},
     {Str::ToastPausedTitle, L"Paused"},
+    {Str::ToastMicMutedTitle, L"Recording microphone muted"},
+    {Str::ToastMicUnmutedTitle, L"Recording microphone on"},
     {Str::ToastInfoClose, L"Dismiss notification"},
 
     {Str::ConfirmCloseRecordingTitle, L"Recording in progress"},
@@ -563,7 +580,9 @@ constexpr Entry kEn[] = {
      L"Meeting apps (Teams, Zoom, Tencent Meeting, and others) may pick their own\n"
      L"devices, which can differ from the Windows default.\n\n"
      L"Open the meeting app's Settings > Devices page to see which microphone it uses,\n"
-     L"then select the same device in MeetRec. Headphones avoid echo."},
+     L"then select the same device in MeetRec. Headphones avoid echo.\n"
+     L"Ctrl+Alt+M during recording mutes only the recorded mic; the meeting app\n"
+     L"still hears you."},
     {Str::PathInvalidTitle, L"Save location unavailable"},
     {Str::PathInvalidBody, L"Choose a folder that exists and that you can write to."},
     {Str::SavingCloseBlocked, L"Saving the recording. Please wait."},

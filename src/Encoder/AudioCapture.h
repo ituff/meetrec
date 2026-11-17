@@ -43,13 +43,30 @@ struct AudioChunk {
     std::uint64_t timestampUs = 0; // monotonic capture timestamp
 };
 
+// Shared mute state between the app and the capture pipeline. Either source
+// silences the microphone in the mix; the mic source keeps draining so the
+// timestamps stay continuous and no stale audio is replayed after unmute.
+struct MicrophoneMuteState {
+    std::atomic<bool> manual{false}; // set by the UI/hotkey
+    std::atomic<bool> system{false}; // follows the endpoint's mute state
+
+    bool Muted() const noexcept {
+        return manual.load(std::memory_order_relaxed) ||
+               system.load(std::memory_order_relaxed);
+    }
+};
+
 struct AudioCaptureOptions {
     bool loopback = true;    // participants / system sound
     bool microphone = false; // the user's own mic
     // Peak level per source (0..1), delivered at the endpoint's packet cadence.
-    // The UI uses it for the input meters; it never affects the mix.
+    // The UI uses it for the input meters; it never affects the mix. A muted
+    // microphone reports 0 so the meter matches what is recorded.
     using LevelFn = std::function<void(bool microphone, float peak)>;
     LevelFn onLevel;
+    // Optional shared mute state. A null pointer creates a private state, which
+    // keeps the idle level monitor's meter in sync with the endpoint as well.
+    std::shared_ptr<MicrophoneMuteState> muteState;
     // Multiplier applied to mic samples before mixing (clamped to int16).
     // VSR_MIC_GAIN overrides this per machine without a settings change.
     float micGain = 1.0f;
@@ -93,6 +110,8 @@ private:
     void SourceLoop(bool mic);
     // Consumes both timelines on a wall-clock grid, mixes, and emits chunks.
     void MixerLoop();
+    // manual || endpoint mute. Safe from the mixer/source threads.
+    bool MicrophoneMuted() const noexcept;
 
     const IClock& clock_;
     SinkFn sink_;

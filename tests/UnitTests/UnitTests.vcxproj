@@ -36,6 +36,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AudioMuteTests.cpp" />
     <ClCompile Include="BoundedQueueTests.cpp" />
     <ClCompile Include="DiskGuardTests.cpp" />
     <ClCompile Include="EncoderTests.cpp" />

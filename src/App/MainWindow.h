@@ -61,6 +61,7 @@ private:
 
     enum class Hit {
         None,
+        CompressButton,
         SettingsButton,
         MoreButton,
         MinimizeButton,
@@ -80,6 +81,7 @@ private:
         Start,
         PauseResume,
         Stop,
+        MicMute,
         ResultOpenFile,
         ResultOpenFolder,
         ResultAgain,
@@ -98,6 +100,8 @@ private:
         Gdiplus::RectF logo;
         Gdiplus::RectF appTitle;
         Gdiplus::RectF tagline;
+        // Home-page entry to the compressor window (the menus remain).
+        Gdiplus::RectF compress;
         Gdiplus::RectF settings;
         Gdiplus::RectF more;
         Gdiplus::RectF minimize;
@@ -149,6 +153,7 @@ private:
         Gdiplus::RectF primaryButton;
         Gdiplus::RectF secondaryButton;
         Gdiplus::RectF stopButton;
+        Gdiplus::RectF muteButton;
 
         Gdiplus::RectF resultArea;
         Gdiplus::RectF resultIcon;
@@ -237,6 +242,7 @@ private:
     void OnDiagnosticsClicked();
     void OnToggleSystemAudio();
     void OnToggleMicrophone();
+    void OnToggleRecordingMicMute();
     void OnDeviceMenu(bool output);
     void OnQualityMenu();
     void OnTogglePreview();
@@ -322,6 +328,7 @@ private:
     encoder::EncoderPreference encoderPreference_ = encoder::EncoderPreference::Auto;
     bool systemAudio_ = false;
     bool microphone_ = false;
+    bool micMuteHotkeyRegistered_ = false;
     bool showPreview_ = true;
     bool captureCursor_ = false;
     bool minimizeToTray_ = true;

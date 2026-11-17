@@ -2,6 +2,7 @@
 
 #include <audioclient.h>
 #include <mmdeviceapi.h>
+#include <endpointvolume.h>
 #include <propsys.h>
 #include <windows.h>
 
@@ -312,6 +313,9 @@ Result<std::unique_ptr<AudioCapture>> AudioCapture::Start(const IClock& clock, S
         effective.microphone = false;
     }
     effective.micGain = MicGainFromEnv(effective.micGain);
+    if (!effective.muteState) {
+        effective.muteState = std::make_shared<MicrophoneMuteState>();
+    }
 
     if (!effective.loopback && !effective.microphone) {
         return Result<std::unique_ptr<AudioCapture>>{Error{
@@ -385,6 +389,11 @@ void AudioCapture::Stop() noexcept {
     if (mixerThread_.joinable()) mixerThread_.join();
 }
 
+bool AudioCapture::MicrophoneMuted() const noexcept {
+    const auto& state = options_.muteState;
+    return state != nullptr && state->Muted();
+}
+
 // One WASAPI source: opens the endpoint, initializes a shared PCM16 stream
 // (engine-converted: rate, channel count, and float->int16 are all done by
 // the audio engine, matching how Windows' own recorders consume audio) and
@@ -394,6 +403,7 @@ void AudioCapture::SourceLoop(bool mic) {
 
     IMMDeviceEnumerator* enumerator = nullptr;
     IMMDevice* device = nullptr;
+    IAudioEndpointVolume* endpointVolume = nullptr;
     IAudioClient* client = nullptr;
     IAudioCaptureClient* capture = nullptr;
     WAVEFORMATEX* mix = nullptr;
@@ -402,6 +412,7 @@ void AudioCapture::SourceLoop(bool mic) {
         if (mix != nullptr) CoTaskMemFree(mix);
         if (capture != nullptr) capture->Release();
         if (client != nullptr) client->Release();
+        if (endpointVolume != nullptr) endpointVolume->Release();
         if (device != nullptr) device->Release();
         if (enumerator != nullptr) enumerator->Release();
         if (comInitializedHere) CoUninitialize();
@@ -428,6 +439,48 @@ void AudioCapture::SourceLoop(bool mic) {
     }
     if (FAILED(hr)) { fail("GetDefaultAudioEndpoint", hr); return; }
     const std::wstring deviceName = EndpointFriendlyName(device);
+
+    // Follow the endpoint's own mute flag (Windows Sound settings, Volume
+    // Mixer, or a headset switch the driver maps to it). Meeting-app mute
+    // buttons are internal to those apps and never reach this flag, so they
+    // cannot be observed here. Polling also works while the endpoint is idle
+    // and delivers no packets.
+    ULONGLONG lastMutePollTick = 0;
+    auto pollEndpointMute = [&]() {
+        if (!mic || endpointVolume == nullptr || !options_.muteState) return;
+        const ULONGLONG nowTick = GetTickCount64();
+        if (lastMutePollTick != 0 && nowTick - lastMutePollTick < 100) return;
+        lastMutePollTick = nowTick;
+        BOOL muted = FALSE;
+        if (FAILED(endpointVolume->GetMute(&muted))) return;
+        const bool current = muted != FALSE;
+        const bool previous =
+            options_.muteState->system.exchange(current, std::memory_order_relaxed);
+        if (previous == current) return;
+        log::Info("Encoder", current ? "AUDIO_MIC_SYSTEM_MUTED" : "AUDIO_MIC_SYSTEM_UNMUTED",
+                  L"",
+                  current ? L"Windows muted the microphone endpoint; the microphone is "
+                            L"left out of the recording."
+                          : L"Windows unmuted the microphone endpoint; the microphone is "
+                            L"recorded again.",
+                  {{"device", WideToUtf8(deviceName)}});
+    };
+    if (mic) {
+        const HRESULT muteHr = device->Activate(
+            __uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr,
+            reinterpret_cast<void**>(&endpointVolume));
+        if (FAILED(muteHr) || endpointVolume == nullptr) {
+            endpointVolume = nullptr;
+            log::Warning("Encoder", "AUDIO_MIC_MUTE_UNAVAILABLE", L"",
+                         L"Microphone mute detection is not available on this endpoint; "
+                         L"the recording will keep capturing it.",
+                         {{"device", WideToUtf8(deviceName)},
+                          {"hr", std::to_string(static_cast<unsigned long>(muteHr))}});
+        } else {
+            pollEndpointMute();
+        }
+    }
+
     hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
                           reinterpret_cast<void**>(&client));
     if (FAILED(hr)) { fail("IAudioClient activate", hr); return; }
@@ -566,6 +619,7 @@ void AudioCapture::SourceLoop(bool mic) {
     };
 
     while (!stopped_.load(std::memory_order_acquire)) {
+        pollEndpointMute();
         // Drain EVERY queued packet in one cycle: reading slower than the
         // device period overflows the WASAPI buffer and corrupts the audio
         // (observed with the small-period RDP audio endpoint).
@@ -625,7 +679,8 @@ void AudioCapture::SourceLoop(bool mic) {
                     const float value = std::fabs(static_cast<float>(samples[i])) / 32768.0f;
                     if (value > peak) peak = value;
                 }
-                options_.onLevel(mic, peak > 1.0f ? 1.0f : peak);
+                const float reported = mic && MicrophoneMuted() ? 0.0f : peak;
+                options_.onLevel(mic, reported > 1.0f ? 1.0f : reported);
             }
             timeline.Push(timestampUs, samples, frames);
             nextStartUs = timestampUs + durationUs;
@@ -727,10 +782,11 @@ void AudioCapture::MixerLoop() {
         if (hasMic) pull(*micBuf_, micScratch);
 
         const std::size_t n = stepFrames * channels;
+        const bool micMuted = hasMic && MicrophoneMuted();
         mixBuf.resize((chunkFrames + stepFrames) * channels);
         for (std::size_t i = 0; i < n; ++i) {
             std::int32_t mixed = loopbackScratch[i];
-            if (hasMic) {
+            if (hasMic && !micMuted) {
                 mixed += static_cast<std::int32_t>(std::lround(micScratch[i] * gain));
                 if (mixed > 32767) mixed = 32767;
                 else if (mixed < -32768) mixed = -32768;

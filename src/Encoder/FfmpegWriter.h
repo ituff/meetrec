@@ -100,6 +100,10 @@ private:
     Result<void> StageToCpu(ID3D11Texture2D* nv12Frame, std::vector<std::uint8_t>& outNv12);
     Result<void> WritePipe(HANDLE pipe, const void* data, std::size_t bytes,
                            const char* what);
+    // Waits for `child` to open `pipe`, failing fast when the child exits and
+    // after kConnectTimeoutMs when it stays alive but never connects.
+    Result<void> WaitForChildConnection(HANDLE pipe, HANDLE child, const char* what,
+                                        const wchar_t* label);
     // Real-time feeder (see the class comment): video ticks at the preset
     // rate repeating the latest frame; audio drains the FIFO with silence
     // padding. Runs until Finalize sets pacerExit_.
