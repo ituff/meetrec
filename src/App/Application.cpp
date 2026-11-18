@@ -18,6 +18,7 @@
 
 #include <Capture/CaptureInterop.h>
 #include <Capture/GraphicsDevice.h>
+#include <Encoder/FfmpegWriter.h>
 #include <Encoder/H264Mp4Writer.h>
 #include <Encoder/VideoConverter.h>
 #include <DisplayControl/SoftwareDisplayDevice.h>
@@ -500,6 +501,11 @@ int Application::RunInteractive() {
         return 1;
     }
     mainWindow_->ShowAndActivate();
+    // Warm the bundled ffmpeg while the user picks a window. A fresh install
+    // is ~185 MB of DLLs, and the real-time AV scan of them delayed the first
+    // recording start past the pipe deadline (measured 15.5 s on this
+    // machine). Background only; failures are ignored.
+    encoder::FfmpegWriter::PrewarmAsync();
     if (openCompressorOnStart_) {
         mainWindow_->ShowCompressWindow();
         if (!openCompressorFiles_.empty()) {

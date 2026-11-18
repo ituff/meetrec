@@ -1,5 +1,7 @@
 #include "FfmpegWriter.h"
 
+#include <new>
+
 #include <Infrastructure/Guid.h>
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Strings.h>
@@ -8,10 +10,17 @@ namespace vsr::encoder {
 
 namespace {
 
-constexpr DWORD kConnectTimeoutMs = 8'000;   // child must open its pipe
+// A freshly installed ffmpeg is ~185 MB of shared DLLs. Real-time antivirus
+// scans them on first use; measured at 15.5 s on this machine, so the pipe
+// deadline must tolerate a scan that starts when the user clicks Record
+// before the startup prewarm has finished.
+constexpr DWORD kConnectTimeoutMs = 30'000;  // child must open its pipe
 constexpr DWORD kWriteTimeoutMs = 10'000;    // single pipe write deadline
 constexpr DWORD kFinalizeTimeoutMs = 8'000;  // EOF -> child exit deadline
-constexpr DWORD kMuxTimeoutMs = 20'000;      // -c copy remux deadline
+// Remuxing a long meeting (40+ minutes) previously hit the old 20 s deadline
+// while the disk/AV was busy, silently dropping the audio track. A generous
+// deadline keeps the audio; a genuinely wedged mux is still bounded.
+constexpr DWORD kMuxTimeoutMs = 120'000;     // -c copy remux deadline
 constexpr DWORD kPipeOutBufferBytes = 32u * 1024 * 1024; // ~10 NV12 1080p frames of burst absorption
 
 Error ChildError(const char* what, const std::wstring& detail) {
@@ -82,6 +91,56 @@ Result<std::wstring> FfmpegWriter::LocateExecutable() {
                  L"The ffmpeg encoder backend requires ffmpeg.exe. Install it (for example "
                  L"C:\\ffmpeg) or set VSR_FFMPEG_PATH, then try again.",
                  L"ffmpeg.exe not found (env, app dir, PATH, C:\\ffmpeg\\bin)");
+}
+
+namespace {
+
+struct PrewarmContext {
+    std::wstring ffmpegPath;
+};
+
+void CALLBACK PrewarmCallback(PTP_CALLBACK_INSTANCE, PVOID rawContext) {
+    std::unique_ptr<PrewarmContext> context(static_cast<PrewarmContext*>(rawContext));
+    if (context == nullptr || context->ffmpegPath.empty()) return;
+
+    SECURITY_ATTRIBUTES inherit = {};
+    inherit.nLength = sizeof(inherit);
+    inherit.bInheritHandle = TRUE;
+    HANDLE nul = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             &inherit, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    if (nul != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = nul;
+        si.hStdOutput = nul;
+        si.hStdError = nul;
+    }
+    std::wstring commandLine = L"\"" + context->ffmpegPath + L"\" -hide_banner -version";
+    PROCESS_INFORMATION pi = {};
+    if (CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr,
+                       nul != INVALID_HANDLE_VALUE, CREATE_NO_WINDOW, nullptr, nullptr, &si,
+                       &pi)) {
+        CloseHandle(pi.hThread);
+        WaitForSingleObject(pi.hProcess, 60'000);
+        CloseHandle(pi.hProcess);
+    }
+    if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+}
+
+} // namespace
+
+void FfmpegWriter::PrewarmAsync() {
+    auto exe = LocateExecutable();
+    if (!exe) return;
+    auto* context = new (std::nothrow) PrewarmContext{exe.Value()};
+    if (context == nullptr) return;
+    log::Info("Encoder", "FFMPEG_PREWARM_STARTED", L"",
+              L"Warming the ffmpeg binaries in the background.",
+              {{"ffmpegPath", WideToUtf8(exe.Value())}});
+    if (!TrySubmitThreadpoolCallback(PrewarmCallback, context, nullptr)) {
+        delete context;
+    }
 }
 
 namespace {
@@ -219,7 +278,8 @@ Result<HANDLE> FfmpegWriter::SpawnChild(const std::wstring& ffmpegPath,
 
 Result<void> FfmpegWriter::WaitForChildConnection(HANDLE pipe, HANDLE child,
                                                   const char* what,
-                                                  const wchar_t* label) {
+                                                  const wchar_t* label,
+                                                  const std::atomic<bool>* cancel) {
     OVERLAPPED ov = {};
     ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (ov.hEvent == nullptr) {
@@ -244,6 +304,11 @@ Result<void> FfmpegWriter::WaitForChildConnection(HANDLE pipe, HANDLE child,
 
     const ULONGLONG startedMs = GetTickCount64();
     while (!connected && result.IsOk()) {
+        if (cancel != nullptr && cancel->load(std::memory_order_relaxed)) {
+            result = ChildError("recording start cancelled",
+                                L"stop requested while ffmpeg was starting.");
+            break;
+        }
         // Short slices: a child that exits (bad arguments, missing DLL, AV
         // block) is reported immediately instead of masquerading as a slow
         // startup after the full deadline.
@@ -292,7 +357,8 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
                                                            const PresetParams& preset,
                                                            const std::filesystem::path&
                                                                partialPath,
-                                                           const AudioFormat* audioFormat) {
+                                                           const AudioFormat* audioFormat,
+                                                           const std::atomic<bool>* cancel) {
     const ULONGLONG startupBegin = GetTickCount64();
     SECURITY_ATTRIBUTES inherit = {};
     inherit.nLength = sizeof(inherit);
@@ -384,7 +450,7 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
     // Each child must open its (single) input pipe.
     auto videoConnected =
         writer->WaitForChildConnection(writer->videoPipe_, writer->child_,
-                                       "video pipe connect", L"video");
+                                       "video pipe connect", L"video", cancel);
     if (!videoConnected) {
         writer->KillChild();
         return videoConnected.TakeError();
@@ -392,7 +458,7 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
     if (writer->audioPipe_ != nullptr) {
         auto audioConnected =
             writer->WaitForChildConnection(writer->audioPipe_, writer->audioChild_,
-                                           "audio pipe connect", L"audio");
+                                           "audio pipe connect", L"audio", cancel);
         if (!audioConnected) {
             writer->KillChild();
             return audioConnected.TakeError();
@@ -755,37 +821,59 @@ Result<void> FfmpegWriter::Finalize() {
     // failure degrades to the video-only intermediate (valid MP4, the
     // documented audio degrade path) instead of losing the recording.
     if (audioEnabled_) {
-        (void)WaitChild(audioChild_, "audio finalize");
+        auto audioFinalized = WaitChild(audioChild_, "audio finalize");
+        if (!audioFinalized) {
+            log::Warning("Encoder", "AUDIO_FINALIZE_FAILED", L"",
+                         L"The audio encoder did not finalize cleanly; keeping the "
+                         L"video-only recording.",
+                         {{"detail",
+                           WideToUtf8(audioFinalized.GetError().technicalMessage)}});
+        }
         if (result.IsOk()) {
-            auto muxSpawned = SpawnChild(ffmpegPath_,
-                                         BuildMuxArguments(videoIntermediate_,
-                                                           audioIntermediate_, partialPath_));
-            if (muxSpawned) {
-                HANDLE mux = muxSpawned.Value();
-                if (WaitForSingleObject(mux, kMuxTimeoutMs) != WAIT_OBJECT_0) {
-                    TerminateProcess(mux, 1);
-                    WaitForSingleObject(mux, 3000);
-                    result = ChildError("remux", L"remux did not finish in time.");
-                } else {
-                    DWORD muxExit = 1;
-                    GetExitCodeProcess(mux, &muxExit);
-                    if (muxExit != 0) {
-                        result = ChildError("remux",
-                                            L"ffmpeg exit code " + std::to_wstring(muxExit) +
-                                                L"; stderr: " + StderrTail());
+            bool muxFailed = false;
+            if (audioFinalized) {
+                // Only mux a finalized audio file: an unterminated M4A has no
+                // moov atom, and the mux child would wait for it until the
+                // deadline (the old silent audio-drop path).
+                auto muxSpawned =
+                    SpawnChild(ffmpegPath_, BuildMuxArguments(videoIntermediate_,
+                                                              audioIntermediate_,
+                                                              partialPath_));
+                if (muxSpawned) {
+                    HANDLE mux = muxSpawned.Value();
+                    if (WaitForSingleObject(mux, kMuxTimeoutMs) != WAIT_OBJECT_0) {
+                        TerminateProcess(mux, 1);
+                        WaitForSingleObject(mux, 3000);
+                        result = ChildError("remux", L"remux did not finish in time.");
+                        muxFailed = true;
+                    } else {
+                        DWORD muxExit = 1;
+                        GetExitCodeProcess(mux, &muxExit);
+                        if (muxExit != 0) {
+                            result = ChildError(
+                                "remux", L"ffmpeg exit code " + std::to_wstring(muxExit) +
+                                             L"; stderr: " + StderrTail());
+                            muxFailed = true;
+                        }
                     }
+                    CloseHandle(mux);
+                } else {
+                    result = muxSpawned.TakeError();
+                    muxFailed = true;
                 }
-                CloseHandle(mux);
             } else {
-                result = muxSpawned.TakeError();
+                result = ChildError("audio finalize",
+                                    L"audio child failed; skipping the remux.");
             }
             if (!result.IsOk()) {
                 // Degrade to video-only: move the valid video intermediate
                 // over the partial so the coordinator's rename completes.
-                log::Warning("Encoder", "AUDIO_MUX_FAILED", L"",
-                             L"Muxing the audio track failed; keeping the video-only "
-                             L"recording.",
-                             {{"stderr", WideToUtf8(StderrTail())}});
+                if (muxFailed) {
+                    log::Warning("Encoder", "AUDIO_MUX_FAILED", L"",
+                                 L"Muxing the audio track failed; keeping the video-only "
+                                 L"recording.",
+                                 {{"stderr", WideToUtf8(StderrTail())}});
+                }
                 DeleteFileW(partialPath_.c_str());
                 MoveFileExW(videoIntermediate_.c_str(), partialPath_.c_str(),
                             MOVEFILE_REPLACE_EXISTING);

@@ -402,13 +402,16 @@ Result<void> Coordinator::Shutdown() {
 void Coordinator::SessionWorker(const StartRecordingRequest& request) {
     workerAlive_.store(true, std::memory_order_release);
     if (!PrepareSession(request)) {
-        // PrepareSession rolled back and published the error.
+        // PrepareSession rolled back and published the error (unless the user
+        // cancelled, in which case no error is raised).
         bool recoverable = true;
         {
             std::lock_guard<std::mutex> lock(stateMutex_);
             recoverable = lastError_.recoverable;
         }
-        SetState(recoverable ? AppState::Ready : AppState::Faulted);
+        // A Stop during Preparing is a normal cancel, not a fault.
+        const bool cancelled = stopRequested_.load(std::memory_order_relaxed);
+        SetState((recoverable || cancelled) ? AppState::Ready : AppState::Faulted);
         TeardownSession();
         ReleaseRecordingMutex();
         workerAlive_.store(false, std::memory_order_release);
@@ -610,7 +613,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     const encoder::AudioFormat* audioFormatArg =
         (wantSystemAudio || wantMicrophone) && audioRate_ > 0 ? &audioFormat_ : nullptr;
     auto writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
-                                              partialPath_, audioFormatArg);
+                                              partialPath_, audioFormatArg, &stopRequested_);
     if (!writerResult && backend == WriterBackend::MediaFoundation && probe) {
         // Encoder-fallback retry (MF backend only): a candidate can pass the
         // capability probe yet fail at activation or the consumption gate
@@ -630,12 +633,15 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
             DeleteFileW(partialPath_.c_str());
             encoderCap_ = std::make_unique<EncoderCapability>(alternative.Value());
             writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
-                                                 partialPath_, audioFormatArg);
+                                                 partialPath_, audioFormatArg, &stopRequested_);
         } else {
             writerResult = Result<std::unique_ptr<IVideoWriter>>(firstError);
         }
     }
     if (!writerResult) {
+        // A Stop during ffmpeg's slow startup is a normal cancel: the writer
+        // polled stopRequested_ and aborted; do not surface it as an error.
+        if (stopNow()) return false;
         Error e = RollbackError(writerResult.TakeError(), "writer create");
         if (savedPlacement_ != nullptr) {
             (void)WindowPlacementManager().Restore(*savedPlacement_);

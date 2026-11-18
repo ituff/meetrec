@@ -1,6 +1,7 @@
 // Virtual Screen Recorder - recording backend selection and writer factory.
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -30,6 +31,7 @@ WriterBackend ResolveBackend(WriterBackend backend);
 Result<std::unique_ptr<IVideoWriter>> CreateWriter(
     WriterBackend backend, const capture::GraphicsDevice& device,
     const EncoderCapability& encoder, const PresetParams& preset,
-    const std::filesystem::path& partialPath, const AudioFormat* audioFormat);
+    const std::filesystem::path& partialPath, const AudioFormat* audioFormat,
+    const std::atomic<bool>* cancel = nullptr);
 
 } // namespace vsr::encoder

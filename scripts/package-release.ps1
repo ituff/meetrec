@@ -1,15 +1,15 @@
 # MeetRec - builds the portable, ffmpeg-bundled Windows x64 release package.
 #
 # Usage:
-#   powershell -File scripts\package-release.ps1 -Version 1.4.0
-#   powershell -File scripts\package-release.ps1 -FfmpegDir D:\ffmpeg\bin#
+#   powershell -File scripts\package-release.ps1 -Version 1.4.1
+#   powershell -File scripts\package-release.ps1 -FfmpegDir D:\ffmpeg\bin
 # The application discovers ffmpeg.exe next to MeetRec.exe, so
 # the whole folder is the install: unzip = install. The package includes the
 # ffmpeg GPLv3 license and a source pointer for the exact build.
 
 param(
     [string]$Configuration = "Release",
-    [string]$Version = "1.4.0",
+    [string]$Version = "1.4.1",
     [string]$FfmpegDir = "C:\ffmpeg\bin",
     [string]$FfmpegLicense = "",
     [string]$FfmpegSourceUrl = "https://github.com/FFmpeg/FFmpeg",

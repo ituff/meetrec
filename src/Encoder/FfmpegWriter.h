@@ -53,14 +53,23 @@ public:
     // application directory, PATH, then the common C:\ffmpeg\bin install.
     static Result<std::wstring> LocateExecutable();
 
+    // Starts a hidden `ffmpeg -version` child in the background. This warms
+    // the OS image cache and, more importantly on fresh installs, lets
+    // real-time antivirus finish its first scan of the bundled DLLs
+    // (~185 MB); that scan has been observed to delay the first recording
+    // start by 15+ seconds. Fire-and-forget: failures are ignored.
+    static void PrewarmAsync();
+
     // Spawns the ffmpeg children wired to fresh named pipes (one child per
     // input; see the class comment). Fails when a child exits immediately
     // (bad encoder argument, missing binary), with the child's stderr tail in
-    // the error - before recording starts.
+    // the error - before recording starts. `cancel` is polled while waiting
+    // for the pipes so a user Stop aborts a slow startup promptly.
     static Result<std::unique_ptr<FfmpegWriter>> Create(const std::wstring& ffmpegPath,
                                                         const PresetParams& preset,
                                                         const std::filesystem::path& partialPath,
-                                                        const AudioFormat* audioFormat);
+                                                        const AudioFormat* audioFormat,
+                                                        const std::atomic<bool>* cancel = nullptr);
 
     ~FfmpegWriter() override;
 
@@ -102,8 +111,10 @@ private:
                            const char* what);
     // Waits for `child` to open `pipe`, failing fast when the child exits and
     // after kConnectTimeoutMs when it stays alive but never connects.
+    // `cancel` (optional) aborts the wait when the user stops the session.
     Result<void> WaitForChildConnection(HANDLE pipe, HANDLE child, const char* what,
-                                        const wchar_t* label);
+                                        const wchar_t* label,
+                                        const std::atomic<bool>* cancel);
     // Real-time feeder (see the class comment): video ticks at the preset
     // rate repeating the latest frame; audio drains the FIFO with silence
     // padding. Runs until Finalize sets pacerExit_.
