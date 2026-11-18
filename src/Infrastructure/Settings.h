@@ -28,6 +28,9 @@ struct Settings {
     // Foundation) / "ffmpeg" / "mf". The ffmpeg backend bypasses the OS
     // media stack whose encoder MFTs are unreliable on Insider builds.
     std::string encoderBackend = "auto";
+    // Compress window: opt into the detected GPU encoder (QSV/NVENC/AMF).
+    // x264 stays the default because it produces smaller files.
+    bool compressHardwareAcceleration = false;
     bool showPreview = true;
     bool captureCursor = false;
     bool minimizeToTray = true;

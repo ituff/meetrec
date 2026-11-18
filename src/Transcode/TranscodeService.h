@@ -16,6 +16,7 @@
 #include <thread>
 #include <vector>
 
+#include "Arguments.h"
 #include "Probe.h"
 #include "TranscodePreset.h"
 
@@ -50,6 +51,9 @@ struct ServiceSnapshot {
     bool active = false;         // Start() was called and the queue is live
     bool suspended = false;      // recording in progress
     bool running = false;        // a job is executing right now
+    bool hardwareChecked = false;   // encoder detection finished
+    bool hardwareAvailable = false; // a working GPU encoder was found
+    bool hardwareEnabled = false;   // user opted into hardware encoding
     std::wstring ffmpegPath;
     std::wstring ffprobePath;
     std::wstring toolError;      // non-empty when a required tool is missing
@@ -77,6 +81,8 @@ public:
     void SetPreset(Quality quality, Resolution resolution);
     // Re-targets not-yet-started jobs (empty = same folder as each source).
     void SetOutputDirectory(const std::filesystem::path& outputDir);
+    // Opt into the detected GPU encoder. Ignored when none is available.
+    void SetHardwareAcceleration(bool enabled);
     // Stops after the current job; that job returns to the queue.
     void CancelCurrent();
     // Requeues the running job and blocks new ones until Resume().
@@ -109,6 +115,7 @@ private:
     };
 
     void WorkerMain();
+    void DetectHardwareEncoder();
     bool HasUnprobedLocked() const;
     bool HasRunnableLocked() const;
     std::uint64_t PickLocked() const;
@@ -125,10 +132,15 @@ private:
     std::uint64_t nextId_ = 1;
     Quality quality_ = Quality::Standard;
     Resolution resolution_ = Resolution::Keep;
+    VideoEncoder hardwareEncoder_ = VideoEncoder::X264;
+    bool hardwareChecked_ = false;
+    bool hardwareAvailable_ = false;
+    bool hardwareEnabled_ = false;
     bool active_ = false;
     bool suspended_ = false;
     bool stop_ = false;
     std::atomic<bool> cancelCurrent_{false};
+    std::atomic<bool> abortDetection_{false};
     std::wstring ffmpegPath_;
     std::wstring ffprobePath_;
     std::wstring toolError_;

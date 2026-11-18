@@ -25,8 +25,10 @@ namespace vsr::app {
 class CompressWindow {
 public:
     // `recorderBusy` returns true while the recorder is preparing, recording,
-    // paused or stopping.
-    CompressWindow(HWND owner, std::function<bool()> recorderBusy);
+    // paused or stopping. `hardwareChanged` persists the 硬件加速 toggle.
+    CompressWindow(HWND owner, std::function<bool()> recorderBusy,
+                   std::function<void(bool)> hardwareChanged = {},
+                   bool hardwareAcceleration = false);
     ~CompressWindow();
 
     CompressWindow(const CompressWindow&) = delete;
@@ -49,6 +51,7 @@ private:
         Clear,
         Quality,
         Resolution,
+        Hardware,
         OutputChoose,
         OutputReset,
         Start,
@@ -64,6 +67,7 @@ private:
         std::uint64_t id = 0;
         Gdiplus::RectF rect;
         Gdiplus::RectF action;
+        Gdiplus::RectF folderAction;
         bool canOpen = false;
         bool canRemove = false;
     };
@@ -80,6 +84,8 @@ private:
         Gdiplus::RectF qualityField;
         Gdiplus::RectF resolutionLabel;
         Gdiplus::RectF resolutionField;
+        Gdiplus::RectF hardwareLabel;
+        Gdiplus::RectF hardwareToggle;
         Gdiplus::RectF outputLabel;
         Gdiplus::RectF outputField;
         Gdiplus::RectF outputChoose;
@@ -146,6 +152,7 @@ private:
     HWND owner_ = nullptr;
     HWND hwnd_ = nullptr;
     std::function<bool()> recorderBusy_;
+    std::function<void(bool)> hardwareChanged_;
     transcode::TranscodeService service_;
     std::vector<transcode::JobSnapshot> jobs_;
     std::vector<RowLayout> rows_;
@@ -174,6 +181,10 @@ private:
     bool active_ = false;
     bool suspended_ = false;
     bool running_ = false;
+    bool hardwareAvailable_ = false;
+    bool hardwareEnabled_ = false;
+    bool addDialogOpen_ = false;
+    bool folderDialogOpen_ = false;
     std::wstring toolError_;
 };
 

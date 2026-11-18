@@ -5,9 +5,11 @@
 // child-process path is exercised by the release checklist on a real machine.
 #include "TestFramework.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 #include <Encoder/VideoPreset.h>
 #include <Transcode/Arguments.h>
@@ -16,6 +18,7 @@
 #include <Transcode/Probe.h>
 #include <Transcode/ProgressParser.h>
 #include <Transcode/TranscodePreset.h>
+#include <Transcode/TranscodeService.h>
 
 #include <windows.h>
 
@@ -170,6 +173,32 @@ VSR_TEST(Transcode, ArgumentsScaleDownButNeverUp) {
     VSR_CHECK(portrait.find(L"-vf scale=404:720") != std::wstring::npos);
 }
 
+VSR_TEST(Transcode, HardwareArgumentsUseDetectedVendorEncoder) {
+    const EncodeOptions options = OptionsForQuality(Quality::Standard);
+    const std::wstring qsv = BuildTranscodeArguments(
+        L"in.mp4", L"out.mp4", options, Resolution::Keep, 1920, 1080, 30.0,
+        VideoEncoder::Qsv);
+    VSR_CHECK(qsv.find(L"-c:v h264_qsv") != std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-global_quality 31") != std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-crf") == std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-tune stillimage") == std::wstring::npos);
+
+    const std::wstring nvenc = BuildTranscodeArguments(
+        L"in.mp4", L"out.mp4", options, Resolution::Keep, 1920, 1080, 30.0,
+        VideoEncoder::Nvenc);
+    VSR_CHECK(nvenc.find(L"-c:v h264_nvenc") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-rc vbr") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-cq 26") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-b:v 0") != std::wstring::npos);
+
+    const std::wstring amf = BuildTranscodeArguments(
+        L"in.mp4", L"out.mp4", options, Resolution::Keep, 1920, 1080, 30.0,
+        VideoEncoder::Amf);
+    VSR_CHECK(amf.find(L"-c:v h264_amf") != std::wstring::npos);
+    VSR_CHECK(amf.find(L"-rc cqp") != std::wstring::npos);
+    VSR_CHECK(amf.find(L"-qp_i 26") != std::wstring::npos);
+}
+
 VSR_TEST(Transcode, HighPresetDropsStillImageTune) {
     const EncodeOptions options = OptionsForQuality(Quality::High);
     const std::wstring args = BuildTranscodeArguments(L"in.mp4", L"out.mp4", options,
@@ -254,4 +283,44 @@ VSR_TEST(Transcode, OutputNamingAvoidsExistingFiles) {
 
     std::filesystem::remove(desired, ec);
     std::filesystem::remove(dir / L"clip-min-2.mp4", ec);
+}
+
+VSR_TEST(Transcode, FileAddedAfterFinishedBatchWaitsForStart) {
+    TranscodeService service;
+    const std::filesystem::path dir = TempDirectory();
+    const std::filesystem::path first = dir / L"missing-input-1.mp4";
+    const std::filesystem::path second = dir / L"missing-input-2.mp4";
+    std::error_code ec;
+    std::filesystem::remove(first, ec);
+    std::filesystem::remove(second, ec);
+
+    VSR_CHECK(service.Add(first, {}) != 0);
+    service.Start(Quality::Standard, Resolution::Keep);
+
+    bool finished = false;
+    for (int i = 0; i < 400 && !finished; ++i) {
+        const ServiceSnapshot snapshot = service.Snapshot();
+        finished = snapshot.jobs.size() == 1 &&
+                   (snapshot.jobs[0].state == JobState::Failed ||
+                    snapshot.jobs[0].state == JobState::Completed);
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    VSR_CHECK(finished);
+
+    // The queue has drained; a newly added file must stay queued until the
+    // caller starts the next batch explicitly.
+    VSR_CHECK(service.Add(second, {}) != 0);
+    bool probed = false;
+    for (int i = 0; i < 400 && !probed; ++i) {
+        const ServiceSnapshot snapshot = service.Snapshot();
+        probed = snapshot.jobs.size() == 2 && snapshot.jobs[1].probed;
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    VSR_CHECK(probed);
+    const ServiceSnapshot after = service.Snapshot();
+    VSR_CHECK(!after.active);
+    VSR_CHECK(after.jobs.size() == 2);
+    if (after.jobs.size() == 2) {
+        VSR_CHECK(after.jobs[1].state == JobState::Queued);
+    }
 }

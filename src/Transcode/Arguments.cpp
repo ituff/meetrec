@@ -2,6 +2,16 @@
 
 namespace vsr::transcode {
 
+const char* ToString(VideoEncoder encoder) noexcept {
+    switch (encoder) {
+        case VideoEncoder::Qsv: return "qsv";
+        case VideoEncoder::Nvenc: return "nvenc";
+        case VideoEncoder::Amf: return "amf";
+        case VideoEncoder::X264: break;
+    }
+    return "x264";
+}
+
 std::wstring QuoteArgument(const std::wstring& value) {
     return L"\"" + value + L"\"";
 }
@@ -10,7 +20,7 @@ std::wstring BuildTranscodeArguments(const std::wstring& input,
                                      const std::wstring& partialOutput,
                                      const EncodeOptions& options, Resolution resolution,
                                      std::uint32_t sourceWidth, std::uint32_t sourceHeight,
-                                     double sourceFrameRate) {
+                                     double sourceFrameRate, VideoEncoder encoder) {
     std::wstring command;
     command += L"-hide_banner -loglevel error -nostdin -nostats -y ";
 
@@ -20,12 +30,37 @@ std::wstring BuildTranscodeArguments(const std::wstring& input,
     // streams are dropped: MP4 cannot carry most of them.
     command += L"-map 0:v:0 -map 0:a:0? -sn -dn ";
 
-    command += L"-c:v libx264 -preset veryfast ";
-    if (options.screenContentTune) command += L"-tune stillimage ";
-    command += L"-crf " + std::to_wstring(options.crf) + L" ";
-    command += L"-maxrate " + std::to_wstring(options.maxrateBps) + L" ";
-    command += L"-bufsize " + std::to_wstring(options.maxrateBps * 2) + L" ";
-    command += L"-pix_fmt yuv420p ";
+    switch (encoder) {
+        case VideoEncoder::Qsv:
+            // QSV has no CRF; ICQ (global_quality) is its constant-quality
+            // mode. The offset keeps output sizes close to the x264 presets.
+            command += L"-c:v h264_qsv -preset veryfast ";
+            command += L"-global_quality " + std::to_wstring(options.crf + 5) + L" ";
+            break;
+        case VideoEncoder::Nvenc:
+            command += L"-c:v h264_nvenc -preset p5 -tune hq ";
+            command += L"-rc vbr -cq " + std::to_wstring(options.crf) + L" -b:v 0 ";
+            command += L"-maxrate " + std::to_wstring(options.maxrateBps) + L" ";
+            command += L"-bufsize " + std::to_wstring(options.maxrateBps * 2) + L" ";
+            command += L"-pix_fmt yuv420p ";
+            break;
+        case VideoEncoder::Amf:
+            command += L"-c:v h264_amf -quality balanced ";
+            command += L"-rc cqp -qp_i " + std::to_wstring(options.crf) + L" -qp_p " +
+                       std::to_wstring(options.crf) + L" -qp_b " +
+                       std::to_wstring(options.crf) + L" ";
+            command += L"-pix_fmt yuv420p ";
+            break;
+        case VideoEncoder::X264:
+        default:
+            command += L"-c:v libx264 -preset veryfast ";
+            if (options.screenContentTune) command += L"-tune stillimage ";
+            command += L"-crf " + std::to_wstring(options.crf) + L" ";
+            command += L"-maxrate " + std::to_wstring(options.maxrateBps) + L" ";
+            command += L"-bufsize " + std::to_wstring(options.maxrateBps * 2) + L" ";
+            command += L"-pix_fmt yuv420p ";
+            break;
+    }
 
     std::uint32_t targetWidth = 0;
     std::uint32_t targetHeight = 0;

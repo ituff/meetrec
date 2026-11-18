@@ -305,7 +305,8 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   打开文件 / 打开文件夹 / 再录一个)以及可操作的错误卡(重试 / 查看帮助 / 创建诊断包)。
 - **压缩旧录屏**(标题栏 **压缩视频** 按钮、更多菜单或托盘菜单均可打开):把其他软件录制的
   MP4/MKV 用同一套屏幕内容编码配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。
-  原文件不会被修改,输出为 `<原名>-min.mp4`。
+  原文件不会被修改,输出为 `<原名>-min.mp4`。可选**硬件加速**(自动检测 Intel QSV / NVIDIA
+  NVENC / AMD AMF),默认仍用 CPU 编码以保证文件最小;硬件编码失败会自动回退。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。

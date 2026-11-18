@@ -126,3 +126,23 @@ Still required before release:
   frames even without a transcode, so the claim is "no additional drops", not "zero drops".
 - Cancel and failure paths: killing ffmpeg mid-job leaves no partial output and surfaces a
   localized `VSR-*` error.
+
+## Update 2026-11-17: optional GPU encoding
+
+The compress window now offers an opt-in **硬件加速** switch. x264 remains the default because
+it produces the smallest files; hardware encoding is a speed option for users who prefer it.
+
+- On start, the transcode worker probes `h264_qsv`, `h264_nvenc` and `h264_amf` with a one-frame
+  test encode (the encoders are always listed by `-encoders`, so a real encode is the only
+  reliable availability check). The first working encoder is used when the switch is on.
+- Quality mapping: QSV uses ICQ with `global_quality = crf + 5`; NVENC uses VBR + `cq` with the
+  preset's bitrate ceiling; AMF uses CQP with the preset CRF as QP. QSV/NVENC/AMF do not offer
+  x264's `stillimage` tune, so output is usually larger at comparable quality. The window shows
+  that trade-off while the switch is on.
+- A hardware job that fails (driver limits, unsupported input) is retried once with x264; the
+  switch is then disabled for the session and the fallback is logged as `HW_FALLBACK`.
+- The setting persists in `settings.json` (`compressHardwareAcceleration`), still defaulting to
+  off for new installations.
+- Local validation on Intel Iris Xe: h264_qsv detected, a 12 s 1280x720 sample encoded in ~1.2 s
+  (x264: several seconds), 2.70 MB vs. 2.60 MB for x264 Standard; an 8K input that QSV cannot
+  open fell back to x264 and completed.

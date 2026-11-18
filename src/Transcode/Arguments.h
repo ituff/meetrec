@@ -12,6 +12,12 @@
 
 namespace vsr::transcode {
 
+// Software x264 is the default (smallest files). Hardware encoders are an
+// opt-in speed mode; the service detects which one the machine can use.
+enum class VideoEncoder { X264, Qsv, Nvenc, Amf };
+
+const char* ToString(VideoEncoder encoder) noexcept;
+
 // Quoting for CreateProcessW command lines. Public for tests.
 std::wstring QuoteArgument(const std::wstring& value);
 
@@ -19,6 +25,7 @@ std::wstring BuildTranscodeArguments(const std::wstring& input,
                                      const std::wstring& partialOutput,
                                      const EncodeOptions& options, Resolution resolution,
                                      std::uint32_t sourceWidth, std::uint32_t sourceHeight,
-                                     double sourceFrameRate);
+                                     double sourceFrameRate,
+                                     VideoEncoder encoder = VideoEncoder::X264);
 
 } // namespace vsr::transcode

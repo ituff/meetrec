@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cwchar>
 #include <filesystem>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -37,6 +38,13 @@ constexpr UINT kCmdResolution720 = 4112;
 constexpr UINT kCmdResolution1080 = 4113;
 constexpr float kRowHeight = 64.0f;
 constexpr UINT kPollMs = 250;
+// The UI thread runs in the MTA (Media Foundation), but the shell file dialogs
+// require an STA. The pickers therefore run on a dedicated STA thread and post
+// their result back to the window (same pattern as the other folder pickers).
+constexpr UINT kMsgAddResult = WM_APP + 30;
+constexpr UINT kMsgFolderResult = WM_APP + 31;
+
+using FileList = std::vector<std::wstring>;
 
 bool Contains(const Gdiplus::RectF& rect, POINT point) {
     return static_cast<float>(point.x) >= rect.X &&
@@ -82,8 +90,14 @@ bool AllCompleted(const std::vector<transcode::JobSnapshot>& jobs) {
 
 } // namespace
 
-CompressWindow::CompressWindow(HWND owner, std::function<bool()> recorderBusy)
-    : owner_(owner), recorderBusy_(std::move(recorderBusy)) {}
+CompressWindow::CompressWindow(HWND owner, std::function<bool()> recorderBusy,
+                               std::function<void(bool)> hardwareChanged,
+                               bool hardwareAcceleration)
+    : owner_(owner),
+      recorderBusy_(std::move(recorderBusy)),
+      hardwareChanged_(std::move(hardwareChanged)) {
+    service_.SetHardwareAcceleration(hardwareAcceleration);
+}
 
 CompressWindow::~CompressWindow() {
     service_.Shutdown();
@@ -186,6 +200,8 @@ void CompressWindow::OnDestroy() {
     hover_ = Hit::None;
     pressed_ = Hit::None;
     focus_ = Hit::None;
+    addDialogOpen_ = false;
+    folderDialogOpen_ = false;
     jobs_.clear();
     rows_.clear();
     hits_.clear();
@@ -315,10 +331,15 @@ LRESULT CompressWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (GetCapture() == hwnd) ReleaseCapture();
             POINT point = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
             for (const RowLayout& row : rows_) {
+                const transcode::JobSnapshot* job = FindJob(row.id);
+                if (job == nullptr) continue;
+                if (row.canOpen && Contains(row.folderAction, point)) {
+                    OpenOutput(*job, false);
+                    return 0;
+                }
                 if (Contains(row.action, point)) {
-                    if (const transcode::JobSnapshot* job = FindJob(row.id)) {
-                        if (row.canOpen || row.canRemove) RowAction(*job);
-                    }
+                    if (row.canOpen) OpenOutput(*job, true);
+                    else if (row.canRemove) RowAction(*job);
                     return 0;
                 }
             }
@@ -385,6 +406,28 @@ LRESULT CompressWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             DragFinish(drop);
             AddFiles(files);
             SetForegroundWindow(hwnd);
+            return 0;
+        }
+        case kMsgAddResult: {
+            addDialogOpen_ = false;
+            auto* files = reinterpret_cast<FileList*>(lp);
+            if (files != nullptr) {
+                AddFiles(*files);
+                delete files;
+            }
+            return 0;
+        }
+        case kMsgFolderResult: {
+            folderDialogOpen_ = false;
+            auto* directory = reinterpret_cast<std::wstring*>(lp);
+            if (directory != nullptr) {
+                if (!directory->empty()) {
+                    outputDir_ = *directory;
+                    service_.SetOutputDirectory(std::filesystem::path(outputDir_));
+                    RefreshSnapshot();
+                }
+                delete directory;
+            }
             return 0;
         }
         case WM_MEASUREITEM:
@@ -455,6 +498,13 @@ void CompressWindow::UpdateLayout() {
     layout_.resolutionField = Gdiplus::RectF(resolutionX + ui::ScaleF(66.0f, dpi_),
                                              settingsY, ui::ScaleF(178.0f, dpi_),
                                              fieldHeight);
+    const float hardwareWidth = ui::ScaleF(42.0f, dpi_);
+    layout_.hardwareToggle = Gdiplus::RectF(width - pad - hardwareWidth,
+                                            settingsY + ui::ScaleF(6.0f, dpi_),
+                                            hardwareWidth, ui::ScaleF(24.0f, dpi_));
+    layout_.hardwareLabel = Gdiplus::RectF(
+        layout_.hardwareToggle.X - ui::ScaleF(8.0f, dpi_) - ui::ScaleF(120.0f, dpi_),
+        settingsY, ui::ScaleF(120.0f, dpi_), fieldHeight);
 
     const float secondRowY = settingsY + ui::ScaleF(50.0f, dpi_);
     const float outputX = pad + ui::ScaleF(62.0f, dpi_);
@@ -499,6 +549,11 @@ void CompressWindow::UpdateLayout() {
     hits_.push_back({Hit::Clear, layout_.clear});
     hits_.push_back({Hit::Quality, layout_.qualityField});
     hits_.push_back({Hit::Resolution, layout_.resolutionField});
+    hits_.push_back({Hit::Hardware,
+                     Gdiplus::RectF(layout_.hardwareLabel.X, settingsY,
+                                    layout_.hardwareToggle.GetRight() -
+                                        layout_.hardwareLabel.X,
+                                    fieldHeight)});
     hits_.push_back({Hit::OutputChoose, layout_.outputChoose});
     hits_.push_back({Hit::OutputReset, layout_.outputReset});
     hits_.push_back({Hit::Start, layout_.startButton});
@@ -523,17 +578,20 @@ void CompressWindow::RebuildRows() {
                                   layout_.list.Width, rowHeight);
         const bool busy = job.state == transcode::JobState::Running ||
                           job.state == transcode::JobState::Probing;
+        const float actionY = row.rect.Y + ui::ScaleF(18.0f, dpi_);
+        const float actionHeight = ui::ScaleF(28.0f, dpi_);
         if (job.state == transcode::JobState::Completed) {
             row.canOpen = true;
             row.action = Gdiplus::RectF(row.rect.GetRight() - ui::ScaleF(110.0f, dpi_),
-                                        row.rect.Y + ui::ScaleF(18.0f, dpi_),
-                                        ui::ScaleF(94.0f, dpi_),
-                                        ui::ScaleF(28.0f, dpi_));
+                                        actionY, ui::ScaleF(94.0f, dpi_),
+                                        actionHeight);
+            row.folderAction = Gdiplus::RectF(
+                row.action.X - ui::ScaleF(8.0f, dpi_) - ui::ScaleF(118.0f, dpi_),
+                actionY, ui::ScaleF(118.0f, dpi_), actionHeight);
         } else {
             row.canRemove = !busy;
             row.action = Gdiplus::RectF(row.rect.GetRight() - ui::ScaleF(40.0f, dpi_),
-                                        row.rect.Y + ui::ScaleF(18.0f, dpi_),
-                                        ui::ScaleF(24.0f, dpi_),
+                                        actionY, ui::ScaleF(24.0f, dpi_),
                                         ui::ScaleF(24.0f, dpi_));
         }
         rows_.push_back(row);
@@ -722,7 +780,8 @@ void CompressWindow::DrawRow(Gdiplus::Graphics& graphics,
                  ui::colors::Primary(), ui::ScaleF(1.8f, dpi_));
 
     const float textLeft = row.rect.X + ui::ScaleF(64.0f, dpi_);
-    const float textRight = row.action.X - ui::ScaleF(12.0f, dpi_);
+    const float actionsLeft = row.canOpen ? row.folderAction.X : row.action.X;
+    const float textRight = actionsLeft - ui::ScaleF(12.0f, dpi_);
     const float nameWidth = std::max(ui::ScaleF(60.0f, dpi_),
                                      textRight - textLeft - ui::ScaleF(150.0f, dpi_));
     ui::DrawText(graphics, fonts_, FileNameText(job.inputPath),
@@ -745,8 +804,9 @@ void CompressWindow::DrawRow(Gdiplus::Graphics& graphics,
     if (job.state == transcode::JobState::Completed) statusColor = ui::colors::Success();
     else if (job.state == transcode::JobState::Failed) statusColor = ui::colors::DangerText();
     else if (job.state == transcode::JobState::Running) statusColor = ui::colors::Primary();
-    const float statusRight = row.canOpen ? row.action.X - ui::ScaleF(8.0f, dpi_)
-                                          : row.rect.GetRight() - ui::ScaleF(44.0f, dpi_);
+    const float statusRight = row.canOpen
+                                  ? row.folderAction.X - ui::ScaleF(8.0f, dpi_)
+                                  : row.rect.GetRight() - ui::ScaleF(44.0f, dpi_);
     ui::DrawText(graphics, fonts_, RowStatus(job),
                  Gdiplus::RectF(statusRight - ui::ScaleF(150.0f, dpi_),
                                 row.rect.Y + ui::ScaleF(10.0f, dpi_),
@@ -774,6 +834,10 @@ void CompressWindow::DrawRow(Gdiplus::Graphics& graphics,
     }
 
     if (row.canOpen) {
+        ui::DrawButton(graphics, fonts_, row.folderAction,
+                       i18n::Text(i18n::Str::CompressOpenFolder),
+                       ui::ButtonStyle::Ghost, CursorIn(hwnd_, row.folderAction), false,
+                       true, ui::Icon::Folder);
         ui::DrawButton(graphics, fonts_, row.action,
                        i18n::Text(i18n::Str::CompressOpenFile),
                        ui::ButtonStyle::Ghost, CursorIn(hwnd_, row.action), false, true,
@@ -815,6 +879,13 @@ void CompressWindow::DrawSettings(Gdiplus::Graphics& graphics) {
     DrawField(graphics, layout_.resolutionField, ResolutionLabel(),
               hover_ == Hit::Resolution, focus_ == Hit::Resolution,
               ui::Icon::ChevronDown);
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::CompressHardware),
+                 layout_.hardwareLabel, ui::FontRole::Small,
+                 hardwareAvailable_ ? ui::colors::TextSecondary()
+                                    : ui::colors::TextTertiary(),
+                 ui::Align::Far, ui::VAlign::Center, true);
+    ui::DrawToggleSwitch(graphics, layout_.hardwareToggle, hardwareEnabled_,
+                         hardwareAvailable_, hover_ == Hit::Hardware, dpi_);
 
     ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::CompressOutput),
                  layout_.outputLabel, ui::FontRole::Small,
@@ -851,7 +922,10 @@ void CompressWindow::DrawSettings(Gdiplus::Graphics& graphics) {
     std::wstring estimateText;
     ui::FontRole role = ui::FontRole::Small;
     Gdiplus::Color color = ui::colors::TextSecondary();
-    if (smallSource && jobs_.size() == 1) {
+    if (hardwareAvailable_ && hardwareEnabled_) {
+        estimateText = i18n::Text(i18n::Str::CompressHardwareHint);
+        color = ui::colors::Primary();
+    } else if (smallSource && jobs_.size() == 1) {
         estimateText = i18n::Text(i18n::Str::CompressSmallSource);
         color = ui::colors::Warning();
     } else if (anyEstimate) {
@@ -941,9 +1015,9 @@ void CompressWindow::FocusControl(Hit hit, bool keyboard) {
 }
 
 void CompressWindow::CycleFocus(bool backwards) {
-    static const Hit order[] = {Hit::Add,        Hit::Clear,       Hit::Quality,
-                                Hit::Resolution, Hit::OutputChoose, Hit::OutputReset,
-                                Hit::Start,      Hit::Cancel};
+    static const Hit order[] = {Hit::Add,       Hit::Clear,        Hit::Quality,
+                                Hit::Resolution, Hit::Hardware,    Hit::OutputChoose,
+                                Hit::OutputReset, Hit::Start,      Hit::Cancel};
     constexpr std::size_t count = sizeof(order) / sizeof(order[0]);
     std::size_t start = 0;
     for (std::size_t i = 0; i < count; ++i) {
@@ -971,6 +1045,8 @@ bool CompressWindow::IsHitEnabled(Hit hit) const {
         case Hit::Close:
         case Hit::Minimize:
             return true;
+        case Hit::Hardware:
+            return hardwareAvailable_;
         case Hit::Clear:
             return !jobs_.empty();
         case Hit::OutputReset:
@@ -1011,6 +1087,13 @@ void CompressWindow::Activate(Hit hit) {
         case Hit::Resolution:
             ShowResolutionMenu();
             break;
+        case Hit::Hardware:
+            if (hardwareAvailable_) {
+                service_.SetHardwareAcceleration(!hardwareEnabled_);
+                RefreshSnapshot();
+                if (hardwareChanged_) hardwareChanged_(hardwareEnabled_);
+            }
+            break;
         case Hit::OutputChoose:
             ChooseOutputFolder();
             break;
@@ -1050,6 +1133,9 @@ void CompressWindow::RefreshSnapshot() {
     signature += snapshot.active ? L'A' : L'a';
     signature += snapshot.suspended ? L'S' : L's';
     signature += snapshot.running ? L'R' : L'r';
+    signature += snapshot.hardwareChecked ? L'C' : L'c';
+    signature += snapshot.hardwareAvailable ? L'H' : L'h';
+    signature += snapshot.hardwareEnabled ? L'E' : L'e';
     signature += snapshot.toolError;
     for (const transcode::JobSnapshot& job : snapshot.jobs) {
         signature += std::to_wstring(job.id);
@@ -1071,6 +1157,8 @@ void CompressWindow::RefreshSnapshot() {
     active_ = snapshot.active;
     suspended_ = snapshot.suspended;
     running_ = snapshot.running;
+    hardwareAvailable_ = snapshot.hardwareAvailable;
+    hardwareEnabled_ = snapshot.hardwareEnabled;
     toolError_ = snapshot.toolError;
     RebuildRows();
     Invalidate();
@@ -1084,46 +1172,62 @@ void CompressWindow::OnWheel(int delta) {
 }
 
 void CompressWindow::AddFromDialog() {
-    IFileOpenDialog* dialog = nullptr;
-    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                  IID_PPV_ARGS(&dialog));
-    if (FAILED(hr) || dialog == nullptr) return;
-    DWORD options = 0;
-    dialog->GetOptions(&options);
-    dialog->SetOptions(options | FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST |
-                       FOS_FORCEFILESYSTEM | FOS_DONTADDTORECENT);
-    COMDLG_FILTERSPEC filter[] = {
-        {i18n::Text(i18n::Str::CompressFilter),
-         L"*.mp4;*.mkv;*.mov;*.avi;*.wmv;*.flv;*.m4v;*.ts;*.webm;*.mpg;*.mpeg;*.3gp"}};
-    dialog->SetFileTypes(1, filter);
-    dialog->SetTitle(i18n::Text(i18n::Str::CompressAdd));
-    if (dialog->Show(hwnd_) != S_OK) {
-        dialog->Release();
-        return;
+    if (addDialogOpen_) return;
+    addDialogOpen_ = true;
+    const HWND target = hwnd_;
+    const std::wstring title = i18n::Text(i18n::Str::CompressAdd);
+    const std::wstring filter = i18n::Text(i18n::Str::CompressFilter);
+    const std::wstring pattern =
+        L"*.mp4;*.mkv;*.mov;*.avi;*.wmv;*.flv;*.m4v;*.ts;*.webm;*.mpg;*.mpeg;*.3gp";
+    try {
+        std::thread([target, title, filter, pattern] {
+            FileList files;
+            const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+            IFileOpenDialog* dialog = nullptr;
+            if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+                                           CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))) &&
+                dialog != nullptr) {
+                DWORD options = 0;
+                dialog->GetOptions(&options);
+                dialog->SetOptions(options | FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST |
+                                   FOS_FORCEFILESYSTEM | FOS_DONTADDTORECENT);
+                const COMDLG_FILTERSPEC spec[] = {{filter.c_str(), pattern.c_str()}};
+                dialog->SetFileTypes(1, spec);
+                dialog->SetTitle(title.c_str());
+                if (SUCCEEDED(dialog->Show(nullptr))) {
+                    IShellItemArray* results = nullptr;
+                    if (SUCCEEDED(dialog->GetResults(&results)) && results != nullptr) {
+                        DWORD count = 0;
+                        results->GetCount(&count);
+                        files.reserve(count);
+                        for (DWORD i = 0; i < count; ++i) {
+                            IShellItem* item = nullptr;
+                            if (FAILED(results->GetItemAt(i, &item)) || item == nullptr) {
+                                continue;
+                            }
+                            PWSTR path = nullptr;
+                            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) &&
+                                path != nullptr) {
+                                files.emplace_back(path);
+                                CoTaskMemFree(path);
+                            }
+                            item->Release();
+                        }
+                        results->Release();
+                    }
+                }
+                dialog->Release();
+            }
+            if (hrInit == S_OK || hrInit == S_FALSE) CoUninitialize();
+            auto* payload = new FileList(std::move(files));
+            if (!PostMessageW(target, kMsgAddResult, 0,
+                              reinterpret_cast<LPARAM>(payload))) {
+                delete payload;
+            }
+        }).detach();
+    } catch (...) {
+        addDialogOpen_ = false;
     }
-
-    IShellItemArray* results = nullptr;
-    if (FAILED(dialog->GetResults(&results)) || results == nullptr) {
-        dialog->Release();
-        return;
-    }
-    DWORD count = 0;
-    results->GetCount(&count);
-    std::vector<std::wstring> files;
-    files.reserve(count);
-    for (DWORD i = 0; i < count; ++i) {
-        IShellItem* item = nullptr;
-        if (FAILED(results->GetItemAt(i, &item)) || item == nullptr) continue;
-        PWSTR path = nullptr;
-        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
-            files.emplace_back(path);
-            CoTaskMemFree(path);
-        }
-        item->Release();
-    }
-    results->Release();
-    dialog->Release();
-    AddFiles(files);
 }
 
 void CompressWindow::AddFiles(const std::vector<std::wstring>& files) {
@@ -1134,32 +1238,47 @@ void CompressWindow::AddFiles(const std::vector<std::wstring>& files) {
 }
 
 void CompressWindow::ChooseOutputFolder() {
-    IFileOpenDialog* dialog = nullptr;
-    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
-                                  IID_PPV_ARGS(&dialog));
-    if (FAILED(hr) || dialog == nullptr) return;
-    DWORD options = 0;
-    dialog->GetOptions(&options);
-    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM |
-                       FOS_DONTADDTORECENT);
-    dialog->SetTitle(i18n::Text(i18n::Str::CompressChooseFolder));
-    if (dialog->Show(hwnd_) != S_OK) {
-        dialog->Release();
-        return;
+    if (folderDialogOpen_) return;
+    folderDialogOpen_ = true;
+    const HWND target = hwnd_;
+    const std::wstring title = i18n::Text(i18n::Str::CompressChooseFolder);
+    try {
+        std::thread([target, title] {
+            std::wstring picked;
+            const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+            IFileOpenDialog* dialog = nullptr;
+            if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+                                           CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))) &&
+                dialog != nullptr) {
+                DWORD options = 0;
+                dialog->GetOptions(&options);
+                dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM |
+                                   FOS_DONTADDTORECENT);
+                dialog->SetTitle(title.c_str());
+                if (SUCCEEDED(dialog->Show(nullptr))) {
+                    IShellItem* result = nullptr;
+                    if (SUCCEEDED(dialog->GetResult(&result)) && result != nullptr) {
+                        PWSTR path = nullptr;
+                        if (SUCCEEDED(result->GetDisplayName(SIGDN_FILESYSPATH, &path)) &&
+                            path != nullptr) {
+                            picked.assign(path);
+                            CoTaskMemFree(path);
+                        }
+                        result->Release();
+                    }
+                }
+                dialog->Release();
+            }
+            if (hrInit == S_OK || hrInit == S_FALSE) CoUninitialize();
+            auto* payload = new std::wstring(std::move(picked));
+            if (!PostMessageW(target, kMsgFolderResult, 0,
+                              reinterpret_cast<LPARAM>(payload))) {
+                delete payload;
+            }
+        }).detach();
+    } catch (...) {
+        folderDialogOpen_ = false;
     }
-    IShellItem* result = nullptr;
-    if (SUCCEEDED(dialog->GetResult(&result)) && result != nullptr) {
-        PWSTR path = nullptr;
-        if (SUCCEEDED(result->GetDisplayName(SIGDN_FILESYSPATH, &path)) &&
-            path != nullptr) {
-            outputDir_ = path;
-            CoTaskMemFree(path);
-            service_.SetOutputDirectory(std::filesystem::path(outputDir_));
-            RefreshSnapshot();
-        }
-        result->Release();
-    }
-    dialog->Release();
 }
 
 void CompressWindow::ShowQualityMenu() {
@@ -1309,7 +1428,13 @@ std::wstring CompressWindow::RowSubtitle(const transcode::JobSnapshot& job) cons
     if (job.probeFailed) return i18n::Text(i18n::Str::CompressProbeFailed);
     if (job.state == transcode::JobState::Failed && !job.error.empty()) return job.error;
     if (job.state == transcode::JobState::Completed) {
-        return BytesText(job.outputBytes) + L" · " + FileNameText(job.outputPath);
+        std::wstring sizeText = BytesText(job.outputBytes);
+        if (job.sourceBytes > 0 && job.outputBytes > 0) {
+            sizeText = i18n::Format(i18n::Str::CompressSizeChange,
+                                    {i18n::FormatBytes(job.sourceBytes),
+                                     i18n::FormatBytes(job.outputBytes)});
+        }
+        return sizeText + L" · " + FileNameText(job.outputPath);
     }
     std::wstring text;
     if (job.media.width > 0 && job.media.height > 0) {

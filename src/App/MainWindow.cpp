@@ -2258,6 +2258,7 @@ void MainWindow::LoadSettings() {
     minimizeToTray_ = settings.minimizeToTray;
     showNotification_ = settings.showCompletionNotification;
     autoOpenFolder_ = settings.autoOpenOutputFolder;
+    compressHardware_ = settings.compressHardwareAcceleration;
     autoCheckUpdates_ = settings.autoCheckUpdates;
     lastUpdateCheckUnix_ = settings.lastUpdateCheckUnix;
     lastNotifiedUpdateVersion_ = settings.lastNotifiedUpdateVersion;
@@ -2297,6 +2298,7 @@ void MainWindow::ApplySettingsFromStore() {
     minimizeToTray_ = settings.minimizeToTray;
     showNotification_ = settings.showCompletionNotification;
     autoOpenFolder_ = settings.autoOpenOutputFolder;
+    compressHardware_ = settings.compressHardwareAcceleration;
     autoCheckUpdates_ = settings.autoCheckUpdates;
     lastUpdateCheckUnix_ = settings.lastUpdateCheckUnix;
     lastNotifiedUpdateVersion_ = settings.lastNotifiedUpdateVersion;
@@ -2338,6 +2340,7 @@ void MainWindow::PersistSettings() {
     settings.minimizeToTray = minimizeToTray_;
     settings.showCompletionNotification = showNotification_;
     settings.autoOpenOutputFolder = autoOpenFolder_;
+    settings.compressHardwareAcceleration = compressHardware_;
     settings.autoCheckUpdates = autoCheckUpdates_;
     settings.lastUpdateCheckUnix = lastUpdateCheckUnix_;
     settings.lastNotifiedUpdateVersion = lastNotifiedUpdateVersion_;
@@ -2482,11 +2485,18 @@ void MainWindow::ShowSettingsPage(int page) {
 
 void MainWindow::ShowCompressWindow() {
     if (!compressor_) {
-        compressor_ = std::make_unique<CompressWindow>(hwnd_, [this] {
-            const AppState state = coordinator_.GetStatus().state;
-            return state == AppState::Preparing || state == AppState::Recording ||
-                   state == AppState::Paused || state == AppState::Stopping;
-        });
+        compressor_ = std::make_unique<CompressWindow>(
+            hwnd_,
+            [this] {
+                const AppState state = coordinator_.GetStatus().state;
+                return state == AppState::Preparing || state == AppState::Recording ||
+                       state == AppState::Paused || state == AppState::Stopping;
+            },
+            [this](bool enabled) {
+                compressHardware_ = enabled;
+                PersistSettings();
+            },
+            compressHardware_);
     }
     compressor_->Show();
 }

@@ -201,6 +201,11 @@ works.
 *Resolution* keeps the source size by default. Choosing 720p or 1080p downscales while keeping
 the aspect ratio; files get noticeably smaller but text becomes softer.
 
+*Hardware acceleration* is off by default. When enabled, the window detects and uses the GPU
+encoder (Intel QSV / NVIDIA NVENC / AMD AMF): much faster, but files are usually somewhat
+larger than CPU encoding at a similar quality. The switch is greyed out when no usable hardware
+is found, and a failed hardware job automatically falls back to CPU encoding.
+
 ### 6.4 Output folder and estimate
 
 - Output goes next to the source by default, named `<name>-min.mp4`.

@@ -334,6 +334,7 @@ private:
     bool minimizeToTray_ = true;
     bool showNotification_ = true;
     bool autoOpenFolder_ = false;
+    bool compressHardware_ = false;
     bool autoCheckUpdates_ = true;
     long long lastUpdateCheckUnix_ = 0;
     std::string lastNotifiedUpdateVersion_;

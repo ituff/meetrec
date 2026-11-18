@@ -131,6 +131,14 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("compressHardwareAcceleration");
+        if (v.GetType() == json::Type::Boolean) {
+            settings.compressHardwareAcceleration = v.AsBool();
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("captureCursor");
         if (v.GetType() == json::Type::Boolean) settings.captureCursor = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
@@ -216,6 +224,7 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         const bool known = kv.first == "schemaVersion" || kv.first == "outputDirectory" ||
                            kv.first == "encoderPreference" ||
                            kv.first == "encoderBackend" ||
+                           kv.first == "compressHardwareAcceleration" ||
                            kv.first == "qualityPreset" || kv.first == "showPreview" ||
                            kv.first == "captureCursor" || kv.first == "minimizeToTray" ||
                            kv.first == "restoreTargetWindow" ||
@@ -249,6 +258,8 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("qualityPreset", json::Value(ToString(settings.preset)));
     root.Set("encoderPreference", json::Value(settings.encoderPreference));
     root.Set("encoderBackend", json::Value(settings.encoderBackend));
+    root.Set("compressHardwareAcceleration",
+             json::Value(settings.compressHardwareAcceleration));
     root.Set("showPreview", json::Value(settings.showPreview));
     root.Set("captureCursor", json::Value(settings.captureCursor));
     root.Set("minimizeToTray", json::Value(settings.minimizeToTray));

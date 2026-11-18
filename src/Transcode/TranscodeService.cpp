@@ -67,6 +67,7 @@ void TranscodeService::Shutdown() {
         if (stop_) return;
         stop_ = true;
         cancelCurrent_.store(true);
+        abortDetection_.store(true);
     }
     cv_.notify_all();
     if (worker_.joinable()) worker_.join();
@@ -87,6 +88,14 @@ std::uint64_t TranscodeService::Add(const std::filesystem::path& input,
     job.partial = PartialPathFor(job.output);
     job.sourceBytes = FileSizeBytes(input);
     job.estimatedBytes = 0;
+    // A file added after the previous batch finished begins a new idle batch:
+    // it waits for Start instead of being picked up by the old session.
+    const bool idle = std::none_of(jobs_.begin(), jobs_.end(), [](const Job& existing) {
+        return existing.state == JobState::Queued ||
+               existing.state == JobState::Running ||
+               existing.state == JobState::Probing;
+    });
+    if (idle) active_ = false;
     jobs_.push_back(std::move(job));
     cv_.notify_all();
     return jobs_.back().id;
@@ -117,7 +126,6 @@ void TranscodeService::Start(Quality quality, Resolution resolution) {
         std::lock_guard<std::mutex> lock(mutex_);
         quality_ = quality;
         resolution_ = resolution;
-        active_ = true;
         cancelCurrent_.store(false);
         for (Job& job : jobs_) {
             if (job.state == JobState::Failed) {
@@ -126,6 +134,9 @@ void TranscodeService::Start(Quality quality, Resolution resolution) {
             }
         }
         RecomputeEstimatesLocked();
+        // Start with nothing queued (e.g. only completed rows) must not leave
+        // the queue armed for files the user adds later.
+        active_ = HasUnprobedLocked() || HasRunnableLocked();
     }
     cv_.notify_all();
 }
@@ -148,6 +159,13 @@ void TranscodeService::SetOutputDirectory(const std::filesystem::path& outputDir
         job.output = EnsureUniquePath(DeriveOutputPath(job.input, outputDir));
         job.partial = PartialPathFor(job.output);
     }
+}
+
+void TranscodeService::SetHardwareAcceleration(bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Remember the request even before detection finishes; it only takes
+    // effect once a working hardware encoder exists.
+    hardwareEnabled_ = enabled;
 }
 
 void TranscodeService::CancelCurrent() {
@@ -181,6 +199,9 @@ ServiceSnapshot TranscodeService::Snapshot() const {
     ServiceSnapshot snapshot;
     snapshot.active = active_;
     snapshot.suspended = suspended_;
+    snapshot.hardwareChecked = hardwareChecked_;
+    snapshot.hardwareAvailable = hardwareAvailable_;
+    snapshot.hardwareEnabled = hardwareEnabled_;
     snapshot.ffmpegPath = ffmpegPath_;
     snapshot.ffprobePath = ffprobePath_;
     snapshot.toolError = toolError_;
@@ -265,9 +286,72 @@ void TranscodeService::RecomputeEstimatesLocked() {
     }
 }
 
+void TranscodeService::DetectHardwareEncoder() {
+    std::wstring ffmpeg;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ffmpeg = ffmpegPath_;
+    }
+    if (ffmpeg.empty()) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hardwareChecked_ = true;
+        hardwareAvailable_ = false;
+        hardwareEnabled_ = false;
+        return;
+    }
+
+    struct Candidate {
+        VideoEncoder encoder;
+        const wchar_t* name;
+    };
+    constexpr Candidate candidates[] = {
+        {VideoEncoder::Qsv, L"h264_qsv"},
+        {VideoEncoder::Nvenc, L"h264_nvenc"},
+        {VideoEncoder::Amf, L"h264_amf"},
+    };
+    VideoEncoder detected = VideoEncoder::X264;
+    for (const Candidate& candidate : candidates) {
+        if (abortDetection_.load()) break;
+        // A one-frame test encode is the only reliable availability check:
+        // the encoders are always listed in -encoders even without hardware.
+        const std::wstring arguments =
+            L"-hide_banner -loglevel error -nostdin -f lavfi -i "
+            L"color=c=black:s=256x256:d=0.1 -frames:v 1 -c:v " +
+            std::wstring(candidate.name) + L" -f null -";
+        StreamOptions stream;
+        stream.cancel = &abortDetection_;  // Shutdown() aborts the probe quickly.
+        stream.timeoutMs = 15000;
+        std::string stderrTail;
+        bool timedOut = false;
+        auto exit = RunChildStream(ffmpeg, arguments, stream, stderrTail, timedOut);
+        if (exit && !timedOut && exit.Value() == 0) {
+            detected = candidate.encoder;
+            break;
+        }
+    }
+
+    bool available = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hardwareEncoder_ = detected;
+        available = detected != VideoEncoder::X264;
+        hardwareAvailable_ = available;
+        hardwareChecked_ = true;
+        if (!available) hardwareEnabled_ = false;
+    }
+    log::Info("Transcode", "HW_ENCODER_CHECK", L"",
+              L"Hardware encoder detection finished.",
+              {{"available", available ? "true" : "false"},
+               {"encoder", ToString(detected)}});
+}
+
 void TranscodeService::WorkerMain() {
+    DetectHardwareEncoder();
     std::unique_lock<std::mutex> lock(mutex_);
     for (;;) {
+        // A finished batch must not keep the queue live: files added after the
+        // last job completed stay queued until the user presses Start again.
+        if (active_ && !HasUnprobedLocked() && !HasRunnableLocked()) active_ = false;
         cv_.wait(lock, [this] {
             return stop_ || (!suspended_ &&
                              (HasUnprobedLocked() || (active_ && HasRunnableLocked())));
@@ -369,6 +453,7 @@ void TranscodeService::RunJob(std::uint64_t id) {
     MediaInfo media;
     EncodeOptions options;
     Resolution resolution = Resolution::Keep;
+    VideoEncoder encoder = VideoEncoder::X264;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const Job* job = FindLocked(id);
@@ -379,6 +464,7 @@ void TranscodeService::RunJob(std::uint64_t id) {
         media = job->media;
         options = OptionsForQuality(quality_);
         resolution = resolution_;
+        if (hardwareEnabled_ && hardwareAvailable_) encoder = hardwareEncoder_;
         std::error_code existsEc;
         if (std::filesystem::exists(output, existsEc) && !existsEc) {
             Job* mutableJob = FindLocked(id);
@@ -405,11 +491,9 @@ void TranscodeService::RunJob(std::uint64_t id) {
         ffmpegPath_ = ffmpeg;
     }
 
-    const std::wstring arguments =
-        BuildTranscodeArguments(input.wstring(), partial.wstring(), options, resolution,
-                                media.width, media.height, media.frameRate);
     log::Info("Transcode", "JOB_STARTED", L"", input.filename().wstring(),
-              {{"output", WideToUtf8(output.filename().wstring())}});
+              {{"output", WideToUtf8(output.filename().wstring())},
+               {"encoder", ToString(encoder)}});
 
     StreamOptions stream;
     stream.cancel = &cancelCurrent_;
@@ -429,7 +513,43 @@ void TranscodeService::RunJob(std::uint64_t id) {
 
     std::string stderrTail;
     bool timedOut = false;
-    auto exit = RunChildStream(ffmpeg, arguments, stream, stderrTail, timedOut);
+    auto runAttempt = [&](VideoEncoder attemptEncoder) {
+        const std::wstring arguments = BuildTranscodeArguments(
+            input.wstring(), partial.wstring(), options, resolution, media.width,
+            media.height, media.frameRate, attemptEncoder);
+        stderrTail.clear();
+        timedOut = false;
+        return RunChildStream(ffmpeg, arguments, stream, stderrTail, timedOut);
+    };
+
+    auto exit = runAttempt(encoder);
+
+    // A detected GPU encoder can still reject a particular input (resolution
+    // limits, driver hiccups). Fall back to x264 and keep hardware off for
+    // the rest of the session.
+    if (encoder != VideoEncoder::X264 && !stop_ && !cancelCurrent_.load() &&
+        (!exit || exit.Value() != 0 || timedOut)) {
+        std::error_code ec;
+        std::filesystem::remove(partial, ec);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (Job* job = FindLocked(id)) {
+                job->progress = 0.0;
+                job->processedMs = 0;
+                job->outputBytes = 0;
+                job->speed = 0.0;
+            }
+            hardwareAvailable_ = false;
+            hardwareEnabled_ = false;
+        }
+        const std::wstring detail =
+            exit ? TrimDetail(stderrTail) : exit.GetError().userMessage;
+        log::Warning("Transcode", "HW_FALLBACK", L"", input.filename().wstring(),
+                     {{"encoder", ToString(encoder)},
+                      {"detail", WideToUtf8(detail)}});
+        encoder = VideoEncoder::X264;
+        exit = runAttempt(encoder);
+    }
 
     if (stop_) {
         std::error_code ec;
