@@ -1,5 +1,7 @@
 #include "ReleaseInfo.h"
 
+#include <cctype>
+
 #include <Infrastructure/Json.h>
 #include <Infrastructure/Strings.h>
 
@@ -11,6 +13,41 @@ bool EndsWith(const std::string& text, const char* suffix) {
     const std::size_t length = std::char_traits<char>::length(suffix);
     return text.size() >= length &&
            text.compare(text.size() - length, length, suffix) == 0;
+}
+
+// The release body ends with "SHA256: <64 hex>". It comes from the release
+// JSON fetched over HTTPS from api.github.com, so it is a trusted checksum
+// even when the zip itself is downloaded through a third-party proxy.
+std::string FindBodySha256(const std::string& body) {
+    std::string lower;
+    lower.reserve(body.size());
+    for (char c : body) {
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    constexpr char kMarker[] = "sha256:";
+    constexpr std::size_t kMarkerLength = std::char_traits<char>::length(kMarker);
+    std::size_t pos = lower.find(kMarker);
+    while (pos != std::string::npos) {
+        std::size_t start = pos + kMarkerLength;
+        while (start < lower.size() &&
+               (lower[start] == ' ' || lower[start] == '\t' || lower[start] == '\r' ||
+                lower[start] == '\n')) {
+            ++start;
+        }
+        if (start + 64 <= lower.size()) {
+            std::string hash = lower.substr(start, 64);
+            bool valid = true;
+            for (char c : hash) {
+                if (!std::isxdigit(static_cast<unsigned char>(c))) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid) return hash;
+        }
+        pos = lower.find(kMarker, pos + kMarkerLength);
+    }
+    return {};
 }
 
 } // namespace
@@ -39,6 +76,7 @@ Result<ReleaseInfo> ParseLatestReleaseJson(const std::string& jsonText) {
     }
     release.version = *version;
     release.htmlUrl = Utf8ToWide(root.Find("html_url").AsString());
+    release.sha256 = FindBodySha256(root.Find("body").AsString());
 
     const std::string expectedZip =
         "MeetRec-" + version->ToString() + "-win64-with-ffmpeg.zip";

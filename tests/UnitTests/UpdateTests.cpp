@@ -106,3 +106,59 @@ VSR_TEST(Update, Sha256MatchesKnownDigest) {
     std::error_code ec;
     std::filesystem::remove(path, ec);
 }
+
+VSR_TEST(Update, DownloadProxyOnlyRewritesGitHubAssetUrls) {
+    const std::wstring github =
+        L"https://github.com/ituff/meetrec/releases/download/v1.5.1/"
+        L"MeetRec-1.5.1-win64-with-ffmpeg.zip";
+    VSR_CHECK(ProxiedDownloadUrl(github) ==
+              std::wstring(L"https://jscdn.msone.top/") + github);
+
+    const std::wstring other = L"https://example.test/asset.zip";
+    VSR_CHECK(ProxiedDownloadUrl(other) == other);
+
+    const std::wstring api =
+        L"https://api.github.com/repos/ituff/meetrec/releases/latest";
+    VSR_CHECK(ProxiedDownloadUrl(api) == api);
+
+    const std::wstring raw = L"https://raw.githubusercontent.com/a/b/c";
+    VSR_CHECK(ProxiedDownloadUrl(raw) == raw);
+}
+
+VSR_TEST(Update, ParsesTrustedBodyChecksum) {
+    const std::string json = R"({
+        "tag_name": "v1.5.0",
+        "html_url": "https://github.com/ituff/meetrec/releases/tag/v1.5.0",
+        "draft": false,
+        "prerelease": false,
+        "body": "The package hash is written as SHA256: <hash> below.\n\nSHA256: 87EB46E7452061BD5F165C68F3D9B14C72D4F489F26EB8950BCFD44EBFCA6D38\n",
+        "assets": [
+            {"name": "SHA256SUMS.txt", "size": 103,
+             "browser_download_url": "https://github.com/ituff/meetrec/releases/download/v1.5.0/SHA256SUMS.txt"},
+            {"name": "MeetRec-1.5.0-win64-with-ffmpeg.zip", "size": 123,
+             "browser_download_url": "https://github.com/ituff/meetrec/releases/download/v1.5.0/MeetRec-1.5.0-win64-with-ffmpeg.zip"}
+        ]
+    })";
+    auto release = ParseLatestReleaseJson(json);
+    VSR_CHECK(release.IsOk());
+    if (release.IsOk()) {
+        VSR_CHECK_EQ(release.Value().sha256,
+                     std::string("87eb46e7452061bd5f165c68f3d9b14c72d4f489f26eb8950bcfd44ebfca6d38"));
+    }
+
+    const std::string noBodyHash = R"({
+        "tag_name": "v1.4.0",
+        "draft": false,
+        "prerelease": false,
+        "body": "release notes without a checksum",
+        "assets": [
+            {"name": "SHA256SUMS.txt", "size": 103,
+             "browser_download_url": "https://example.test/SHA256SUMS.txt"},
+            {"name": "MeetRec-1.4.0-win64-with-ffmpeg.zip", "size": 123,
+             "browser_download_url": "https://example.test/MeetRec-1.4.0-win64-with-ffmpeg.zip"}
+        ]
+    })";
+    auto older = ParseLatestReleaseJson(noBodyHash);
+    VSR_CHECK(older.IsOk());
+    if (older.IsOk()) VSR_CHECK(older.Value().sha256.empty());
+}

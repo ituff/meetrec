@@ -9,6 +9,7 @@
 #include <fstream>
 #include <vector>
 
+#include <Infrastructure/Log.h>
 #include <Infrastructure/Strings.h>
 
 #pragma comment(lib, "bcrypt.lib")
@@ -19,6 +20,10 @@ namespace {
 
 constexpr wchar_t kDefaultReleaseUrl[] =
     L"https://api.github.com/repos/ituff/meetrec/releases/latest";
+// Reverse proxy for GitHub release assets (China-accessible CDN); the
+// original URL is appended verbatim after the prefix.
+constexpr wchar_t kDownloadProxyPrefix[] = L"https://jscdn.msone.top/";
+constexpr wchar_t kGitHubPrefix[] = L"https://github.com/";
 
 std::wstring Trim(std::wstring text) {
     while (!text.empty() && iswspace(text.back())) text.pop_back();
@@ -42,6 +47,13 @@ std::wstring LatestReleaseUrl() {
         return std::wstring(overrideUrl);
     }
     return kDefaultReleaseUrl;
+}
+
+std::wstring ProxiedDownloadUrl(const std::wstring& url) {
+    if (url.rfind(kGitHubPrefix, 0) == 0) {
+        return std::wstring(kDownloadProxyPrefix) + url;
+    }
+    return url;
 }
 
 std::optional<std::string> FindChecksum(const std::string& sumsText,
@@ -197,19 +209,30 @@ Result<std::filesystem::path> DownloadVerified(const ReleaseInfo& release,
                      L"create_directories failed for " + destinationDir.wstring());
     }
 
-    auto sums = HttpGetText(release.sumsUrl);
-    if (!sums) return sums.TakeError();
-    const auto expected = FindChecksum(sums.Value().body, release.zipName);
-    if (!expected) {
-        return Error(ErrorCode::InternalState,
-                     L"The update checksum could not be found.",
-                     L"SHA256SUMS.txt has no entry for " + release.zipName);
+    std::string expected;
+    if (!release.sha256.empty()) {
+        // The release JSON (fetched directly from api.github.com) carries the
+        // package hash, so a download proxy cannot substitute another zip.
+        expected = release.sha256;
+    } else {
+        // Older releases have no hash in the body: fetch SHA256SUMS.txt.
+        // Prefer the download proxy for reachability, then GitHub directly.
+        auto sums = HttpGetText(ProxiedDownloadUrl(release.sumsUrl));
+        if (!sums) sums = HttpGetText(release.sumsUrl);
+        if (!sums) return sums.TakeError();
+        const auto found = FindChecksum(sums.Value().body, release.zipName);
+        if (!found) {
+            return Error(ErrorCode::InternalState,
+                         L"The update checksum could not be found.",
+                         L"SHA256SUMS.txt has no entry for " + release.zipName);
+        }
+        expected = *found;
     }
 
     const std::filesystem::path zipPath = destinationDir / release.zipName;
     if (std::filesystem::exists(zipPath, ec) && !ec) {
         auto cached = Sha256File(zipPath);
-        if (cached && cached.Value() == *expected) {
+        if (cached && cached.Value() == expected) {
             std::error_code sizeEc;
             const std::uintmax_t size = std::filesystem::file_size(zipPath, sizeEc);
             if (!sizeEc && onProgress) {
@@ -220,29 +243,50 @@ Result<std::filesystem::path> DownloadVerified(const ReleaseInfo& release,
         }
     }
 
-    auto downloaded = HttpDownloadFile(release.zipUrl, zipPath, cancel, onProgress);
-    if (!downloaded) return downloaded.TakeError();
-    if (cancel.load()) {
-        return Error(ErrorCode::InternalState, L"The update download was cancelled.",
-                     L"Download cancelled by the user");
-    }
+    const std::wstring directUrl = release.zipUrl;
+    const std::wstring proxiedUrl = ProxiedDownloadUrl(directUrl);
+    const bool usingProxy = proxiedUrl != directUrl;
 
-    auto actual = Sha256File(zipPath);
-    if (!actual) {
+    auto attempt = [&](const std::wstring& url) -> Result<std::filesystem::path> {
+        auto downloaded = HttpDownloadFile(url, zipPath, cancel, onProgress);
+        if (!downloaded) return downloaded.TakeError();
+        if (cancel.load()) {
+            return Error(ErrorCode::InternalState, L"The update download was cancelled.",
+                         L"Download cancelled by the user");
+        }
+        auto actual = Sha256File(zipPath);
+        if (!actual) {
+            std::error_code removeEc;
+            std::filesystem::remove(zipPath, removeEc);
+            return actual.TakeError();
+        }
+        if (actual.Value() != expected) {
+            std::error_code removeEc;
+            std::filesystem::remove(zipPath, removeEc);
+            return Error(ErrorCode::InternalState,
+                         L"The update package failed verification.",
+                         L"SHA-256 mismatch: expected " + Utf8ToWide(expected) +
+                             L", got " + Utf8ToWide(actual.Value()));
+        }
+        return zipPath;
+    };
+
+    auto result = attempt(proxiedUrl);
+    if (!result && usingProxy && !cancel.load()) {
+        // The proxy can be down, rate-limited, or serve a stale asset. Keep
+        // updates working by retrying the same asset on github.com directly.
+        // New releases use the hash from the API JSON fetched directly from
+        // api.github.com, so this retry remains verified even if the proxy is
+        // compromised.
+        log::Warning("Update", "UPDATE_PROXY_FALLBACK", L"",
+                     L"Accelerated update download failed; retrying GitHub directly.",
+                     {{"url", WideToUtf8(proxiedUrl)},
+                      {"detail", WideToUtf8(result.GetError().technicalMessage)}});
         std::error_code removeEc;
         std::filesystem::remove(zipPath, removeEc);
-        return actual.TakeError();
+        result = attempt(directUrl);
     }
-    if (actual.Value() != *expected) {
-        std::error_code removeEc;
-        std::filesystem::remove(zipPath, removeEc);
-        const std::wstring detail = L"SHA-256 mismatch: expected " +
-                                    Utf8ToWide(*expected) + L", got " +
-                                    Utf8ToWide(actual.Value());
-        return Error(ErrorCode::InternalState,
-                     L"The update package failed verification.", detail);
-    }
-    return zipPath;
+    return result;
 }
 
 } // namespace vsr::update

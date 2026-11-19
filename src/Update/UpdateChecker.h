@@ -17,6 +17,11 @@ namespace vsr::update {
 // Overridden by VSR_UPDATE_API_URL for local mock/qualification servers.
 std::wstring LatestReleaseUrl();
 
+// Large release assets are downloaded through a GitHub reverse proxy; the
+// small SHA256SUMS.txt stays on github.com so the proxy cannot forge both the
+// package and its checksum. Non-GitHub URLs are returned unchanged.
+std::wstring ProxiedDownloadUrl(const std::wstring& url);
+
 // Compares the latest stable release with `currentVersion` (e.g. "1.2.0").
 Result<UpdateCheck> CheckForUpdate(const std::string& currentVersion);
 

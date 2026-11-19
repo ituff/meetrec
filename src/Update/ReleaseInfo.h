@@ -18,6 +18,9 @@ struct ReleaseInfo {
     std::wstring zipUrl;
     std::wstring sumsUrl;
     std::uint64_t zipSize = 0;
+    // Lowercase SHA-256 of the zip from the release body ("SHA256: <hex>"),
+    // fetched from api.github.com. Empty for older releases.
+    std::string sha256;
 };
 
 struct UpdateCheck {

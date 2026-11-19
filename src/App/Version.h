@@ -7,12 +7,12 @@
 
 #define VSR_APP_VERSION_MAJOR 1
 #define VSR_APP_VERSION_MINOR 5
-#define VSR_APP_VERSION_PATCH 0
+#define VSR_APP_VERSION_PATCH 1
 
 // RC syntax: FILEVERSION/PRODUCTVERSION take comma-separated numbers.
-#define VSR_APP_VERSION_FILE 1,5,0,0
+#define VSR_APP_VERSION_FILE 1,5,1,0
 // RC string values (no L prefix).
-#define VSR_APP_VERSION_STR "1.5.0.0"
+#define VSR_APP_VERSION_STR "1.5.1.0"
 // UI, --version, and updater display/compare.
-#define VSR_APP_VERSION_W L"1.5.0"
-#define VSR_APP_VERSION_UTF8 "1.5.0"
+#define VSR_APP_VERSION_W L"1.5.1"
+#define VSR_APP_VERSION_UTF8 "1.5.1"
