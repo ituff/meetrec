@@ -126,8 +126,11 @@ private:
     // then escalates through the bounded-abandon stop path.
     void WatchdogLoop();
     // Containment shared by Stop and the watchdog: bounded wait for the
-    // worker, detach + resource abandon past the deadline.
-    Result<void> WaitForWorkerExit(std::chrono::milliseconds bounded);
+    // worker, detach + resource abandon past the deadline. With
+    // allowFinalizeGrace, a worker that reaches Stopping gets extra time for
+    // the writer's bounded finalize/remux instead of being declared wedged.
+    Result<void> WaitForWorkerExit(std::chrono::milliseconds bounded,
+                                   bool allowFinalizeGrace = false);
 
     void SetState(AppState next);
     void PublishError(const Error& error);

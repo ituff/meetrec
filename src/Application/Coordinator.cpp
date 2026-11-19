@@ -35,6 +35,13 @@ namespace {
 
 constexpr auto kQueueCapacity = std::size_t{8};
 constexpr auto kStopWait = std::chrono::milliseconds(10'000);
+// A long recording's teardown is bounded by the writer's own deadlines
+// (EOF->child exit for video and audio, then the -c copy remux), which can
+// exceed the 10 s stop bound for multi-hour files: a 1 h 51 min recording
+// measured 16.5 s. Once the worker is in Stopping it is finalizing, not
+// wedged, so give it this grace instead of reporting a false failure; the
+// writer deadlines still cap the phase.
+constexpr auto kFinalizeStopWait = std::chrono::milliseconds(180'000);
 // First-time install of the UMDF driver (PnP configure + WUDFHost cold
 // start) measurably exceeds 5 s, so the display wait must budget for it.
 constexpr auto kPreparingDisplayWait = std::chrono::milliseconds(15'000);
@@ -259,7 +266,10 @@ Result<void> Coordinator::Stop(StopReason reason) {
         }
     }
     SetStopRequested(reason);
-    return WaitForWorkerExit(kStopWait);
+    // A user stop during a long recording may legitimately spend longer than
+    // the 10 s stall bound in the writer's finalize/remux; allow the
+    // finalize grace once the worker reaches Stopping.
+    return WaitForWorkerExit(kStopWait, true);
 }
 
 void Coordinator::SetStopRequested(StopReason reason) {
@@ -271,7 +281,8 @@ void Coordinator::SetStopRequested(StopReason reason) {
     stopRequested_.store(true);
 }
 
-Result<void> Coordinator::WaitForWorkerExit(std::chrono::milliseconds bounded) {
+Result<void> Coordinator::WaitForWorkerExit(std::chrono::milliseconds bounded,
+                                            bool allowFinalizeGrace) {
     // Bounded wait (NFR-014): a worker wedged inside a driver call (e.g. a
     // WriteSample that never returns on a stalled encoder MFT) must not hang
     // Stop or process shutdown. After the deadline the thread is detached and
@@ -279,8 +290,26 @@ Result<void> Coordinator::WaitForWorkerExit(std::chrono::milliseconds bounded) {
     // abandoned thread can never operate on freed memory. Stop, Shutdown, and
     // the stall watchdog can reach this concurrently; the join/detach decision
     // is serialized by workerJoinMutex_.
-    const auto deadline = std::chrono::steady_clock::now() + bounded;
+    auto deadline = std::chrono::steady_clock::now() + bounded;
+    bool finalizeGraceApplied = false;
     while (workerAlive_.load(std::memory_order_acquire)) {
+        if (allowFinalizeGrace && !finalizeGraceApplied) {
+            AppState state;
+            {
+                std::lock_guard<std::mutex> lock(stateMutex_);
+                state = state_;
+            }
+            if (state == AppState::Stopping) {
+                // The worker is past capture and inside its bounded teardown;
+                // do not mistake a slow long-recording finalize for a wedge.
+                deadline = std::chrono::steady_clock::now() + kFinalizeStopWait;
+                finalizeGraceApplied = true;
+                log::Info("Coordinator", "STOP_FINALIZE_GRACE", correlationId_,
+                          L"Recording worker is finalizing; extending the stop wait.",
+                          {{"graceSeconds",
+                            std::to_string(kFinalizeStopWait.count() / 1000)}});
+            }
+        }
         if (std::chrono::steady_clock::now() >= deadline) {
             std::lock_guard<std::mutex> joinLock(workerJoinMutex_);
             if (workerAlive_.load(std::memory_order_acquire)) {
@@ -613,7 +642,8 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     const encoder::AudioFormat* audioFormatArg =
         (wantSystemAudio || wantMicrophone) && audioRate_ > 0 ? &audioFormat_ : nullptr;
     auto writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
-                                              partialPath_, audioFormatArg, &stopRequested_);
+                                              partialPath_, audioFormatArg, &stopRequested_,
+                                              request.encoderPreference);
     if (!writerResult && backend == WriterBackend::MediaFoundation && probe) {
         // Encoder-fallback retry (MF backend only): a candidate can pass the
         // capability probe yet fail at activation or the consumption gate
@@ -633,7 +663,8 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
             DeleteFileW(partialPath_.c_str());
             encoderCap_ = std::make_unique<EncoderCapability>(alternative.Value());
             writerResult = encoder::CreateWriter(backend, *device_, *encoderCap_, preset,
-                                                 partialPath_, audioFormatArg, &stopRequested_);
+                                                 partialPath_, audioFormatArg, &stopRequested_,
+                                                 request.encoderPreference);
         } else {
             writerResult = Result<std::unique_ptr<IVideoWriter>>(firstError);
         }

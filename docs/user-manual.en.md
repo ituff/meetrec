@@ -238,8 +238,14 @@ Open *⚙ Settings* from the main window header. Four pages:
 |---|---|
 | **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
-| **Recording** | Save location, file name format, post-recording actions (show completion notification / auto-open folder / minimize to tray) |
+| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray) |
 | **About** | Version, author and project links |
+
+Encoder modes:
+
+- **Automatic**: CPU x264, the most compatible option and the smallest files at a given quality;
+- **Hardware (GPU)**: detects and uses Intel QSV, NVIDIA NVENC or AMD AMF. CPU usage while recording drops significantly, but files are usually larger than x264. If no working GPU encoder is found, recording stops before capture starts and asks you to switch back to Automatic or Software;
+- **Software**: forces CPU x264, excluding GPU-driver issues.
 
 When a new version is available, the *More* menu offers to check for updates; you can download and
 install it, or open the release page. Installing exits MeetRec, replaces the portable files and

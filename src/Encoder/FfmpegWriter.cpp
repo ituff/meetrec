@@ -1,5 +1,6 @@
 #include "FfmpegWriter.h"
 
+#include <chrono>
 #include <new>
 
 #include <Infrastructure/Guid.h>
@@ -16,7 +17,9 @@ namespace {
 // before the startup prewarm has finished.
 constexpr DWORD kConnectTimeoutMs = 30'000;  // child must open its pipe
 constexpr DWORD kWriteTimeoutMs = 10'000;    // single pipe write deadline
-constexpr DWORD kFinalizeTimeoutMs = 8'000;  // EOF -> child exit deadline
+// EOF -> child exit. Writing the MP4 index for a multi-hour recording can
+// take several seconds; 20 s leaves margin for slower disks and busy systems.
+constexpr DWORD kFinalizeTimeoutMs = 20'000;
 // Remuxing a long meeting (40+ minutes) previously hit the old 20 s deadline
 // while the disk/AV was busy, silently dropping the audio track. A generous
 // deadline keeps the audio; a genuinely wedged mux is still bounded.
@@ -145,26 +148,15 @@ void FfmpegWriter::PrewarmAsync() {
 
 namespace {
 
-// One-shot per process. Default libx264 (CPU encode, predictable on every
-// machine). h264_qsv auto-detection is opt-in via VSR_FFMPEG_ALLOW_QSV=1:
-// on machines whose Intel media driver stack misbehaves (the Insider-build
-// disease this backend exists to escape), QSV passes a 3-frame probe yet
-// degrades badly under sustained sessions.
-const wchar_t* DetectVideoEncoder(const std::wstring& ffmpegPath) {
-    static const wchar_t* cached = nullptr;
-    if (cached != nullptr) return cached;
-    cached = L"libx264";
-    wchar_t overrideVenc[64] = {};
-    if (GetEnvironmentVariableW(L"VSR_FFMPEG_VENCODER", overrideVenc, 64) > 0 &&
-        overrideVenc[0] != 0) {
-        return cached = _wcsdup(overrideVenc);
-    }
-    wchar_t allowQsv[4] = {};
-    if (GetEnvironmentVariableW(L"VSR_FFMPEG_ALLOW_QSV", allowQsv, 4) == 0 ||
-        allowQsv[0] != L'1') {
-        return cached;
-    }
-    for (const wchar_t* hw : {L"h264_qsv"}) {
+// One-shot per process: pick a hardware encoder by actually encoding three
+// frames. The encoders are listed even without working hardware, so a probe
+// that produces frames is the only reliable availability test.
+const std::wstring& DetectHardwareVideoEncoder(const std::wstring& ffmpegPath) {
+    static std::wstring cached;
+    static bool checked = false;
+    if (checked) return cached;
+    checked = true;
+    for (const wchar_t* hw : {L"h264_qsv", L"h264_nvenc", L"h264_amf"}) {
         std::wstring commandLine = L"\"" + ffmpegPath + L"\" -hide_banner -loglevel error " +
                                    L"-nostats -nostdin -y -f lavfi " +
                                    L"-i color=black:s=320x180:d=0.1:r=10 " +
@@ -182,7 +174,8 @@ const wchar_t* DetectVideoEncoder(const std::wstring& ffmpegPath) {
             GetExitCodeProcess(pi.hProcess, &exitCode);
             if (exitCode == 0) {
                 CloseHandle(pi.hProcess);
-                return cached = hw;
+                cached = hw;
+                return cached;
             }
         } else {
             TerminateProcess(pi.hProcess, 1);
@@ -190,6 +183,39 @@ const wchar_t* DetectVideoEncoder(const std::wstring& ffmpegPath) {
         CloseHandle(pi.hProcess);
     }
     return cached;
+}
+
+// Resolves the recording video encoder from the user's 编码方式 setting.
+// Auto keeps libx264 (the predictable, smallest-file recipe); Hardware uses
+// the detected GPU encoder; Software forces libx264. The environment
+// variables remain as development overrides.
+Result<std::wstring> SelectVideoEncoder(const std::wstring& ffmpegPath,
+                                        EncoderPreference preference) {
+    wchar_t overrideVenc[64] = {};
+    if (GetEnvironmentVariableW(L"VSR_FFMPEG_VENCODER", overrideVenc, 64) > 0 &&
+        overrideVenc[0] != 0) {
+        return std::wstring(overrideVenc);
+    }
+    if (preference == EncoderPreference::Software) {
+        return std::wstring(L"libx264");
+    }
+    if (preference == EncoderPreference::Hardware) {
+        const std::wstring hw = DetectHardwareVideoEncoder(ffmpegPath);
+        if (!hw.empty()) return hw;
+        return Error(ErrorCode::EncoderUnavailable,
+                     L"No hardware H.264 encoder is available, but the encoder preference "
+                     L"is set to Hardware. Switch the encoder preference to Auto or "
+                     L"Software, then try again.",
+                     L"No h264_qsv/h264_nvenc/h264_amf encoder passed the ffmpeg test "
+                     L"encode");
+    }
+    wchar_t allowQsv[4] = {};
+    if (GetEnvironmentVariableW(L"VSR_FFMPEG_ALLOW_QSV", allowQsv, 4) > 0 &&
+        allowQsv[0] == L'1') {
+        const std::wstring hw = DetectHardwareVideoEncoder(ffmpegPath);
+        if (!hw.empty()) return hw;
+    }
+    return std::wstring(L"libx264");
 }
 
 } // namespace
@@ -207,8 +233,21 @@ std::wstring FfmpegWriter::BuildVideoArguments(const PresetParams& preset,
     const bool hw = wcscmp(videoEncoder, L"libx264") != 0;
     cmd += std::wstring(L"-c:v ") + videoEncoder + L" ";
     if (hw) {
-        // Hardware encoders only do ABR rate control here.
-        cmd += L"-preset veryfast -b:v " + std::to_wstring(preset.bitrateBps) + L" ";
+        // Live rate control: hardware encoders use ABR (the pipe has no
+        // content lookahead), capped at the preset ceiling.
+        const std::wstring bitrate = std::to_wstring(preset.bitrateBps);
+        if (wcscmp(videoEncoder, L"h264_nvenc") == 0) {
+            cmd += L"-preset p5 -tune hq -rc vbr -b:v " + bitrate + L" -maxrate " +
+                   bitrate + L" -bufsize " + std::to_wstring(preset.bitrateBps * 2) +
+                   L" ";
+        } else if (wcscmp(videoEncoder, L"h264_amf") == 0) {
+            cmd += L"-quality balanced -rc vbr_peak -b:v " + bitrate + L" -maxrate " +
+                   bitrate + L" -bufsize " + std::to_wstring(preset.bitrateBps * 2) +
+                   L" ";
+        } else {
+            // QSV (the existing tested path) uses its default rate control.
+            cmd += L"-preset veryfast -b:v " + bitrate + L" ";
+        }
     } else {
         // Meeting-oriented rate control (capped CRF): constant quality keeps
         // shared text and slides sharp while static stretches spend few bits;
@@ -358,7 +397,13 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
                                                            const std::filesystem::path&
                                                                partialPath,
                                                            const AudioFormat* audioFormat,
-                                                           const std::atomic<bool>* cancel) {
+                                                           const std::atomic<bool>* cancel,
+                                                           EncoderPreference
+                                                               encoderPreference) {
+    auto encoderResult = SelectVideoEncoder(ffmpegPath, encoderPreference);
+    if (!encoderResult) return encoderResult.TakeError();
+    const std::wstring videoEncoder = encoderResult.Value();
+
     const ULONGLONG startupBegin = GetTickCount64();
     SECURITY_ATTRIBUTES inherit = {};
     inherit.nLength = sizeof(inherit);
@@ -411,10 +456,10 @@ Result<std::unique_ptr<FfmpegWriter>> FfmpegWriter::Create(const std::wstring& f
         return EncodeHresultError("CreateNamedPipe(video)",
                                   HRESULT_FROM_WIN32(GetLastError()));
     }
-    const wchar_t* videoEncoder = DetectVideoEncoder(ffmpegPath);
     auto spawned = writer->SpawnChild(
         ffmpegPath,
-        BuildVideoArguments(preset, videoName, writer->videoIntermediate_, videoEncoder));
+        BuildVideoArguments(preset, videoName, writer->videoIntermediate_,
+                            videoEncoder.c_str()));
     if (!spawned) {
         CloseHandle(stderrRead);
         CloseHandle(stderrWrite);
@@ -810,18 +855,32 @@ Result<void> FfmpegWriter::Finalize() {
     videoPipe_ = nullptr;
     audioPipe_ = nullptr;
 
+    const auto finalizeStart = std::chrono::steady_clock::now();
+    const auto elapsedMs = [](std::chrono::steady_clock::time_point start) {
+        return static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - start)
+                                          .count());
+    };
+
+    const auto videoStart = std::chrono::steady_clock::now();
     Result<void> result = WaitChild(child_, "video finalize");
+    const long long videoMs = elapsedMs(videoStart);
     if (!result) {
         log::Error("Encoder", "ENCODER_FINALIZE_FAILED", L"", L"Video child failed to finalize.",
                    {{"writtenFrames", std::to_string(writtenFrames_.load())},
                     {"stderr", WideToUtf8(StderrTail())}});
     }
 
+    long long audioMs = 0;
+    long long muxMs = 0;
+
     // Remux the two finalized intermediates into the recording MP4. A remux
     // failure degrades to the video-only intermediate (valid MP4, the
     // documented audio degrade path) instead of losing the recording.
     if (audioEnabled_) {
+        const auto audioStart = std::chrono::steady_clock::now();
         auto audioFinalized = WaitChild(audioChild_, "audio finalize");
+        audioMs = elapsedMs(audioStart);
         if (!audioFinalized) {
             log::Warning("Encoder", "AUDIO_FINALIZE_FAILED", L"",
                          L"The audio encoder did not finalize cleanly; keeping the "
@@ -835,6 +894,7 @@ Result<void> FfmpegWriter::Finalize() {
                 // Only mux a finalized audio file: an unterminated M4A has no
                 // moov atom, and the mux child would wait for it until the
                 // deadline (the old silent audio-drop path).
+                const auto muxStart = std::chrono::steady_clock::now();
                 auto muxSpawned =
                     SpawnChild(ffmpegPath_, BuildMuxArguments(videoIntermediate_,
                                                               audioIntermediate_,
@@ -861,6 +921,7 @@ Result<void> FfmpegWriter::Finalize() {
                     result = muxSpawned.TakeError();
                     muxFailed = true;
                 }
+                muxMs = elapsedMs(muxStart);
             } else {
                 result = ChildError("audio finalize",
                                     L"audio child failed; skipping the remux.");
@@ -892,6 +953,20 @@ Result<void> FfmpegWriter::Finalize() {
         stderrPipe_ = nullptr;
     }
     if (stderrThread_.joinable()) stderrThread_.join();
+
+    const long long totalMs = elapsedMs(finalizeStart);
+    const LogProperties timing = {{"videoMs", std::to_string(videoMs)},
+                                  {"audioMs", std::to_string(audioMs)},
+                                  {"muxMs", std::to_string(muxMs)},
+                                  {"totalMs", std::to_string(totalMs)},
+                                  {"writtenFrames", std::to_string(writtenFrames_.load())}};
+    log::Info("Encoder", "ENCODER_FINALIZE_TIMING", L"", L"Finalize timing.", timing);
+    if (totalMs > 10'000) {
+        // The coordinator's user-stop wait is 10 s; a longer finalize is not
+        // a wedge, but record it so slow disks/long recordings are visible.
+        log::Warning("Encoder", "FINALIZE_SLOW", L"",
+                     L"Recording finalize exceeded the 10 s stop-wait budget.", timing);
+    }
 
     if (result.IsOk()) {
         log::Info("Encoder", "ENCODER_FINALIZED", L"", L"Output finalized.",

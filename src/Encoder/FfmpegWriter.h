@@ -1,7 +1,9 @@
 // Virtual Screen Recorder - ffmpeg child-process recording backend.
 //
 // Pipeline: NV12 frames are staged to CPU and written into a named pipe read
-// by an ffmpeg.exe child as rawvideo (libx264 -> MP4). System audio streams
+// by an ffmpeg.exe child as rawvideo (libx264 by default; the recording
+// encoder setting can select a detected GPU encoder -> MP4). System audio
+// streams
 // through a SECOND pipe to a SEPARATE ffmpeg child (s16le -> AAC -> M4A) and
 // Finalize remuxes both with a third `-c copy` invocation. One child per
 // input is deliberate: a single ffmpeg fed by two raw pipes stalls inside its
@@ -42,6 +44,7 @@
 #include <wrl/client.h>
 
 #include "AudioCapture.h"
+#include "EncoderProbe.h"
 #include "IVideoWriter.h"
 #include "VideoPreset.h"
 
@@ -69,7 +72,9 @@ public:
                                                         const PresetParams& preset,
                                                         const std::filesystem::path& partialPath,
                                                         const AudioFormat* audioFormat,
-                                                        const std::atomic<bool>* cancel = nullptr);
+                                                        const std::atomic<bool>* cancel = nullptr,
+                                                        EncoderPreference encoderPreference =
+                                                            EncoderPreference::Auto);
 
     ~FfmpegWriter() override;
 

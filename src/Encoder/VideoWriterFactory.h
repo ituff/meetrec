@@ -32,6 +32,7 @@ Result<std::unique_ptr<IVideoWriter>> CreateWriter(
     WriterBackend backend, const capture::GraphicsDevice& device,
     const EncoderCapability& encoder, const PresetParams& preset,
     const std::filesystem::path& partialPath, const AudioFormat* audioFormat,
-    const std::atomic<bool>* cancel = nullptr);
+    const std::atomic<bool>* cancel = nullptr,
+    EncoderPreference encoderPreference = EncoderPreference::Auto);
 
 } // namespace vsr::encoder

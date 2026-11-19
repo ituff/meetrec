@@ -295,3 +295,29 @@ VSR_TEST(FfmpegBackend, CommandLineCarriesPipelineParameters) {
     VSR_CHECK(muxArgs.rfind(L"-f mp4") != std::wstring::npos);
     VSR_CHECK(muxArgs.find(L"' + out_rec + '") != std::wstring::npos);
 }
+
+VSR_TEST(Encoder, HardwareRecordingArguments) {
+    const PresetParams params = GetPresetParams(QualityPreset::Standard);
+
+    const std::wstring qsv = FfmpegWriter::BuildVideoArguments(
+        params, L"\\\\.\\pipe\\video", L"C:\\out.mp4", L"h264_qsv");
+    VSR_CHECK(qsv.find(L"-c:v h264_qsv") != std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-preset veryfast") != std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-b:v 2000000") != std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-crf") == std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-tune stillimage") == std::wstring::npos);
+
+    const std::wstring nvenc = FfmpegWriter::BuildVideoArguments(
+        params, L"\\\\.\\pipe\\video", L"C:\\out.mp4", L"h264_nvenc");
+    VSR_CHECK(nvenc.find(L"-c:v h264_nvenc") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-preset p5") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-rc vbr") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-maxrate 2000000") != std::wstring::npos);
+
+    const std::wstring amf = FfmpegWriter::BuildVideoArguments(
+        params, L"\\\\.\\pipe\\video", L"C:\\out.mp4", L"h264_amf");
+    VSR_CHECK(amf.find(L"-c:v h264_amf") != std::wstring::npos);
+    VSR_CHECK(amf.find(L"-quality balanced") != std::wstring::npos);
+    VSR_CHECK(amf.find(L"-rc vbr_peak") != std::wstring::npos);
+    VSR_CHECK(amf.find(L"-b:v 2000000") != std::wstring::npos);
+}

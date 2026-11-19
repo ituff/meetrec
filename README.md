@@ -433,7 +433,7 @@ MeetRec.exe --update-window              # 检查到更新时直接打开更新�
 | `--seconds N` | 固定录制时长 |
 | `--preset low\|standard\|high` | 画质预设 |
 | `--output DIR` | 输出目录 |
-| `--encoder auto\|hardware\|software` | 编码器候选过滤(Media Foundation 后端) |
+| `--encoder auto\|hardware\|software` | 编码器选择:auto/software 用 x264,hardware 用检测到的 GPU 编码器(QSV/NVENC/AMF) |
 | `--backend ffmpeg\|mf\|auto` | 录制后端;`auto` 优先 ffmpeg,回退 MF |
 | `--audio` | 加入系统声音(loopback)+ 麦克风,混入一条 AAC 音轨 |
 | `--audio-out/-in <endpoint-id>` | 指定录制回放/捕获端点 |
@@ -443,7 +443,9 @@ MeetRec.exe --update-window              # 检查到更新时直接打开更新�
 
 默认(`--backend auto`)在 ffmpeg 可用时通过 **ffmpeg.exe 子进程**编码(`VSR_FFMPEG_PATH`、
 应用目录、`PATH` 或 `C:\ffmpeg\bin`),否则通过 Media Foundation sink writer——绕开在部分
-Insider 版本上不稳定的系统媒体栈编码器。仅用于支持的音频转储:`VSR_AUDIO_DUMP_LOOPBACK`、
+Insider 版本上不稳定的系统媒体栈编码器。设置里的「编码方式」选**硬件编码(GPU)**时,ffmpeg
+后端会先用一次短测试编码检测 QSV/NVENC/AMF,再用于录制;CPU 占用明显下降,文件通常更大,
+硬件不可用时录制前会提示切回自动/软件。仅用于支持的音频转储:`VSR_AUDIO_DUMP_LOOPBACK`、
 `VSR_AUDIO_DUMP_MIC`、`VSR_AUDIO_DUMP`;`VSR_MIC_DISABLE=1` 强制仅系统声音。
 
 数据位置(每用户):`%LOCALAPPDATA%\VirtualScreenRecorder\`(`settings.json`、`Logs\`、

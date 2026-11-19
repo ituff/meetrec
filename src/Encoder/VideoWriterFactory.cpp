@@ -33,13 +33,13 @@ Result<std::unique_ptr<IVideoWriter>> CreateWriter(
     WriterBackend backend, const capture::GraphicsDevice& device,
     const EncoderCapability& encoder, const PresetParams& preset,
     const std::filesystem::path& partialPath, const AudioFormat* audioFormat,
-    const std::atomic<bool>* cancel) {
+    const std::atomic<bool>* cancel, EncoderPreference encoderPreference) {
     const WriterBackend resolved = ResolveBackend(backend);
     if (resolved == WriterBackend::Ffmpeg) {
         auto exe = FfmpegWriter::LocateExecutable();
         if (!exe) return exe.TakeError();
-        auto writer =
-            FfmpegWriter::Create(exe.Value(), preset, partialPath, audioFormat, cancel);
+        auto writer = FfmpegWriter::Create(exe.Value(), preset, partialPath, audioFormat,
+                                           cancel, encoderPreference);
         if (!writer) return writer.TakeError();
         std::unique_ptr<IVideoWriter> upcast(writer.Value().release());
         return Result<std::unique_ptr<IVideoWriter>>(std::move(upcast));
