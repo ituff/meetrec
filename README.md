@@ -38,7 +38,13 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 <p align="center">
   <img src="docs/images/ui-overview.png" width="820" alt="MeetRec UI — all 8 states"><br>
   <sub>The product UI in its eight states: ready → recording → paused → finished, plus error,
-  settings, tray menu and the recording toast.</sub>
+  settings, tray menu and the recording toast. Composite shows 1.5.1; since 1.5.2 the title
+  bar has a single ⋯ More menu (Settings inside) next to Compress videos:</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/ui-more-menu.png" width="300" alt="Title bar and the ⋯ More menu since 1.5.2"><br>
+  <sub>Since 1.5.2: Compress videos + the ⋯ More menu (Settings / Check for updates / Help / Exit).</sub>
 </p>
 
 ## How it works
@@ -69,9 +75,11 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
-- **Settings** (General / Audio / Recording / About), owner-drawn tray menu, and a
-  non-activating recording toast. Draggable splitter between settings and preview
-  (double-click restores the 40/60 default; ratio persists in `settings.json`).
+- **Settings** (General / Audio / Recording / About) behind the single title-bar **⋯ More**
+  menu, owner-drawn tray menu (Open / Pause-Resume / Stop / Settings / Compress videos /
+  Check for updates / Help / Exit), and a non-activating recording toast. Draggable splitter
+  between settings and preview (double-click restores the 40/60 default; ratio persists in
+  `settings.json`).
 - **i18n**: Simplified Chinese primary, English included; language follows the Windows display
   language by default and can be overridden in **Settings → General → Language**
   (`system` / `zh-CN` / `en-US`). Stable `VSR-*` error codes gain localized
@@ -282,7 +290,13 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 
 <p align="center">
   <img src="docs/images/ui-overview.png" width="820" alt="MeetRec 界面全部 8 种状态"><br>
-  <sub>产品界面八种状态:就绪 → 录制中 → 已暂停 → 录制完成,以及出错、设置、托盘菜单与录制通知。</sub>
+  <sub>产品界面八种状态:就绪 → 录制中 → 已暂停 → 录制完成,以及出错、设置、托盘菜单与录制通知。
+  配图截自 1.5.1;1.5.2 起标题栏合并为「压缩视频」+「⋯」菜单:</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/ui-more-menu.png" width="300" alt="1.5.2 标题栏与「⋯」菜单"><br>
+  <sub>1.5.2 起的标题栏:压缩视频 + ⋯ 菜单(设置 / 检查更新 / 帮助 / 退出)。</sub>
 </p>
 
 ## 工作流程
@@ -310,9 +324,9 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。
-- **设置窗口**(常规 / 音频 / 录制 / 关于)、自绘托盘菜单(打开 / 暂停-继续 / 停止 / 设置 /
-  帮助 / 退出)、非激活的录制通知卡片;设置列与预览之间可拖动分割条(双击恢复默认 40/60,
-  比例保存在 `settings.json`)。
+- **设置窗口**(常规 / 音频 / 录制 / 关于,从标题栏「⋯」菜单打开)、自绘托盘菜单(打开 /
+  暂停-继续 / 停止 / 设置 / 压缩视频 / 检查更新 / 帮助 / 退出)、非激活的录制通知卡片;
+  设置列与预览之间可拖动分割条(双击恢复默认 40/60,比例保存在 `settings.json`)。
 - **中英文界面**:简体中文为主语言,内置英文;默认跟随 Windows 显示语言,可在
   **设置 → 常规 → 语言** 覆盖(`system` / `zh-CN` / `en-US`)。错误码保留稳定的 `VSR-*`
   标识,并提供本地化的标题与说明。

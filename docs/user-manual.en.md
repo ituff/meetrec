@@ -77,6 +77,12 @@ mixes in system audio (the other participants) and your microphone, and saves a 
 
 ![Main window and all states](images/ui-overview.png)
 
+> Note: the composite above is from 1.5.1 and earlier. **Since 1.5.2** the title bar's top
+> right is the **Compress videos** button plus a single **⋯ More** menu — the standalone
+> ⚙ Settings button is gone, and Settings is the first item of that menu:
+
+![Title-bar entries and the More menu since 1.5.2](images/ui-more-menu.png)
+
 | Area | Purpose |
 |---|---|
 | ① Target window | The selected window card; *Change…* re-opens the picker |
@@ -84,6 +90,7 @@ mixes in system audio (the other participants) and your microphone, and saves a 
 | ③ Other settings | Quality (default Standard 1080p / 30 FPS) and save location |
 | Preview | Live 10 FPS preview of the target — what you see is what gets recorded; disable with *Show preview* |
 | Footer | Status capsule (Ready / Recording / Paused / Finished / Error) + the primary action button |
+| Top-right entries | **Compress videos** opens the compressor; the **⋯** menu: Settings... / Check for updates... / Help... / Exit |
 
 The remaining states — recording (timer + Pause / Stop & save), paused, the result card, the
 error card, the settings window, the tray menu and the recording toast — are shown in the
@@ -168,7 +175,7 @@ The result card shows file name, duration, size and path, with three actions:
 
 - You can minimize MeetRec itself while recording (**this minimizes MeetRec — not the recorded
   meeting window**, which must stay visible).
-- Tray menu: Open / Pause-Resume / Mute-Unmute / Stop / Settings / Help / Exit.
+- Tray menu: Open / Pause-Resume / Mute-Unmute / Stop / Settings / Compress videos / Check for updates / Help / Exit.
 - While recording, a **non-activating** toast shows the current target and duration; clicking
   it returns to the main window without stealing focus.
 
