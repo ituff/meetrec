@@ -251,7 +251,7 @@ Open *⋯ More → Settings...* from the main window header. Four pages:
 Encoder modes:
 
 - **Automatic**: CPU x264, the most compatible option and the smallest files at a given quality;
-- **Hardware (GPU)**: detects and uses Intel QSV, NVIDIA NVENC or AMD AMF. CPU usage while recording drops significantly, but files are usually larger than x264. If no working GPU encoder is found, recording stops before capture starts and asks you to switch back to Automatic or Software;
+- **Hardware (GPU)**: detects and uses Intel QSV, NVIDIA NVENC or AMD AMF. CPU usage while recording drops significantly, and it uses the same capped constant-quality recipe as the compressor, so file sizes stay close to a compressed recording (still somewhat larger than x264 at equal quality). If no working GPU encoder is found, recording stops before capture starts and asks you to switch back to Automatic or Software;
 - **Software**: forces CPU x264, excluding GPU-driver issues.
 
 When a new version is available, the *More* menu offers to check for updates; you can download and
@@ -320,7 +320,8 @@ A: No. MeetRec records locally and independently; cloud recording keeps working 
 
 **Q: How large is a 25-minute 1080p meeting?**
 A: In the same range as a Teams cloud recording (tens of MB): x264 capped-CRF spends almost no
-bits on static slides while keeping text sharp.
+bits on static slides while keeping text sharp. Hardware (GPU) mode uses the same constant-
+quality recipe, so its files stay close to compressed output.
 
 **Q: Can I record the whole screen instead?**
 A: MeetRec focuses on recording exactly one window — nothing outside it (including other

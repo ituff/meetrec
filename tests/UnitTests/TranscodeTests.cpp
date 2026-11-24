@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 
+#include <Encoder/FfmpegWriter.h>
 #include <Encoder/VideoPreset.h>
 #include <Transcode/Arguments.h>
 #include <Transcode/ChildProcess.h>
@@ -164,9 +165,9 @@ VSR_TEST(Transcode, ArgumentsScaleDownButNeverUp) {
         L"in.mp4", L"out.mp4", options, Resolution::P720, 1920, 1080, 30.0);
     VSR_CHECK(down.find(L"-vf scale=1280:720") != std::wstring::npos);
 
-    const std::wstring small = BuildTranscodeArguments(
+    const std::wstring smallSource = BuildTranscodeArguments(
         L"in.mp4", L"out.mp4", options, Resolution::P720, 640, 360, 30.0);
-    VSR_CHECK(small.find(L"-vf scale=") == std::wstring::npos);
+    VSR_CHECK(smallSource.find(L"-vf scale=") == std::wstring::npos);
 
     const std::wstring portrait = BuildTranscodeArguments(
         L"in.mp4", L"out.mp4", options, Resolution::P720, 1080, 1920, 30.0);
@@ -197,6 +198,37 @@ VSR_TEST(Transcode, HardwareArgumentsUseDetectedVendorEncoder) {
     VSR_CHECK(amf.find(L"-c:v h264_amf") != std::wstring::npos);
     VSR_CHECK(amf.find(L"-rc cqp") != std::wstring::npos);
     VSR_CHECK(amf.find(L"-qp_i 26") != std::wstring::npos);
+}
+
+VSR_TEST(Transcode, HardwareRecordingUsesSameRateControlAsCompression) {
+    // Recording and compression are compared directly by users, so the GPU
+    // rate-control fragments must stay identical. A drift here is what made
+    // GPU recordings larger than the same clip compressed with the same GPU.
+    const encoder::PresetParams preset =
+        encoder::GetPresetParams(encoder::QualityPreset::Standard);
+    const EncodeOptions options = OptionsForQuality(Quality::Standard);
+    struct Row {
+        const wchar_t* encoderName;
+        VideoEncoder encoder;
+        const wchar_t* rateControl;
+    };
+    const Row rows[] = {
+        {L"h264_qsv", VideoEncoder::Qsv, L"-preset veryfast -global_quality 31"},
+        {L"h264_nvenc", VideoEncoder::Nvenc,
+         L"-preset p5 -tune hq -rc vbr -cq 26 -b:v 0 -maxrate 2000000 -bufsize "
+         L"4000000"},
+        {L"h264_amf", VideoEncoder::Amf,
+         L"-quality balanced -rc cqp -qp_i 26 -qp_p 26 -qp_b 26"},
+    };
+    for (const Row& row : rows) {
+        const std::wstring recording = encoder::FfmpegWriter::BuildVideoArguments(
+            preset, L"\\\\.\\pipe\\video", L"out.mp4", row.encoderName);
+        const std::wstring compression = BuildTranscodeArguments(
+            L"in.mp4", L"out.mp4", options, Resolution::Keep, 1920, 1080, 30.0,
+            row.encoder);
+        VSR_CHECK(recording.find(row.rateControl) != std::wstring::npos);
+        VSR_CHECK(compression.find(row.rateControl) != std::wstring::npos);
+    }
 }
 
 VSR_TEST(Transcode, HighPresetDropsStillImageTune) {

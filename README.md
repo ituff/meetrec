@@ -112,9 +112,10 @@ A step-by-step illustrated manual is published on the
 </p>
 
 - Use the **Standard** preset (1920×1080 @ 30 FPS — 60 FPS buys nothing for slides or talking
-  heads). The x264 path uses capped-CRF rate control with a 5-second keyframe interval and
-  mono 64 kbps AAC, so static slides spend few bits and text stays sharp — file sizes land in
-  the same range as Teams cloud recordings instead of 3–4× larger.
+  heads). Recording uses capped constant-quality rate control (x264 CRF, or the GPU encoder's
+  CQ mode) with a 5-second keyframe interval and mono 64 kbps AAC, so static slides spend few
+  bits and text stays sharp — file sizes land in the same range as Teams cloud recordings
+  instead of 3–4× larger.
 - Enable **both** System audio and Microphone; select the **same devices the meeting app uses**
   (Teams/Zoom/Tencent Meeting keep their own device selection, which can differ from the
   Windows default — recording the wrong endpoint leaves that source silent).
@@ -209,7 +210,7 @@ MeetRec.exe --update-window              # open the update window when a check f
 | `--seconds N` | Fixed recording duration |
 | `--preset low\|standard\|high` | Quality preset |
 | `--output DIR` | Output directory |
-| `--encoder auto\|hardware\|software` | Encoder candidate filtering (Media Foundation backend) |
+| `--encoder auto\|hardware\|software` | Encoder selection: auto/software use x264, hardware uses the detected GPU encoder (QSV/NVENC/AMF) |
 | `--backend ffmpeg\|mf\|auto` | Recording backend; `auto` prefers ffmpeg, falls back to MF |
 | `--audio` | Add system audio (loopback) + microphone, mixed into one AAC track |
 | `--audio-out/-in <endpoint-id>` | Pin the recorded render/capture endpoints |
@@ -458,9 +459,10 @@ MeetRec.exe --update-window              # 检查到更新时直接打开更新�
 默认(`--backend auto`)在 ffmpeg 可用时通过 **ffmpeg.exe 子进程**编码(`VSR_FFMPEG_PATH`、
 应用目录、`PATH` 或 `C:\ffmpeg\bin`),否则通过 Media Foundation sink writer——绕开在部分
 Insider 版本上不稳定的系统媒体栈编码器。设置里的「编码方式」选**硬件编码(GPU)**时,ffmpeg
-后端会先用一次短测试编码检测 QSV/NVENC/AMF,再用于录制;CPU 占用明显下降,文件通常更大,
-硬件不可用时录制前会提示切回自动/软件。仅用于支持的音频转储:`VSR_AUDIO_DUMP_LOOPBACK`、
-`VSR_AUDIO_DUMP_MIC`、`VSR_AUDIO_DUMP`;`VSR_MIC_DISABLE=1` 强制仅系统声音。
+后端会先用一次短测试编码检测 QSV/NVENC/AMF,再用于录制;CPU 占用明显下降,并使用与压缩
+相同的恒定质量码控,文件体积与压缩结果接近;硬件不可用时录制前会提示切回自动/软件。
+仅用于支持的音频转储:`VSR_AUDIO_DUMP_LOOPBACK`、`VSR_AUDIO_DUMP_MIC`、
+`VSR_AUDIO_DUMP`;`VSR_MIC_DISABLE=1` 强制仅系统声音。
 
 数据位置(每用户):`%LOCALAPPDATA%\VirtualScreenRecorder\`(`settings.json`、`Logs\`、
 `Diagnostics\`)。

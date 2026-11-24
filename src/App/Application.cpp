@@ -326,7 +326,9 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
             }
         }
     } else {
-        cap.name = L"ffmpeg (libx264)";
+        // The ffmpeg writer resolves the concrete encoder from the preference
+        // (libx264, or a detected GPU encoder for Hardware).
+        cap.name = L"ffmpeg (" + Utf8ToWide(encoder::ToString(encoderPreference)) + L")";
     }
 
     // 2. GPU device.
@@ -358,7 +360,8 @@ int Application::RunEncodeTest(int seconds, const std::wstring& presetName,
         return 5;
     }
     auto writer = encoder::CreateWriter(backend, device, cap, params,
-                                        plan.Value().partialPath, nullptr);
+                                        plan.Value().partialPath, nullptr, nullptr,
+                                        encoderPreference);
     if (!writer) {
         const Error e = writer.TakeError();
         wprintf(L"[encode-test] FAILED: %s (code %hs)\n  detail: %hs\n", e.userMessage.c_str(),

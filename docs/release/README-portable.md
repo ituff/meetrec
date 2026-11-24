@@ -1,4 +1,4 @@
-# MeetRec 1.5.2 — Windows 10/11 x64 便携版
+# MeetRec 1.5.3 — Windows 10/11 x64 便携版
 
 MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成干净的 MP4，可同时混入系统声音（对方）和麦克风（我的声音）。
 
@@ -11,7 +11,7 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 5. 结束后点击“结束并保存”，在结果卡中打开文件或文件夹。
 6. 旧录屏可在标题栏「压缩视频」按钮或托盘菜单中重新压缩；压缩窗口右侧可选「硬件加速」（自动检测 Intel QSV / NVIDIA NVENC / AMD AMF，默认关闭），程序会自动检查 GitHub 更新，可在「更多」菜单中下载并安装。
 7. 录制中需要静音自己的声音时，点击「暂停」左侧的麦克风按钮、托盘菜单「静音录制麦克风」或按 `Ctrl+Alt+M`；这只影响录像，不会静音会议软件。在 Windows 声音设置里静音麦克风会被自动跟随。
-8. 录制时 CPU 占用高时，可在「设置 → 录制 → 编码方式」选择「硬件编码（GPU）」：程序会自动检测并使用 Intel QSV / NVIDIA NVENC / AMD AMF，显著降低 CPU 占用，但文件通常更大；显卡驱动不支持时开始录制前会提示切回自动或软件编码。
+8. 录制时 CPU 占用高时，可在「设置 → 录制 → 编码方式」选择「硬件编码（GPU）」：程序会自动检测并使用 Intel QSV / NVIDIA NVENC / AMD AMF，显著降低 CPU 占用，并使用与压缩相同的恒定质量码控，文件体积接近压缩输出（动态画面下 QSV/AMF 随内容浮动）；显卡驱动不支持时开始录制前会提示切回自动或软件编码。
 
 > 请保持文件夹完整：`ffmpeg.exe`、`ffprobe.exe` 及其 DLL 必须和 `MeetRec.exe` 放在同一目录。只复制 exe 会导致无法使用内置的 ffmpeg 录制后端和视频压缩功能。
 
@@ -60,7 +60,7 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 
 ---
 
-# MeetRec 1.5.2 — Windows 10/11 x64 (portable)
+# MeetRec 1.5.3 — Windows 10/11 x64 (portable)
 
 Unzip the whole folder and run `MeetRec.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe`, `ffprobe.exe`, and their DLLs are included and must stay next to the application binary so the ffmpeg recording backend and the video compressor can be discovered. The C++ runtime is linked statically, so no VC++ Redistributable is needed.
 
@@ -68,7 +68,7 @@ Compress older recordings from the title-bar **Compress videos** button or the t
 
 To mute your own voice in the recording, use the microphone button left of *Pause*, the tray item *Mute recording mic*, or `Ctrl+Alt+M`. This only affects the recording; the meeting app still hears you. Muting the microphone in Windows Sound settings is followed automatically. A meeting app's own Mute button is internal to that app and cannot be detected, so use MeetRec's control when the recording should be silent.
 
-If recording uses too much CPU, set **Settings → Recording → Encoder → Hardware (GPU)**: MeetRec detects and uses Intel QSV / NVIDIA NVENC / AMD AMF, which lowers CPU usage significantly but usually produces larger files. If the graphics driver has no usable encoder, recording stops before capture and asks you to switch back to Automatic or Software.
+If recording uses too much CPU, set **Settings → Recording → Encoder → Hardware (GPU)**: MeetRec detects and uses Intel QSV / NVIDIA NVENC / AMD AMF, which lowers CPU usage significantly and uses the same capped constant-quality recipe as the compressor, so file sizes stay close to compressed output (NVENC keeps the preset bitrate ceiling; QSV/AMF follow the content). If the graphics driver has no usable encoder, recording stops before capture and asks you to switch back to Automatic or Software.
 
 Requirements: Windows 10 2004+ x64 or Windows 11 x64; Direct3D 11 GPU. There is no 32-bit build; 32-bit Windows 10 and ARM64 are not supported. Windows 10 reached end of regular support on 2025-10-14.
 

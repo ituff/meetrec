@@ -33,8 +33,9 @@ struct PresetParams {
     std::uint32_t fps = 30;
     // x264 constant-quality target.
     int crf = 26;
-    // x264 rate ceiling (maxrate), and the ABR target for hardware and Media
-    // Foundation encoders, which have no constant-quality mode.
+    // x264 and NVENC rate ceiling (maxrate) in constant-quality mode; the
+    // Media Foundation encoder has no constant-quality mode and uses it as an
+    // ABR target. QSV (ICQ) and AMF (CQP) spend no ceiling.
     std::uint32_t bitrateBps = 2'000'000;
     // Keyframe interval in seconds.
     std::uint32_t gopSeconds = 5;

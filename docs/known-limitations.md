@@ -82,8 +82,9 @@ release notes sections with the same purpose.
   encoder (higher CPU use); with no software encoder either, it fails before recording with
   `VSR-ENCODER-UNAVAILABLE` (FR-063).
 - With the bundled ffmpeg backend (the default), the **Automatic** encoder mode uses CPU x264.
-  **Hardware (GPU)** uses a detected `h264_qsv` / `h264_nvenc` / `h264_amf` encoder: CPU usage
-  during recording drops markedly, but files are usually larger and stability depends on the
+  **Hardware (GPU)** uses a detected `h264_qsv` / `h264_nvenc` / `h264_amf` encoder with the
+  same capped constant-quality recipe as the compressor, so CPU usage during recording drops
+  markedly and file sizes stay close to a compressed recording; stability still depends on the
   graphics driver. If no GPU encoder passes the startup test, recording stops before capture
   with `VSR-ENCODER-UNAVAILABLE`; switch back to Automatic or Software. For long, critical
   recordings, run a short hardware-mode test first.

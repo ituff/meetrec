@@ -299,11 +299,15 @@ VSR_TEST(FfmpegBackend, CommandLineCarriesPipelineParameters) {
 VSR_TEST(Encoder, HardwareRecordingArguments) {
     const PresetParams params = GetPresetParams(QualityPreset::Standard);
 
+    // Hardware recording mirrors the compressor's constant-quality rate
+    // control: an ABR target at the preset bitrate burned the full ceiling on
+    // static slides and made recordings much larger than compressed output.
     const std::wstring qsv = FfmpegWriter::BuildVideoArguments(
         params, L"\\\\.\\pipe\\video", L"C:\\out.mp4", L"h264_qsv");
     VSR_CHECK(qsv.find(L"-c:v h264_qsv") != std::wstring::npos);
     VSR_CHECK(qsv.find(L"-preset veryfast") != std::wstring::npos);
-    VSR_CHECK(qsv.find(L"-b:v 2000000") != std::wstring::npos);
+    VSR_CHECK(qsv.find(L"-global_quality 31") != std::wstring::npos); // CRF + 5
+    VSR_CHECK(qsv.find(L"-b:v") == std::wstring::npos);
     VSR_CHECK(qsv.find(L"-crf") == std::wstring::npos);
     VSR_CHECK(qsv.find(L"-tune stillimage") == std::wstring::npos);
 
@@ -311,13 +315,16 @@ VSR_TEST(Encoder, HardwareRecordingArguments) {
         params, L"\\\\.\\pipe\\video", L"C:\\out.mp4", L"h264_nvenc");
     VSR_CHECK(nvenc.find(L"-c:v h264_nvenc") != std::wstring::npos);
     VSR_CHECK(nvenc.find(L"-preset p5") != std::wstring::npos);
-    VSR_CHECK(nvenc.find(L"-rc vbr") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-tune hq") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-rc vbr -cq 26 -b:v 0") != std::wstring::npos);
     VSR_CHECK(nvenc.find(L"-maxrate 2000000") != std::wstring::npos);
+    VSR_CHECK(nvenc.find(L"-bufsize 4000000") != std::wstring::npos);
 
     const std::wstring amf = FfmpegWriter::BuildVideoArguments(
         params, L"\\\\.\\pipe\\video", L"C:\\out.mp4", L"h264_amf");
     VSR_CHECK(amf.find(L"-c:v h264_amf") != std::wstring::npos);
     VSR_CHECK(amf.find(L"-quality balanced") != std::wstring::npos);
-    VSR_CHECK(amf.find(L"-rc vbr_peak") != std::wstring::npos);
-    VSR_CHECK(amf.find(L"-b:v 2000000") != std::wstring::npos);
+    VSR_CHECK(amf.find(L"-rc cqp -qp_i 26 -qp_p 26 -qp_b 26") !=
+              std::wstring::npos);
+    VSR_CHECK(amf.find(L"-b:v") == std::wstring::npos);
 }

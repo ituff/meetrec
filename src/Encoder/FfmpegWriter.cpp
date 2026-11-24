@@ -233,20 +233,30 @@ std::wstring FfmpegWriter::BuildVideoArguments(const PresetParams& preset,
     const bool hw = wcscmp(videoEncoder, L"libx264") != 0;
     cmd += std::wstring(L"-c:v ") + videoEncoder + L" ";
     if (hw) {
-        // Live rate control: hardware encoders use ABR (the pipe has no
-        // content lookahead), capped at the preset ceiling.
-        const std::wstring bitrate = std::to_wstring(preset.bitrateBps);
+        // Same capped constant-quality rate control as the offline compressor
+        // (Transcode/Arguments.cpp): a pure ABR target spends the full ceiling
+        // on static slides, which made GPU recordings several times larger
+        // than the same clip compressed with the same GPU encoder. The preset
+        // CRF maps to each vendor's CQ control, exactly as in the compressor.
         if (wcscmp(videoEncoder, L"h264_nvenc") == 0) {
-            cmd += L"-preset p5 -tune hq -rc vbr -b:v " + bitrate + L" -maxrate " +
-                   bitrate + L" -bufsize " + std::to_wstring(preset.bitrateBps * 2) +
-                   L" ";
+            // VBR + cq is NVENC's constant-quality mode; -b:v 0 disables the
+            // target, and maxrate still caps scene-change bursts.
+            cmd += L"-preset p5 -tune hq -rc vbr -cq " +
+                   std::to_wstring(preset.crf) + L" -b:v 0 -maxrate " +
+                   std::to_wstring(preset.bitrateBps) + L" -bufsize " +
+                   std::to_wstring(preset.bitrateBps * 2) + L" ";
         } else if (wcscmp(videoEncoder, L"h264_amf") == 0) {
-            cmd += L"-quality balanced -rc vbr_peak -b:v " + bitrate + L" -maxrate " +
-                   bitrate + L" -bufsize " + std::to_wstring(preset.bitrateBps * 2) +
-                   L" ";
+            // AMF has no capped constant-quality mode; CQP is what the
+            // compressor uses, so both paths produce the same size.
+            cmd += L"-quality balanced -rc cqp -qp_i " +
+                   std::to_wstring(preset.crf) + L" -qp_p " +
+                   std::to_wstring(preset.crf) + L" -qp_b " +
+                   std::to_wstring(preset.crf) + L" ";
         } else {
-            // QSV (the existing tested path) uses its default rate control.
-            cmd += L"-preset veryfast -b:v " + bitrate + L" ";
+            // QSV has no CRF; ICQ (global_quality) is its constant-quality
+            // mode. The +5 offset matches the compressor.
+            cmd += L"-preset veryfast -global_quality " +
+                   std::to_wstring(preset.crf + 5) + L" ";
         }
     } else {
         // Meeting-oriented rate control (capped CRF): constant quality keeps

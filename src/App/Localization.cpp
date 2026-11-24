@@ -184,7 +184,7 @@ constexpr Entry kZh[] = {
     {Str::AudioSystemDefault, L"默认录制系统声音"},
     {Str::AudioMicDefault, L"默认录制麦克风"},
     {Str::RecordingSettingsHint,
-     L"选择视频质量和编码方式。自动使用 x264，兼容性最好；硬件编码用 GPU 降低 CPU 占用，文件可能更大。"},
+     L"选择视频质量和编码方式。自动使用 x264，兼容性最好；硬件编码用 GPU 降低 CPU 占用，使用与压缩相同的恒定质量码控，体积接近。"},
     {Str::Encoder, L"编码方式"},
     {Str::EncoderAuto, L"自动（推荐）"},
     {Str::EncoderHardware, L"硬件编码（GPU）"},
@@ -528,7 +528,8 @@ constexpr Entry kEn[] = {
     {Str::AudioMicDefault, L"Record the microphone by default"},
     {Str::RecordingSettingsHint,
      L"Pick the video quality and encoder. Automatic uses x264 for maximum compatibility; "
-     L"Hardware uses the GPU to lower CPU usage and may produce larger files."},
+     L"Hardware uses the GPU to lower CPU usage and the same constant-quality recipe as the "
+     L"compressor, so file sizes stay close."},
     {Str::Encoder, L"Encoder"},
     {Str::EncoderAuto, L"Automatic (recommended)"},
     {Str::EncoderHardware, L"Hardware (GPU)"},

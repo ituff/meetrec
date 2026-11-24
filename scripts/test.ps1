@@ -16,7 +16,8 @@ Write-Host "== Virtual Screen Recorder tests ($Configuration|x64) =="
 $msbuild = Get-MsBuildPath
 
 & $msbuild (Join-Path $root "tests\UnitTests\UnitTests.vcxproj") "/restore" `
-    "/p:Configuration=$Configuration" "/p:Platform=x64" "/v:m" "/nologo"
+    "/p:Configuration=$Configuration" "/p:Platform=x64" "/p:SolutionDir=$root\" `
+    "/v:m" "/nologo"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Test build FAILED." -ForegroundColor Red
     exit $LASTEXITCODE
