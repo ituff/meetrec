@@ -179,9 +179,9 @@ with the same screen-content recipe and write a smaller H.264 MP4.
 
 ### 6.1 Open the compressor
 
-Choose *⋯ More → Compress videos...* in the main window, or *Compress videos...* from the tray
-menu. The compressor is a separate window, so you can keep preparing the next meeting while it
-works.
+Click the **Compress videos** button in the main window header, or choose *Compress videos...*
+from the tray menu. The compressor is a separate window, so you can keep preparing the next
+meeting while it works.
 
 ### 6.2 Add files
 
@@ -232,7 +232,7 @@ is found, and a failed hardware job automatically falls back to CPU encoding.
 
 ## 7. Settings reference
 
-Open *⚙ Settings* from the main window header. Four pages:
+Open *⋯ More → Settings...* from the main window header. Four pages:
 
 | Page | Options |
 |---|---|

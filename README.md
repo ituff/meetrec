@@ -62,7 +62,7 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 - **Full state machine**: Ready, Preparing, Recording, Paused, Saving, a result card
   (file name/duration/size/path with Open file / Open folder / Record again) and an actionable
   error card with Retry / Help / Diagnostics.
-- **Compress older recordings** (title-bar **Compress videos** button, more menu or tray
+- **Compress older recordings** (title-bar **Compress videos** button or tray
   menu): re-encode existing MP4/MKV screen recordings from any app with the same
   screen-content recipe, at below-normal priority and paused while MeetRec is recording.
   Originals are never modified; output is `<name>-min.mp4`.
@@ -303,7 +303,7 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   声源;录制中电平条持续更新。
 - **完整状态覆盖**:就绪、准备中、录制中、已暂停、正在保存、结果卡(文件名/时长/大小/路径,
   打开文件 / 打开文件夹 / 再录一个)以及可操作的错误卡(重试 / 查看帮助 / 创建诊断包)。
-- **压缩旧录屏**(标题栏 **压缩视频** 按钮、更多菜单或托盘菜单均可打开):把其他软件录制的
+- **压缩旧录屏**(标题栏 **压缩视频** 按钮或托盘菜单均可打开):把其他软件录制的
   MP4/MKV 用同一套屏幕内容编码配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。
   原文件不会被修改,输出为 `<原名>-min.mp4`。可选**硬件加速**(自动检测 Intel QSV / NVIDIA
   NVENC / AMD AMF),默认仍用 CPU 编码以保证文件最小;硬件编码失败会自动回退。

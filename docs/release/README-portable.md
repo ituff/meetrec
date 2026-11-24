@@ -1,4 +1,4 @@
-# MeetRec 1.5.1 — Windows 10/11 x64 便携版
+# MeetRec 1.5.2 — Windows 10/11 x64 便携版
 
 MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成干净的 MP4，可同时混入系统声音（对方）和麦克风（我的声音）。
 
@@ -9,7 +9,7 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 3. 选择要录制的会议/演示窗口。
 4. 确认系统声音和麦克风电平条有跳动，点击“开始录制”。
 5. 结束后点击“结束并保存”，在结果卡中打开文件或文件夹。
-6. 旧录屏可在标题栏「压缩视频」按钮、更多菜单或托盘菜单中重新压缩；压缩窗口右侧可选「硬件加速」（自动检测 Intel QSV / NVIDIA NVENC / AMD AMF，默认关闭），程序会自动检查 GitHub 更新，可在「更多」菜单中下载并安装。
+6. 旧录屏可在标题栏「压缩视频」按钮或托盘菜单中重新压缩；压缩窗口右侧可选「硬件加速」（自动检测 Intel QSV / NVIDIA NVENC / AMD AMF，默认关闭），程序会自动检查 GitHub 更新，可在「更多」菜单中下载并安装。
 7. 录制中需要静音自己的声音时，点击「暂停」左侧的麦克风按钮、托盘菜单「静音录制麦克风」或按 `Ctrl+Alt+M`；这只影响录像，不会静音会议软件。在 Windows 声音设置里静音麦克风会被自动跟随。
 8. 录制时 CPU 占用高时，可在「设置 → 录制 → 编码方式」选择「硬件编码（GPU）」：程序会自动检测并使用 Intel QSV / NVIDIA NVENC / AMD AMF，显著降低 CPU 占用，但文件通常更大；显卡驱动不支持时开始录制前会提示切回自动或软件编码。
 
@@ -60,11 +60,11 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 
 ---
 
-# MeetRec 1.5.1 — Windows 10/11 x64 (portable)
+# MeetRec 1.5.2 — Windows 10/11 x64 (portable)
 
 Unzip the whole folder and run `MeetRec.exe`. No installer, administrator rights, or virtual-display driver is required. `ffmpeg.exe`, `ffprobe.exe`, and their DLLs are included and must stay next to the application binary so the ffmpeg recording backend and the video compressor can be discovered. The C++ runtime is linked statically, so no VC++ Redistributable is needed.
 
-Compress older recordings from the title-bar **Compress videos** button, *More → Compress videos...*, or the tray menu. The compress window also offers an optional **Hardware acceleration** switch (auto-detects Intel QSV / NVIDIA NVENC / AMD AMF; off by default). The app checks GitHub Releases for updates automatically and offers download/install from the *More* menu.
+Compress older recordings from the title-bar **Compress videos** button or the tray menu. The compress window also offers an optional **Hardware acceleration** switch (auto-detects Intel QSV / NVIDIA NVENC / AMD AMF; off by default). The app checks GitHub Releases for updates automatically and offers download/install from the *More* menu.
 
 To mute your own voice in the recording, use the microphone button left of *Pause*, the tray item *Mute recording mic*, or `Ctrl+Alt+M`. This only affects the recording; the meeting app still hears you. Muting the microphone in Windows Sound settings is followed automatically. A meeting app's own Mute button is internal to that app and cannot be detected, so use MeetRec's control when the recording should be silent.
 

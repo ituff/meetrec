@@ -62,7 +62,6 @@ private:
     enum class Hit {
         None,
         CompressButton,
-        SettingsButton,
         MoreButton,
         MinimizeButton,
         MaximizeButton,
@@ -100,9 +99,9 @@ private:
         Gdiplus::RectF logo;
         Gdiplus::RectF appTitle;
         Gdiplus::RectF tagline;
-        // Home-page entry to the compressor window (the menus remain).
+        // Home-page entry to the compressor window (the tray menu keeps its
+        // item). "More" is the single menu entry: settings lives inside it.
         Gdiplus::RectF compress;
-        Gdiplus::RectF settings;
         Gdiplus::RectF more;
         Gdiplus::RectF minimize;
         Gdiplus::RectF maximize;

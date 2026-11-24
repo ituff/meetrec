@@ -58,10 +58,7 @@ constexpr UINT kCmdQualityBase = 2000;
 constexpr UINT kCmdDeviceBase = 2100;
 constexpr UINT kCmdMoreSettings = 2201;
 constexpr UINT kCmdMoreHelp = 2202;
-constexpr UINT kCmdMoreAbout = 2203;
-constexpr UINT kCmdMoreDiagnostics = 2204;
 constexpr UINT kCmdMoreExit = 2205;
-constexpr UINT kCmdMoreCompress = 2206;
 constexpr UINT kCmdMoreUpdate = 2207;
 constexpr UINT kCmdTrayOpen = 2301;
 constexpr UINT kCmdTrayToggle = 2302;
@@ -374,8 +371,7 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             POINT client = screen;
             ScreenToClient(hwnd, &client);
             if (Contains(layout_.titleBar, client) &&
-                !Contains(layout_.compress, client) && !Contains(layout_.settings, client) &&
-                !Contains(layout_.more, client) &&
+                !Contains(layout_.compress, client) && !Contains(layout_.more, client) &&
                 !Contains(layout_.minimize, client) && !Contains(layout_.maximize, client) &&
                 !Contains(layout_.close, client)) {
                 return HTCAPTION;
@@ -1018,17 +1014,12 @@ void MainWindow::DrawTitleBar(Gdiplus::Graphics& graphics) {
                      ui::VAlign::Center, true);
     }
 
-    // The compressor's home-page entry; the "..." menu and tray menu keep
-    // their items so existing habits still work.
+    // The compressor's home-page entry; the tray menu keeps its item for when
+    // the window is hidden.
     ui::DrawButton(graphics, fonts_, layout_.compress,
                    i18n::Text(i18n::Str::CompressTitle), ui::ButtonStyle::Ghost,
                    hover_ == Hit::CompressButton, pressed_ == Hit::CompressButton, true,
                    ui::Icon::Video);
-    const bool settingsHover = hover_ == Hit::SettingsButton;
-    const bool settingsPressed = pressed_ == Hit::SettingsButton;
-    ui::DrawButton(graphics, fonts_, layout_.settings, i18n::Text(i18n::Str::Settings),
-                   ui::ButtonStyle::Ghost, settingsHover, settingsPressed, true,
-                   ui::Icon::Gear);
     ui::DrawButton(graphics, fonts_, layout_.more, L"", ui::ButtonStyle::Ghost,
                    hover_ == Hit::MoreButton, pressed_ == Hit::MoreButton, true,
                    ui::Icon::More);
@@ -1773,9 +1764,8 @@ void MainWindow::UpdateLayout() {
     layout.maximize = Gdiplus::RectF(width - S(88), 0.0f, S(44), S(44));
     layout.minimize = Gdiplus::RectF(width - S(132), 0.0f, S(44), S(44));
     layout.more = Gdiplus::RectF(width - S(172), S(5), S(36), S(34));
-    layout.settings = Gdiplus::RectF(width - S(252), S(5), S(76), S(34));
-    layout.compress = Gdiplus::RectF(layout.settings.X - S(8) - S(146), S(5), S(146),
-                                     S(34));
+    layout.compress =
+        Gdiplus::RectF(layout.more.X - S(8) - S(146), S(5), S(146), S(34));
 
     const float pad = S(16);
     const float contentTop = S(44) + S(10);
@@ -2046,7 +2036,6 @@ void MainWindow::BuildHitTargets() {
     }
 
     add(Hit::CompressButton, layout_.compress);
-    add(Hit::SettingsButton, layout_.settings);
     add(Hit::MoreButton, layout_.more);
     add(Hit::MinimizeButton, layout_.minimize);
     add(Hit::MaximizeButton, layout_.maximize);
@@ -2065,7 +2054,6 @@ bool MainWindow::IsHitEnabled(Hit id) const {
     const AppState state = lastSnapshot_.state;
     switch (id) {
         case Hit::CompressButton:
-        case Hit::SettingsButton:
         case Hit::MoreButton:
         case Hit::MinimizeButton:
         case Hit::MaximizeButton:
@@ -2156,9 +2144,6 @@ void MainWindow::Activate(Hit id) {
     switch (id) {
         case Hit::CompressButton:
             ShowCompressWindow();
-            break;
-        case Hit::SettingsButton:
-            ShowSettingsPage(0);
             break;
         case Hit::MoreButton:
             ShowMoreMenu();
@@ -2628,11 +2613,12 @@ void MainWindow::ApplyUpdateAndExit(const std::filesystem::path& zipPath) {
 }
 
 void MainWindow::ShowMoreMenu() {
+    // The window's single menu entry. Commands that already have a home on
+    // the title bar or in the settings window (compressor, About, diagnostics)
+    // are deliberately not repeated here.
     std::vector<menu::Item> items;
     items.push_back({i18n::Text(i18n::Str::TraySettings), L"", ui::Icon::Gear,
                      kCmdMoreSettings, true, false, false, false});
-    items.push_back({i18n::Text(i18n::Str::CompressMenu), L"", ui::Icon::Video,
-                     kCmdMoreCompress, true, false, false, false});
     items.push_back(
         {updateAvailable_ ? i18n::Format(i18n::Str::UpdateMenuAvailable, {updateVersion_})
                           : std::wstring(i18n::Text(i18n::Str::UpdateMenuCheck)),
@@ -2640,17 +2626,12 @@ void MainWindow::ShowMoreMenu() {
          true, false, false, false});
     items.push_back({i18n::Text(i18n::Str::TrayHelp), L"", ui::Icon::Help,
                      kCmdMoreHelp, true, false, false, false});
-    items.push_back({i18n::Text(i18n::Str::About), L"", ui::Icon::Info,
-                     kCmdMoreAbout, true, false, false, false});
-    items.push_back({L"", L"", ui::Icon::None, 0, true, false, false, true});
-    items.push_back({i18n::Text(i18n::Str::CreateDiagnostics), L"",
-                     ui::Icon::Diagnostics, kCmdMoreDiagnostics, true, false, false,
-                     false});
     items.push_back({L"", L"", ui::Icon::None, 0, true, false, false, true});
     items.push_back({i18n::Text(i18n::Str::Exit), L"", ui::Icon::Exit, kCmdMoreExit,
                      true, false, false, false});
 
-    POINT point = {static_cast<LONG>(layout_.more.X),
+    // Right-aligned under the button itself.
+    POINT point = {static_cast<LONG>(layout_.more.GetRight()),
                    static_cast<LONG>(layout_.more.GetBottom())};
     ClientToScreen(hwnd_, &point);
     const UINT command = static_cast<UINT>(
@@ -2659,20 +2640,11 @@ void MainWindow::ShowMoreMenu() {
         case kCmdMoreSettings:
             ShowSettingsPage(0);
             break;
-        case kCmdMoreCompress:
-            ShowCompressWindow();
-            break;
         case kCmdMoreUpdate:
             ShowUpdateDialog();
             break;
         case kCmdMoreHelp:
             OnErrorHelp();
-            break;
-        case kCmdMoreAbout:
-            ShowSettingsPage(3);
-            break;
-        case kCmdMoreDiagnostics:
-            OnDiagnosticsClicked();
             break;
         case kCmdMoreExit:
             if (coordinator_.GetStatus().state == AppState::Stopping) {
