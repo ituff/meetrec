@@ -63,6 +63,10 @@ struct Settings {
     int captionFontSize = 22;
     std::string captionColor = "auto";
     std::string captionPosition = "bottom-center";
+    // Optional online translation of live captions (Bing/Edge web endpoint;
+    // only the recognized text leaves the machine, never audio).
+    bool translateCaptions = false;
+    std::string captionTranslationLanguage = "en";
     // Optional model-pack directory override (empty = <exe>/models/sensevoice).
     std::wstring speechModelDirectory;
     // UI language: "system" follows the Windows display language; "zh-CN" and

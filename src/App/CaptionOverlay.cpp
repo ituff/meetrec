@@ -281,9 +281,53 @@ void CaptionOverlay::UpdateContent() {
 
     const speech::CaptionCue& latest = cues_.back();
     latestMicrophone_ = latest.microphone;
-    const std::wstring latestText = speech::SanitizeTranscriptText(latest.text);
-    latestLines_ = speech::WrapSubtitleText(
-        latestText, static_cast<std::size_t>(WrapUnits()));
+    const std::wstring originalText = speech::SanitizeTranscriptText(latest.text);
+    const std::wstring translatedText =
+        speech::SanitizeTranscriptText(latest.translation);
+    const std::size_t previousUnits = static_cast<std::size_t>(
+        std::min(110, static_cast<int>(WrapUnits() * 1.55)));
+
+    hasPrevious_ = false;
+    previousLine_.clear();
+    latestLines_.clear();
+
+    if (!translatedText.empty()) {
+        // Bilingual mode: the original cue is the small dim line, the
+        // translation is the main caption.
+        const std::vector<std::wstring> originalLines =
+            speech::WrapSubtitleText(originalText, previousUnits);
+        if (!originalLines.empty()) {
+            previousLine_ = speech::SpeakerPrefix(latest.microphone, chinese_) +
+                            LimitLine(originalLines.front(),
+                                      originalLines.size() > 1);
+            hasPrevious_ = true;
+        }
+        latestLines_ = speech::WrapSubtitleText(
+            translatedText, static_cast<std::size_t>(WrapUnits()));
+    } else {
+        latestLines_ = speech::WrapSubtitleText(
+            originalText, static_cast<std::size_t>(WrapUnits()));
+        if (!latestLines_.empty()) {
+            // Prefix the first wrapped line instead of wrapping
+            // "label + text" as one string: the punctuation after the label is
+            // a break opportunity and otherwise leaves "对方：" alone.
+            latestLines_[0] =
+                speech::SpeakerPrefix(latest.microphone, chinese_) + latestLines_[0];
+        }
+        if (cues_.size() > 1) {
+            const speech::CaptionCue& previous = cues_[cues_.size() - 2];
+            const std::wstring previousText =
+                speech::SanitizeTranscriptText(previous.text);
+            const std::vector<std::wstring> lines =
+                speech::WrapSubtitleText(previousText, previousUnits);
+            if (!lines.empty()) {
+                previousLine_ = speech::SpeakerPrefix(previous.microphone, chinese_) +
+                                LimitLine(lines.front(), lines.size() > 1);
+                hasPrevious_ = true;
+            }
+        }
+    }
+
     if (latestLines_.size() > 3) {
         latestLines_.resize(3);
         latestLines_.back() = LimitLine(latestLines_.back(), true);
@@ -291,27 +335,6 @@ void CaptionOverlay::UpdateContent() {
     if (latestLines_.empty()) {
         SetShown(false);
         return;
-    }
-    // Prefix the first wrapped line instead of wrapping "label + text" as one
-    // string: the punctuation after the label is a break opportunity and
-    // otherwise leaves "对方：" alone on its own line.
-    latestLines_[0] =
-        speech::SpeakerPrefix(latest.microphone, chinese_) + latestLines_[0];
-
-    hasPrevious_ = cues_.size() > 1;
-    previousLine_.clear();
-    if (hasPrevious_) {
-        const speech::CaptionCue& previous = cues_[cues_.size() - 2];
-        const std::wstring previousText =
-            speech::SanitizeTranscriptText(previous.text);
-        const std::size_t previousUnits = static_cast<std::size_t>(
-            std::min(110, static_cast<int>(WrapUnits() * 1.55)));
-        const std::vector<std::wstring> lines =
-            speech::WrapSubtitleText(previousText, previousUnits);
-        if (!lines.empty()) {
-            previousLine_ = speech::SpeakerPrefix(previous.microphone, chinese_) +
-                            LimitLine(lines.front(), lines.size() > 1);
-        }
     }
 
     if (Position()) {

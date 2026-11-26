@@ -20,6 +20,12 @@ struct CaptionCue {
     std::int64_t startUs = 0;
     std::int64_t endUs = 0;
     std::uint64_t sequence = 0;
+    // Filled by the optional live translator; empty until a translation
+    // arrives. translationLang records which target the text is for, and
+    // translationFailed prevents retrying a cue forever.
+    std::wstring translation;
+    std::string translationLang;
+    bool translationFailed = false;
 };
 
 class CaptionFeed {
@@ -33,6 +39,14 @@ public:
 
     // Newest `maxCount` cues, oldest first.
     std::vector<CaptionCue> Snapshot(std::size_t maxCount = 2) const;
+
+    // Applies a translation to the cue with this sequence. The global
+    // sequence advances so the overlay repaints.
+    void SetTranslation(std::uint64_t cueSequence, std::wstring text,
+                        std::string lang);
+    void MarkTranslationFailed(std::uint64_t cueSequence, std::string lang);
+    // Clears translations (used when the target language changes).
+    void ClearTranslations();
 
     std::uint64_t Sequence() const;
     bool Empty() const;

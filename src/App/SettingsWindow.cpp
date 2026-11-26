@@ -50,6 +50,7 @@ constexpr UINT kCmdCaptionFontBase = 3050;
 constexpr UINT kCmdCaptionSizeBase = 3060;
 constexpr UINT kCmdCaptionColorBase = 3070;
 constexpr UINT kCmdCaptionPositionBase = 3080;
+constexpr UINT kCmdTranslationLanguageBase = 3090;
 
 bool InRect(const RECT& rect, POINT point) {
     return point.x >= rect.left && point.x < rect.right && point.y >= rect.top &&
@@ -306,7 +307,7 @@ void SettingsWindow::UpdateLayout() {
     layout.title = Gdiplus::RectF(S(46), S(6), width - S(140), S(32));
     layout.close = Gdiplus::RectF(width - S(44), 0, S(44), S(44));
     layout.minimize = Gdiplus::RectF(width - S(88), 0, S(44), S(44));
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         layout.nav[i] = Gdiplus::RectF(S(12), S(60) + S(46) * static_cast<float>(i),
                                        S(128), S(40));
     }
@@ -364,6 +365,57 @@ void SettingsWindow::UpdateLayout() {
             layout.audioDevice[i] =
                 Gdiplus::RectF(contentX + S(16), y + S(48), contentWidth - S(32), S(32));
         }
+    } else if (page_ == Page::Captions) {
+        layout.captionsHint =
+            Gdiplus::RectF(contentX, contentTop, contentWidth, S(38));
+        layout.transcriptBox =
+            Gdiplus::RectF(contentX, contentTop + S(48), S(18), S(18));
+        layout.transcriptLabel =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(46), contentWidth - S(30),
+                           S(22));
+        layout.transcriptNote =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(68), contentWidth - S(108),
+                           S(18));
+        layout.modelDownloadButton =
+            Gdiplus::RectF(contentX + contentWidth - S(72), contentTop + S(64), S(72),
+                           S(24));
+        layout.liveCaptionBox =
+            Gdiplus::RectF(contentX, contentTop + S(98), S(18), S(18));
+        layout.liveCaptionLabel =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(96), contentWidth - S(30),
+                           S(22));
+        layout.liveCaptionNote =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(118), contentWidth - S(30),
+                           S(18));
+        layout.captionStyleLabel =
+            Gdiplus::RectF(contentX, contentTop + S(146), contentWidth, S(18));
+        layout.captionFontLabel =
+            Gdiplus::RectF(contentX, contentTop + S(170), S(190), S(18));
+        layout.captionFontField =
+            Gdiplus::RectF(contentX, contentTop + S(188), S(190), S(34));
+        layout.captionSizeLabel =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(170), S(90), S(18));
+        layout.captionSizeField =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(188), S(90), S(34));
+        layout.captionColorLabel =
+            Gdiplus::RectF(contentX, contentTop + S(228), S(190), S(18));
+        layout.captionColorField =
+            Gdiplus::RectF(contentX, contentTop + S(246), S(190), S(34));
+        layout.captionPositionLabel =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(228), S(160), S(18));
+        layout.captionPositionField =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(246), S(160), S(34));
+        layout.translationBox =
+            Gdiplus::RectF(contentX, contentTop + S(294), S(18), S(18));
+        layout.translationLabel =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(292), contentWidth - S(30),
+                           S(22));
+        layout.translationLanguageLabel =
+            Gdiplus::RectF(contentX, contentTop + S(324), S(200), S(18));
+        layout.translationLanguageField =
+            Gdiplus::RectF(contentX, contentTop + S(344), S(220), S(34));
+        layout.translationNote =
+            Gdiplus::RectF(contentX, contentTop + S(386), contentWidth, S(48));
     } else if (page_ == Page::Recording) {
         layout.recordingHint = Gdiplus::RectF(contentX, contentTop, contentWidth, S(40));
         layout.qualityLabel =
@@ -382,41 +434,6 @@ void SettingsWindow::UpdateLayout() {
             Gdiplus::RectF(contentX, contentTop + S(226), S(18), S(18));
         layout.previewLabel =
             Gdiplus::RectF(contentX + S(30), contentTop + S(224), contentWidth, S(22));
-        layout.transcriptBox =
-            Gdiplus::RectF(contentX, contentTop + S(260), S(18), S(18));
-        layout.transcriptLabel =
-            Gdiplus::RectF(contentX + S(30), contentTop + S(258), contentWidth, S(22));
-        layout.transcriptNote =
-            Gdiplus::RectF(contentX + S(30), contentTop + S(280), contentWidth - S(108),
-                           S(18));
-        layout.modelDownloadButton =
-            Gdiplus::RectF(contentX + contentWidth - S(72), contentTop + S(276), S(72),
-                           S(24));
-        layout.liveCaptionBox =
-            Gdiplus::RectF(contentX, contentTop + S(310), S(18), S(18));
-        layout.liveCaptionLabel =
-            Gdiplus::RectF(contentX + S(30), contentTop + S(308), contentWidth, S(22));
-        layout.liveCaptionNote =
-            Gdiplus::RectF(contentX + S(30), contentTop + S(330), contentWidth - S(30),
-                           S(18));
-        layout.captionStyleLabel =
-            Gdiplus::RectF(contentX, contentTop + S(352), contentWidth, S(18));
-        layout.captionFontLabel =
-            Gdiplus::RectF(contentX, contentTop + S(372), S(190), S(18));
-        layout.captionFontField =
-            Gdiplus::RectF(contentX, contentTop + S(390), S(190), S(34));
-        layout.captionSizeLabel =
-            Gdiplus::RectF(contentX + S(210), contentTop + S(372), S(90), S(18));
-        layout.captionSizeField =
-            Gdiplus::RectF(contentX + S(210), contentTop + S(390), S(90), S(34));
-        layout.captionColorLabel =
-            Gdiplus::RectF(contentX, contentTop + S(428), S(190), S(18));
-        layout.captionColorField =
-            Gdiplus::RectF(contentX, contentTop + S(446), S(190), S(34));
-        layout.captionPositionLabel =
-            Gdiplus::RectF(contentX + S(210), contentTop + S(428), S(160), S(18));
-        layout.captionPositionField =
-            Gdiplus::RectF(contentX + S(210), contentTop + S(446), S(160), S(34));
     } else {
         layout.aboutLogo = Gdiplus::RectF(contentX, contentTop, S(44), S(44));
         layout.aboutTitle =
@@ -467,7 +484,8 @@ void SettingsWindow::BuildHits() {
     add(Hit::NavGeneral, layout_.nav[0]);
     add(Hit::NavAudio, layout_.nav[1]);
     add(Hit::NavRecording, layout_.nav[2]);
-    add(Hit::NavAbout, layout_.nav[3]);
+    add(Hit::NavCaptions, layout_.nav[3]);
+    add(Hit::NavAbout, layout_.nav[4]);
 
     if (page_ == Page::General) {
         add(Hit::Browse, layout_.browse);
@@ -505,6 +523,7 @@ void SettingsWindow::BuildHits() {
             Gdiplus::RectF(layout_.previewBox.X, layout_.previewBox.Y,
                            layout_.previewLabel.GetRight() - layout_.previewBox.X,
                            layout_.previewBox.Height));
+    } else if (page_ == Page::Captions) {
         add(Hit::Transcript,
             Gdiplus::RectF(layout_.transcriptBox.X, layout_.transcriptBox.Y,
                            layout_.transcriptLabel.GetRight() - layout_.transcriptBox.X,
@@ -518,6 +537,11 @@ void SettingsWindow::BuildHits() {
         add(Hit::CaptionSize, layout_.captionSizeField);
         add(Hit::CaptionColor, layout_.captionColorField);
         add(Hit::CaptionPosition, layout_.captionPositionField);
+        add(Hit::Translation,
+            Gdiplus::RectF(layout_.translationBox.X, layout_.translationBox.Y,
+                           layout_.translationLabel.GetRight() - layout_.translationBox.X,
+                           layout_.translationBox.Height));
+        add(Hit::TranslationLanguage, layout_.translationLanguageField);
     } else {
         add(Hit::Diagnostics, layout_.aboutDiagnostics);
         add(Hit::Logs, layout_.aboutLogs);
@@ -580,6 +604,9 @@ void SettingsWindow::Activate(Hit id) {
         case Hit::NavRecording:
             ShowPage(Page::Recording);
             break;
+        case Hit::NavCaptions:
+            ShowPage(Page::Captions);
+            break;
         case Hit::NavAbout:
             ShowPage(Page::About);
             break;
@@ -635,6 +662,21 @@ void SettingsWindow::Activate(Hit id) {
             break;
         case Hit::DownloadModel:
             ShowModelDownload();
+            break;
+        case Hit::Translation:
+            if (!settings_.generateTranscript || !settings_.showLiveCaptions) {
+                MessageBoxW(hwnd_,
+                            i18n::Text(i18n::Str::SettingsTranslationNeedsCaptions),
+                            i18n::Text(i18n::Str::SettingsTranslation),
+                            MB_OK | MB_ICONINFORMATION);
+                break;
+            }
+            settings_.translateCaptions = !settings_.translateCaptions;
+            SaveAndNotify();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            break;
+        case Hit::TranslationLanguage:
+            ShowTranslationLanguageMenu();
             break;
         case Hit::Transcript: {
             const bool enabling = !settings_.generateTranscript;
@@ -925,6 +967,40 @@ void SettingsWindow::ShowModelDownload() {
             if (hwnd_ != nullptr) InvalidateRect(hwnd_, nullptr, FALSE);
         });
     modelDownload_->Show();
+}
+
+void SettingsWindow::ShowTranslationLanguageMenu() {
+    const struct {
+        const char* code;
+        i18n::Str label;
+    } options[] = {
+        {"en", i18n::Str::TranslationLangEnglish},
+        {"zh-Hans", i18n::Str::TranslationLangChinese},
+        {"ja", i18n::Str::TranslationLangJapanese},
+        {"ko", i18n::Str::TranslationLangKorean},
+        {"fr", i18n::Str::TranslationLangFrench},
+        {"de", i18n::Str::TranslationLangGerman},
+        {"es", i18n::Str::TranslationLangSpanish},
+        {"ru", i18n::Str::TranslationLangRussian},
+    };
+    int current = 0;
+    std::vector<menu::Item> items;
+    for (int i = 0; i < 8; ++i) {
+        if (settings_.captionTranslationLanguage == options[i].code) current = i;
+        items.push_back({i18n::Text(options[i].label), L"", ui::Icon::None,
+                         kCmdTranslationLanguageBase + static_cast<UINT>(i), true,
+                         current == i, false, false});
+    }
+    POINT point = {static_cast<LONG>(layout_.translationLanguageField.X),
+                   static_cast<LONG>(layout_.translationLanguageField.GetBottom())};
+    ClientToScreen(hwnd_, &point);
+    const UINT command =
+        static_cast<UINT>(menu::Show(hwnd_, point, items, fonts_, false));
+    if (command < kCmdTranslationLanguageBase) return;
+    settings_.captionTranslationLanguage =
+        options[command - kCmdTranslationLanguageBase].code;
+    SaveAndNotify();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void SettingsWindow::ShowDeviceMenu(bool output) {
@@ -1295,6 +1371,7 @@ void SettingsWindow::Draw(Gdiplus::Graphics& graphics, int width, int height) {
     if (page_ == Page::General) DrawGeneral(graphics);
     else if (page_ == Page::Audio) DrawAudio(graphics);
     else if (page_ == Page::Recording) DrawRecording(graphics);
+    else if (page_ == Page::Captions) DrawCaptions(graphics);
     else DrawAbout(graphics);
 
     if (keyboardFocus_ && focus_ != Hit::None) {
@@ -1356,8 +1433,10 @@ void SettingsWindow::DrawNav(Gdiplus::Graphics& graphics) {
         {i18n::Text(i18n::Str::NavAudio), ui::Icon::Speaker, Page::Audio, Hit::NavAudio},
         {i18n::Text(i18n::Str::NavRecording), ui::Icon::Video, Page::Recording,
          Hit::NavRecording},
+        {i18n::Text(i18n::Str::NavCaptions), ui::Icon::File, Page::Captions,
+         Hit::NavCaptions},
         {i18n::Text(i18n::Str::NavAbout), ui::Icon::Info, Page::About, Hit::NavAbout}};
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         const Gdiplus::RectF rect = layout_.nav[i];
         const bool selected = page_ == items[i].page;
         if (selected) {
@@ -1518,6 +1597,14 @@ void SettingsWindow::DrawRecording(Gdiplus::Graphics& graphics) {
     DrawCheckRow(graphics, layout_.previewBox, layout_.previewLabel,
                  i18n::Text(i18n::Str::PreviewDefault), settings_.showPreview,
                  Hit::Preview);
+}
+
+void SettingsWindow::DrawCaptions(Gdiplus::Graphics& graphics) {
+    ui::DrawTextWrapped(graphics, fonts_,
+                        i18n::Text(i18n::Str::SettingsCaptionsHint),
+                        layout_.captionsHint, ui::FontRole::Small,
+                        ui::colors::TextSecondary(), ui::Align::Near);
+
     DrawCheckRow(graphics, layout_.transcriptBox, layout_.transcriptLabel,
                  i18n::Text(i18n::Str::SettingsTranscript),
                  settings_.generateTranscript, Hit::Transcript);
@@ -1583,6 +1670,37 @@ void SettingsWindow::DrawRecording(Gdiplus::Graphics& graphics) {
                  ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, false);
     DrawField(graphics, layout_.captionPositionField, positionLabel,
               hover_ == Hit::CaptionPosition);
+
+    DrawCheckRow(graphics, layout_.translationBox, layout_.translationLabel,
+                 i18n::Text(i18n::Str::SettingsTranslation),
+                 settings_.translateCaptions, Hit::Translation,
+                 settings_.generateTranscript && settings_.showLiveCaptions);
+    std::wstring translationLanguage = i18n::Text(i18n::Str::TranslationLangEnglish);
+    if (settings_.captionTranslationLanguage == "zh-Hans") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangChinese);
+    } else if (settings_.captionTranslationLanguage == "ja") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangJapanese);
+    } else if (settings_.captionTranslationLanguage == "ko") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangKorean);
+    } else if (settings_.captionTranslationLanguage == "fr") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangFrench);
+    } else if (settings_.captionTranslationLanguage == "de") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangGerman);
+    } else if (settings_.captionTranslationLanguage == "es") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangSpanish);
+    } else if (settings_.captionTranslationLanguage == "ru") {
+        translationLanguage = i18n::Text(i18n::Str::TranslationLangRussian);
+    }
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::SettingsTranslationLanguage),
+                 layout_.translationLanguageLabel, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center,
+                 false);
+    DrawField(graphics, layout_.translationLanguageField, translationLanguage,
+              hover_ == Hit::TranslationLanguage);
+    ui::DrawTextWrapped(graphics, fonts_,
+                        i18n::Text(i18n::Str::SettingsTranslationNote),
+                        layout_.translationNote, ui::FontRole::Small,
+                        ui::colors::TextSecondary(), ui::Align::Near);
 }
 
 void SettingsWindow::DrawAbout(Gdiplus::Graphics& graphics) {

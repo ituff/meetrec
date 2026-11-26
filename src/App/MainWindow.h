@@ -30,6 +30,7 @@
 
 namespace vsr::app {
 
+class CaptionTranslator;
 class PreviewPanel;
 class SettingsWindow;
 class WindowPicker;
@@ -47,6 +48,8 @@ public:
 
     bool Create();
     void ShowAndActivate();
+    // Development/QA helper used by --settings-window.
+    void OpenSettingsPage(int page) { ShowSettingsPage(page); }
     HWND Hwnd() const noexcept { return hwnd_; }
     void RefreshUi();
     void UpdateCaptionOverlay(AppState state);
@@ -302,6 +305,7 @@ private:
     std::unique_ptr<PreviewPanel> preview_;
     std::unique_ptr<SettingsWindow> settings_;
     std::shared_ptr<speech::CaptionFeed> captionFeed_;
+    std::unique_ptr<CaptionTranslator> captionTranslator_;
     CaptionOverlay captionOverlay_;
     bool captionOverlayActive_ = false;
     bool captionOverlayPaused_ = false;
@@ -342,6 +346,8 @@ private:
     int captionFontSize_ = 22;
     std::string captionColor_ = "auto";
     std::string captionPosition_ = "bottom-center";
+    bool translateCaptions_ = false;
+    std::string captionTranslationLanguage_ = "en";
     bool liveCaptionsHotkeyRegistered_ = false;
     std::wstring speechModelDirectory_;
     bool micMuteHotkeyRegistered_ = false;

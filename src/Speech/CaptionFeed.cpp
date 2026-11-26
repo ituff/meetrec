@@ -36,6 +36,48 @@ std::vector<CaptionCue> CaptionFeed::Snapshot(std::size_t maxCount) const {
     return result;
 }
 
+void CaptionFeed::SetTranslation(std::uint64_t cueSequence, std::wstring text,
+                                 std::string lang) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (CaptionCue& cue : cues_) {
+        if (cue.sequence != cueSequence) continue;
+        cue.translation = std::move(text);
+        cue.translationLang = std::move(lang);
+        cue.translationFailed = false;
+        ++sequence_;
+        return;
+    }
+}
+
+void CaptionFeed::MarkTranslationFailed(std::uint64_t cueSequence,
+                                        std::string lang) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (CaptionCue& cue : cues_) {
+        if (cue.sequence != cueSequence) continue;
+        cue.translation.clear();
+        cue.translationLang = std::move(lang);
+        cue.translationFailed = true;
+        ++sequence_;
+        return;
+    }
+}
+
+void CaptionFeed::ClearTranslations() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    bool changed = false;
+    for (CaptionCue& cue : cues_) {
+        if (cue.translation.empty() && cue.translationLang.empty() &&
+            !cue.translationFailed) {
+            continue;
+        }
+        cue.translation.clear();
+        cue.translationLang.clear();
+        cue.translationFailed = false;
+        changed = true;
+    }
+    if (changed) ++sequence_;
+}
+
 std::uint64_t CaptionFeed::Sequence() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return sequence_;

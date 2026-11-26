@@ -6,10 +6,14 @@
 #include <Speech/SpeechModelPack.h>
 #include <Speech/SpeechSession.h>
 
+#include "BingTranslator.h"
+#include "CaptionTranslator.h"
 #include "ModelDownloader.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <memory>
 #include <cstdio>
 #include <filesystem>
 #include <cstring>
@@ -123,6 +127,60 @@ int RunSpeechModelDownload() {
     }
     wprintf(L"[speech-model] installed to %s\n", result.directory.c_str());
     return 0;
+}
+
+int RunTranslationTest(int argc, wchar_t* argv[]) {
+    if (argc < 3) {
+        wprintf(L"usage: MeetRec --translate-test \"<text>\" [--to en]\n");
+        return 2;
+    }
+    const std::wstring text = argv[2];
+    std::string target = "en";
+    for (int i = 3; i + 1 < argc; i += 2) {
+        if (wcscmp(argv[i], L"--to") == 0) target = WideToUtf8(argv[i + 1]);
+    }
+    const TranslationResult result = TranslateWithBing(text, target);
+    if (!result.ok) {
+        wprintf(L"[translate] FAILED: %s\n", result.error.c_str());
+        return 1;
+    }
+    wprintf(L"[translate] %hs <- %hs: %s\n", target.c_str(),
+            result.detectedLanguage.c_str(), result.text.c_str());
+    return 0;
+}
+
+int RunCaptionTranslateTest(int argc, wchar_t* argv[]) {
+    if (argc < 3) {
+        wprintf(L"usage: MeetRec --caption-translate-test \"<text>\" [--to en]\n");
+        return 2;
+    }
+    const std::wstring text = argv[2];
+    std::string target = "en";
+    for (int i = 3; i + 1 < argc; i += 2) {
+        if (wcscmp(argv[i], L"--to") == 0) target = WideToUtf8(argv[i + 1]);
+    }
+
+    auto feed = std::make_shared<speech::CaptionFeed>();
+    feed->Push(text, false, 0, 1'000'000);
+    CaptionTranslator translator(feed);
+    translator.SetTargetLanguage(target);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (std::chrono::steady_clock::now() < deadline) {
+        translator.Poll(true);
+        const auto cues = feed->Snapshot(1);
+        if (!cues.empty() && !cues[0].translation.empty()) {
+            wprintf(L"[caption-translate] %hs: %s\n", target.c_str(),
+                    cues[0].translation.c_str());
+            translator.Stop();
+            return 0;
+        }
+        if (!cues.empty() && cues[0].translationFailed) break;
+        Sleep(200);
+    }
+    translator.Stop();
+    wprintf(L"[caption-translate] FAILED\n");
+    return 1;
 }
 
 int RunSpeechSelfTest(int argc, wchar_t* argv[]) {

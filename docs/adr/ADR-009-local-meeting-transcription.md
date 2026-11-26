@@ -139,7 +139,7 @@ keeps the recording path safe and is what the evaluation corpus supports.
 
 Validation:
 
-- `artifacts/Debug/tests/UnitTests.exe`: 121 tests pass (CaptionFeed ordering/trim added).
+- `artifacts/Debug/tests/UnitTests.exe`: 124 tests pass (CaptionFeed ordering/trim added).
 - A 22 s window recording with the evaluation WAV played through the default render endpoint
   showed the overlay over the recorded window: previous cue dim, latest cue in blue with the
   speaker prefix inline, positioned above the taskbar; the MP4 and SRT/TXT were produced.
@@ -170,3 +170,33 @@ Validation: the headless `--download-speech-model` path was exercised against a 
 mirror of the pinned archive; it downloaded, verified, extracted and installed 230 MB under
 `models/sensevoice`, and `--speech-test` then recognized the 60 s sample without
 `VSR_SPEECH_MODEL_DIR`.
+
+## Live translation addendum
+
+Live captions can optionally be translated. This is a deliberate exception to the
+"everything local" rule and is therefore **opt-in and clearly disclosed**:
+
+- The old `edge.microsoft.com/translate/auth` token flow was retired in 2026 (404 on every
+  request), so the implementation uses the current unauthenticated endpoint
+  `POST https://edge.microsoft.com/translate/translatetext?from=&to=<lang>&isEnterpriseClient=false`.
+  The service rejects raw UTF-8 CJK bodies with HTTP 500, so the request body is serialized as
+  ASCII `\uXXXX` escapes. One request per cue, no token, no API key.
+- `CaptionTranslator` polls the `CaptionFeed` from the main UI timer, translates the newest cues
+  on a worker thread through `BingTranslator` (WinHTTP), and writes the result back into the
+  feed. Only one request is in flight; a bounded queue (32) and a failed marker prevent retry
+  storms. The overlay shows the original in small dim text and the translation in the large
+  speaker-colored text.
+- Target languages: en, zh-Hans, ja, ko, fr, de, es, ru. Enabled only when the transcript and
+  live captions are enabled; the setting is off by default. Failures keep the original caption
+  and only log a warning.
+- Privacy: only the recognized text is sent to Microsoft; audio never leaves the machine. The
+  settings page states this explicitly. Translation applies to the live overlay only; SRT/TXT
+  remain the local original transcript.
+- The endpoint is unofficial and may break or rate-limit; the fallback is simply the original
+  caption. Users who cannot send text online leave the option off.
+
+Validation: `--translate-test "你好，世界..." --to en` returned
+"Hello, world. Today, we are meeting to discuss the project progress."; the feed-level
+`--caption-translate-test` produced the same through `CaptionTranslator`; a real 22 s dev
+recording displayed the Chinese original and English translation in the overlay, captured with
+`PrintWindow` while the desktop was locked.

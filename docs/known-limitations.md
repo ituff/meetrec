@@ -129,6 +129,14 @@ The local transcript is opt-in and separate from the recording pipeline:
   desktop.
 - Cues are written during recording to a crash journal (`<recording>.partial.srt`); the final
   `.srt`/`.txt` appear next to the MP4 after stop.
+- **Live translation is opt-in and online.** When enabled, the recognized text is sent to the
+  free Bing/Edge public endpoint (`edge.microsoft.com/translate/translatetext`) and the
+  translation is shown under the original in the overlay; audio is never uploaded. The endpoint
+  is unofficial, requires network access, and may be rate-limited, change or disappear (the
+  older token endpoint was retired in 2026). Failures leave the original caption visible.
+- Translation applies to the **live overlay only**; the `.srt`/`.txt` files contain the original
+  transcript. Target languages: English, Simplified Chinese, Japanese, Korean, French, German,
+  Spanish, Russian.
 - Recognition runs on a below-normal-priority worker with a bounded queue. On a very slow
   machine the transcript/captions may lag behind the recording; the recording itself is
   unaffected.

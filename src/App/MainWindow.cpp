@@ -31,6 +31,7 @@
 
 #include "AppMenu.h"
 #include "Application.h"
+#include "CaptionTranslator.h"
 #include "CompressWindow.h"
 #include "PreviewPanel.h"
 #include "SettingsWindow.h"
@@ -271,6 +272,7 @@ void MainWindow::OnCreate() {
 
     LoadSettings();
     captionFeed_ = std::make_shared<speech::CaptionFeed>();
+    captionTranslator_ = std::make_unique<CaptionTranslator>(captionFeed_);
     RecreateFonts();
 
     preview_ = std::make_unique<PreviewPanel>(coordinator_);
@@ -2255,9 +2257,9 @@ void MainWindow::Activate(Hit id) {
             break;
         case Hit::CaptionButton:
             if (!generateTranscript_) {
-                // Discoverability: take the user to the recording settings
+                // Discoverability: take the user to the captions settings
                 // page, where the transcript and caption toggles live.
-                ShowSettingsPage(2);
+                ShowSettingsPage(3);
             } else {
                 OnToggleLiveCaptions();
             }
@@ -2310,6 +2312,8 @@ void MainWindow::LoadSettings() {
     captionFontSize_ = settings.captionFontSize;
     captionColor_ = settings.captionColor;
     captionPosition_ = settings.captionPosition;
+    translateCaptions_ = settings.translateCaptions;
+    captionTranslationLanguage_ = settings.captionTranslationLanguage;
     speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
@@ -2357,6 +2361,8 @@ void MainWindow::ApplySettingsFromStore() {
     captionFontSize_ = settings.captionFontSize;
     captionColor_ = settings.captionColor;
     captionPosition_ = settings.captionPosition;
+    translateCaptions_ = settings.translateCaptions;
+    captionTranslationLanguage_ = settings.captionTranslationLanguage;
     speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
@@ -2404,6 +2410,8 @@ void MainWindow::PersistSettings() {
     settings.captionFontSize = captionFontSize_;
     settings.captionColor = captionColor_;
     settings.captionPosition = captionPosition_;
+    settings.translateCaptions = translateCaptions_;
+    settings.captionTranslationLanguage = captionTranslationLanguage_;
     settings.speechModelDirectory = speechModelDirectory_;
     settings.audioOutputDeviceId = SelectedAudioDeviceId(true);
     settings.audioInputDeviceId = SelectedAudioDeviceId(false);
@@ -3050,6 +3058,11 @@ void MainWindow::UpdateCaptionOverlay(AppState state) {
     const bool active = state == AppState::Recording || state == AppState::Paused;
     const bool wanted = active && showLiveCaptions_ && generateTranscript_ &&
                         target_ != nullptr && captionFeed_ != nullptr;
+
+    if (captionTranslator_) {
+        captionTranslator_->SetTargetLanguage(captionTranslationLanguage_);
+        captionTranslator_->Poll(wanted && translateCaptions_);
+    }
 
     if (!wanted) {
         if (captionOverlayActive_) {

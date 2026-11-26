@@ -138,6 +138,8 @@ VSR_TEST(Settings, TranscriptDefaults) {
     VSR_CHECK_EQ(s.captionFontSize, 22);
     VSR_CHECK_EQ(s.captionColor, std::string("auto"));
     VSR_CHECK_EQ(s.captionPosition, std::string("bottom-center"));
+    VSR_CHECK(!s.translateCaptions);
+    VSR_CHECK_EQ(s.captionTranslationLanguage, std::string("en"));
 }
 VSR_TEST(Settings, EncoderPreferenceDefaultsToSoftware) {
     Settings s;

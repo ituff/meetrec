@@ -76,14 +76,15 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
   MeetRec recognizes the two audio sources independently and writes a speaker-labelled
   `<recording>.srt` and `.txt` next to the MP4, and shows a sentence-level click-through
   caption overlay over the recorded window. The first enable offers to download the model
-  (~155 MB) with progress and cancel; an offline model zip is also published. Everything runs
-  on this PC; audio is never uploaded. Toggle captions from the footer **字幕/CC** button,
-  Settings → Recording, the tray menu, or `Ctrl+Alt+S`; font, size, text color and anchor are
-  configurable.
+  (~155 MB) with progress and cancel; an offline model zip is also published. An optional
+  live translation (Bing/Edge free endpoint, target language selectable) shows the original
+  and translation together; only the recognized text is sent online, never audio. Everything
+  else runs on this PC. Toggle captions from the footer **字幕/CC** button, Settings → Captions,
+  the tray menu, or `Ctrl+Alt+S`; font, size, text color and anchor are configurable.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
-- **Settings** (General / Audio / Recording / About) behind the single title-bar **⋯ More**
+- **Settings** (General / Audio / Recording / Captions / About) behind the single title-bar **⋯ More**
   menu, owner-drawn tray menu (Open / Pause-Resume / Stop / Settings / Compress videos /
   Check for updates / Help / Exit), and a non-activating recording toast. Draggable splitter
   between settings and preview (double-click restores the 40/60 default; ratio persists in
@@ -219,6 +220,10 @@ MeetRec.exe --encode-test ...            # full encode-pipeline validation witho
 MeetRec.exe --speech-test WAV [--model DIR] [--out BASE]
                                          # run VAD + SenseVoice over a 16-bit PCM WAV
 MeetRec.exe --download-speech-model      # download/install the transcript model (CLI)
+MeetRec.exe --translate-test "TEXT" --to en
+                                         # test the free Bing/Edge translation client
+MeetRec.exe --caption-translate-test "TEXT" --to en
+                                         # test CaptionFeed -> translator -> feed
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # compress one existing recording
 MeetRec.exe --compress-window [FILE...]  # open the compressor window, optionally pre-filled
@@ -354,12 +359,14 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 - **本地会议转录(P1,可选)**:首次开启时程序会提示下载 SenseVoiceSmall int8 模型
   (约 155 MB,带进度条和取消),之后分别识别系统声音(对方)和麦克风(我),录制结束在 MP4
   旁生成带说话人标签的 `<录制名>.srt` 与 `.txt`,并在录制窗口上方显示句级、可点击穿透的
-  实时字幕。全程本机推理,音频不上传;也可用主界面「字幕」按钮、托盘菜单或 `Ctrl+Alt+S`
-  开关字幕;字体、字号、颜色和位置可在「设置 → 录制 → 字幕样式」中调整。
+  实时字幕。可选**实时翻译**(Bing/Edge 免费接口,目标语言可选),浮层同时显示原文与译文;
+  只有识别出的文字会发到在线服务,音频不会上传。其余识别全程本机完成;可用主界面「字幕」
+  按钮、托盘菜单或 `Ctrl+Alt+S` 开关字幕;字体、字号、颜色、位置和翻译在
+  「设置 → 字幕」中调整。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。
-- **设置窗口**(常规 / 音频 / 录制 / 关于,从标题栏「⋯」菜单打开)、自绘托盘菜单(打开 /
+- **设置窗口**(常规 / 音频 / 录制 / 字幕 / 关于,从标题栏「⋯」菜单打开)、自绘托盘菜单(打开 /
   暂停-继续 / 停止 / 设置 / 压缩视频 / 检查更新 / 帮助 / 退出)、非激活的录制通知卡片;
   设置列与预览之间可拖动分割条(双击恢复默认 40/60,比例保存在 `settings.json`)。
 - **中英文界面**:简体中文为主语言,内置英文;默认跟随 Windows 显示语言,可在
@@ -482,6 +489,10 @@ MeetRec.exe --encode-test ...            # 无驱动的完整编码管线验证
 MeetRec.exe --speech-test WAV [--model DIR] [--out BASE]
                                          # 对 16-bit PCM WAV 跑 VAD + SenseVoice
 MeetRec.exe --download-speech-model      # 下载并安装会议转录模型（命令行）
+MeetRec.exe --translate-test "TEXT" --to en
+                                         # 测试 Bing/Edge 免费翻译客户端
+MeetRec.exe --caption-translate-test "TEXT" --to en
+                                         # 测试字幕 feed -> 翻译 -> feed
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # 压缩单个已有录制文件
 MeetRec.exe --compress-window [FILE...]  # 打开压缩窗口,可预填文件

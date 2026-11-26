@@ -373,6 +373,20 @@ enum class Str {
     ModelDownloadClose,
     ModelDownloadDone,
     SettingsModelDownload,
+    NavCaptions,
+    SettingsCaptionsHint,
+    SettingsTranslation,
+    SettingsTranslationLanguage,
+    SettingsTranslationNote,
+    SettingsTranslationNeedsCaptions,
+    TranslationLangEnglish,
+    TranslationLangChinese,
+    TranslationLangJapanese,
+    TranslationLangKorean,
+    TranslationLangFrench,
+    TranslationLangGerman,
+    TranslationLangSpanish,
+    TranslationLangRussian,
 
     Count
 };

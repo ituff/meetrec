@@ -53,6 +53,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Application.cpp" />
+    <ClCompile Include="BingTranslator.cpp" />
+    <ClCompile Include="CaptionTranslator.cpp" />
     <ClCompile Include="CaptionOverlay.cpp" />
     <ClCompile Include="AppMenu.cpp" />
     <ClCompile Include="AudioDevices.cpp" />
@@ -72,6 +74,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
+    <ClInclude Include="BingTranslator.h" />
+    <ClInclude Include="CaptionTranslator.h" />
     <ClInclude Include="CaptionOverlay.h" />
     <ClInclude Include="CaptionStyle.h" />
     <ClInclude Include="AppMenu.h" />

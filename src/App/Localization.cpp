@@ -388,6 +388,22 @@ constexpr Entry kZh[] = {
     {Str::ModelDownloadClose, L"关闭"},
     {Str::ModelDownloadDone, L"完成"},
     {Str::SettingsModelDownload, L"下载"},
+    {Str::NavCaptions, L"字幕"},
+    {Str::SettingsCaptionsHint, L"会议转录、实时字幕、字幕样式与翻译。"},
+    {Str::SettingsTranslation, L"实时翻译字幕"},
+    {Str::SettingsTranslationLanguage, L"目标语言"},
+    {Str::SettingsTranslationNote,
+     L"翻译会将识别出的文字发送到 Microsoft 在线服务（Bing）；音频不会上传。"
+     L"该免费公共接口可能受网络或服务调整影响。"},
+    {Str::SettingsTranslationNeedsCaptions, L"请先开启会议转录和实时字幕。"},
+    {Str::TranslationLangEnglish, L"英语"},
+    {Str::TranslationLangChinese, L"简体中文"},
+    {Str::TranslationLangJapanese, L"日语"},
+    {Str::TranslationLangKorean, L"韩语"},
+    {Str::TranslationLangFrench, L"法语"},
+    {Str::TranslationLangGerman, L"德语"},
+    {Str::TranslationLangSpanish, L"西班牙语"},
+    {Str::TranslationLangRussian, L"俄语"},
 };
 
 constexpr Entry kEn[] = {
@@ -800,6 +816,25 @@ constexpr Entry kEn[] = {
     {Str::ModelDownloadClose, L"Close"},
     {Str::ModelDownloadDone, L"Done"},
     {Str::SettingsModelDownload, L"Download"},
+    {Str::NavCaptions, L"Captions"},
+    {Str::SettingsCaptionsHint,
+     L"Meeting transcript, live captions, caption style and translation."},
+    {Str::SettingsTranslation, L"Translate live captions"},
+    {Str::SettingsTranslationLanguage, L"Target language"},
+    {Str::SettingsTranslationNote,
+     L"Translation sends the recognized text to Microsoft's online service (Bing); "
+     L"audio is never uploaded. This free public endpoint may be affected by network "
+     L"or service changes."},
+    {Str::SettingsTranslationNeedsCaptions,
+     L"Enable the meeting transcript and live captions first."},
+    {Str::TranslationLangEnglish, L"English"},
+    {Str::TranslationLangChinese, L"Simplified Chinese"},
+    {Str::TranslationLangJapanese, L"Japanese"},
+    {Str::TranslationLangKorean, L"Korean"},
+    {Str::TranslationLangFrench, L"French"},
+    {Str::TranslationLangGerman, L"German"},
+    {Str::TranslationLangSpanish, L"Spanish"},
+    {Str::TranslationLangRussian, L"Russian"},
 };
 
 constexpr size_t kStrCount = static_cast<size_t>(Str::Count);

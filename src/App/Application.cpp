@@ -37,6 +37,7 @@
 #include <Update/UpdateChecker.h>
 
 #include "CaptionOverlay.h"
+#include "CaptionTranslator.h"
 #include "Localization.h"
 #include "MainWindow.h"
 #include "SpeechSelfTest.h"
@@ -507,6 +508,7 @@ int Application::RunInteractive() {
         return 1;
     }
     mainWindow_->ShowAndActivate();
+    if (openSettingsPage_ >= 0) mainWindow_->OpenSettingsPage(openSettingsPage_);
     // Warm the bundled ffmpeg while the user picks a window. A fresh install
     // is ~185 MB of DLLs, and the real-time AV scan of them delayed the first
     // recording start past the pipe deadline (measured 15.5 s on this
@@ -694,6 +696,8 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     bool overlayShown = captionFeed != nullptr && targetWindow != nullptr;
     ULONG_PTR overlayGdiplusToken = 0;
     std::unique_ptr<CaptionOverlay> overlay;
+    std::unique_ptr<CaptionTranslator> overlayTranslator;
+    Settings overlaySettings;
     if (overlayShown) {
         Gdiplus::GdiplusStartupInput gdiplusInput;
         if (Gdiplus::GdiplusStartup(&overlayGdiplusToken, &gdiplusInput, nullptr) !=
@@ -701,15 +705,19 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
             overlayGdiplusToken = 0;
             overlayShown = false;
         } else {
-            Settings overlaySettings = SettingsStore().Load(nullptr);
+            overlaySettings = SettingsStore().Load(nullptr);
             const CaptionStyle overlayStyle = CaptionStyleFromKeys(
                 overlaySettings.captionFont, overlaySettings.captionFontSize,
                 overlaySettings.captionColor, overlaySettings.captionPosition);
             overlay = std::make_unique<CaptionOverlay>();
             overlay->Show(targetWindow, captionFeed, true, overlayStyle);
+            overlayTranslator = std::make_unique<CaptionTranslator>(captionFeed);
+            overlayTranslator->SetTargetLanguage(
+                overlaySettings.captionTranslationLanguage);
         }
     }
 
+    auto nextTranslationPoll = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() < recordStart + std::chrono::seconds(seconds)) {
         const StatusSnapshot snap = coordinator_->GetStatus();
         if (snap.state == AppState::Ready || snap.state == AppState::Faulted) break;
@@ -718,9 +726,16 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+        if (overlayTranslator &&
+            std::chrono::steady_clock::now() >= nextTranslationPoll) {
+            overlayTranslator->Poll(overlaySettings.translateCaptions);
+            nextTranslationPoll =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+        }
         Sleep(10);
     }
 
+    if (overlayTranslator) overlayTranslator->Stop();
     if (overlay) {
         overlay->Hide();
         overlay.reset();
@@ -1190,6 +1205,18 @@ int wmain(int argc, wchar_t* argv[]) {
         return code;
     }
 
+    if (argc >= 3 && wcscmp(argv[1], L"--caption-translate-test") == 0) {
+        const int code = RunCaptionTranslateTest(argc, argv);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 3 && wcscmp(argv[1], L"--translate-test") == 0) {
+        const int code = RunTranslationTest(argc, argv);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
     if (argc >= 2 && wcscmp(argv[1], L"--download-speech-model") == 0) {
         const int code = RunSpeechModelDownload();
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
@@ -1281,6 +1308,11 @@ int wmain(int argc, wchar_t* argv[]) {
         std::vector<std::wstring> files;
         for (int i = 2; i < argc; ++i) files.emplace_back(argv[i]);
         Application::Instance().SetOpenCompressorOnStart(true, files);
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--settings-window") == 0) {
+        const int page = argc >= 3 ? _wtoi(argv[2]) : 0;
+        Application::Instance().SetOpenSettingsOnStart(page);
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--update-window") == 0) {

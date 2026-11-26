@@ -15,4 +15,11 @@ int RunSpeechSelfTest(int argc, wchar_t* argv[]);
 // Used by support/QA and by `--download-speech-model`.
 int RunSpeechModelDownload();
 
+// argv: --translate-test "<text>" [--to <lang>]
+int RunTranslationTest(int argc, wchar_t* argv[]);
+
+// End-to-end CaptionFeed -> CaptionTranslator -> Bing -> feed test.
+// argv: --caption-translate-test "<text>" [--to <lang>]
+int RunCaptionTranslateTest(int argc, wchar_t* argv[]);
+
 } // namespace vsr::app

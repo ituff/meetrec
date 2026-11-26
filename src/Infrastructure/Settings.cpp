@@ -161,6 +161,19 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("translateCaptions");
+        if (v.GetType() == json::Type::Boolean) settings.translateCaptions = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("captionTranslationLanguage");
+        if (v.GetType() == json::Type::String) {
+            settings.captionTranslationLanguage = v.AsString();
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("speechModelDirectory");
         if (v.GetType() == json::Type::String) {
             settings.speechModelDirectory = Utf8ToWide(v.AsString());
@@ -281,6 +294,8 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "captionFontSize" ||
                            kv.first == "captionColor" ||
                            kv.first == "captionPosition" ||
+                           kv.first == "translateCaptions" ||
+                           kv.first == "captionTranslationLanguage" ||
                            kv.first == "speechModelDirectory" ||
                            kv.first == "enableCrashDumps" ||
                            kv.first == "autoCheckUpdates" ||
@@ -324,6 +339,9 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("captionFontSize", json::Value(settings.captionFontSize));
     root.Set("captionColor", json::Value(settings.captionColor));
     root.Set("captionPosition", json::Value(settings.captionPosition));
+    root.Set("translateCaptions", json::Value(settings.translateCaptions));
+    root.Set("captionTranslationLanguage",
+             json::Value(settings.captionTranslationLanguage));
     root.Set("speechModelDirectory", json::Value(WideToUtf8(settings.speechModelDirectory)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
     root.Set("autoCheckUpdates", json::Value(settings.autoCheckUpdates));

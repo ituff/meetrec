@@ -20,7 +20,7 @@ class ModelDownloadWindow;
 
 class SettingsWindow {
 public:
-    enum class Page { General = 0, Audio = 1, Recording = 2, About = 3 };
+    enum class Page { General = 0, Audio = 1, Recording = 2, Captions = 3, About = 4 };
 
     SettingsWindow(HWND owner, std::function<void()> onChanged);
     ~SettingsWindow();
@@ -41,6 +41,7 @@ private:
         NavGeneral,
         NavAudio,
         NavRecording,
+        NavCaptions,
         NavAbout,
         Browse,
         Notification,
@@ -55,6 +56,8 @@ private:
         CaptionColor,
         CaptionPosition,
         DownloadModel,
+        Translation,
+        TranslationLanguage,
         SystemAudio,
         Mic,
         OutputDevice,
@@ -80,7 +83,7 @@ private:
         Gdiplus::RectF title;
         Gdiplus::RectF minimize;
         Gdiplus::RectF close;
-        Gdiplus::RectF nav[4];
+        Gdiplus::RectF nav[5];
         Gdiplus::RectF content;
 
         Gdiplus::RectF saveLabel;
@@ -118,6 +121,13 @@ private:
         Gdiplus::RectF captionColorField;
         Gdiplus::RectF captionPositionLabel;
         Gdiplus::RectF captionPositionField;
+
+        Gdiplus::RectF captionsHint;
+        Gdiplus::RectF translationBox;
+        Gdiplus::RectF translationLabel;
+        Gdiplus::RectF translationLanguageLabel;
+        Gdiplus::RectF translationLanguageField;
+        Gdiplus::RectF translationNote;
 
         Gdiplus::RectF audioHint;
         Gdiplus::RectF audioCard[2];
@@ -176,6 +186,7 @@ private:
     void DrawGeneral(Gdiplus::Graphics& graphics);
     void DrawAudio(Gdiplus::Graphics& graphics);
     void DrawRecording(Gdiplus::Graphics& graphics);
+    void DrawCaptions(Gdiplus::Graphics& graphics);
     void DrawAbout(Gdiplus::Graphics& graphics);
     void DrawField(Gdiplus::Graphics& graphics, const Gdiplus::RectF& rect,
                    const std::wstring& text, bool hover, bool chevron = true);
@@ -193,6 +204,7 @@ private:
     void ShowCaptionSizeMenu();
     void ShowCaptionColorMenu();
     void ShowCaptionPositionMenu();
+    void ShowTranslationLanguageMenu();
     void ShowModelDownload();
     void BrowseForFolder();
     void ShowDiagnostics();

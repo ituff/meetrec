@@ -198,6 +198,10 @@ Notes:
 - **Caption style** lets you change the font, size, text color and anchor (bottom center /
   top center / bottom left / bottom right). The **Auto** color follows the speaker: blue for
   the participants, green for you.
+- **Translate live captions** adds a target language. The overlay then shows the original
+  (small, dim) and the translation (larger). Translation uses the free Bing/Edge public
+  endpoint: **only the recognized text is sent to Microsoft; audio is never uploaded**.
+  Disable the option for fully local recognition.
 - During recording, `<recording>.partial.srt` is kept as a crash-safe journal; the final
   `.srt`/`.txt` are written after stop.
 - If the model pack or runtime DLLs are missing, recording still works and only the transcript
@@ -271,13 +275,14 @@ is found, and a failed hardware job automatically falls back to CPU encoding.
 
 ## 7. Settings reference
 
-Open *⋯ More → Settings...* from the main window header. Four pages:
+Open *⋯ More → Settings...* from the main window header. Five pages:
 
 | Page | Options |
 |---|---|
 | **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
-| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray), save a meeting transcript, show live captions while recording, caption style (font / size / color / position) |
+| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray) |
+| **Captions** | Save a meeting transcript (downloads the model on first use), show live captions while recording, caption style (font / size / color / position), live translation and target language |
 | **About** | Version, author and project links |
 
 Encoder modes:

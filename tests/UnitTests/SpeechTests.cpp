@@ -238,6 +238,30 @@ VSR_TEST(CaptionFeed, PublishesNewestCuesAndClears) {
     VSR_CHECK(feed.Snapshot(2).empty());
 }
 
+VSR_TEST(CaptionFeed, AppliesTranslationsAndClearsThem) {
+    using namespace vsr::speech;
+    CaptionFeed feed;
+    feed.Push(L"你好", false, 0, 1'000'000);
+    const CaptionCue cue = feed.Snapshot(1).front();
+    VSR_CHECK(cue.translation.empty());
+
+    feed.SetTranslation(cue.sequence, L"Hello", "en");
+    const CaptionCue translated = feed.Snapshot(1).front();
+    VSR_CHECK_EQ(translated.translation, std::wstring(L"Hello"));
+    VSR_CHECK_EQ(translated.translationLang, std::string("en"));
+    VSR_CHECK(!translated.translationFailed);
+
+    feed.ClearTranslations();
+    const CaptionCue cleared = feed.Snapshot(1).front();
+    VSR_CHECK(cleared.translation.empty());
+    VSR_CHECK(cleared.translationLang.empty());
+
+    feed.MarkTranslationFailed(cue.sequence, "ja");
+    const CaptionCue failed = feed.Snapshot(1).front();
+    VSR_CHECK(failed.translationFailed);
+    VSR_CHECK_EQ(failed.translationLang, std::string("ja"));
+}
+
 VSR_TEST(CaptionFeed, KeepsOnlyTheMostRecentCues) {
     using namespace vsr::speech;
     CaptionFeed feed;
