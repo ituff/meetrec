@@ -119,10 +119,18 @@ The local transcript is opt-in and separate from the recording pipeline:
   with transcription disabled in Settings, no `.srt`/`.txt` is produced. The two sources are
   recognized separately and labelled "对方/Them" (loopback) and "我/Me" (microphone); with
   speakers, microphone echo produces duplicate lines (use headphones).
-- P1 has **no live subtitle overlay**. Cues are written during recording to a crash journal
-  (`<recording>.partial.srt`); the final `.srt`/`.txt` appear next to the MP4 after stop.
+- The live caption overlay is **sentence-level**: a cue appears after the VAD endpoint and the
+  segment decode, typically 0.5-1.5 s after the phrase (continuous speech is force-split after
+  at most 10 s). There is no word-by-word interim text.
+- The overlay is a topmost, click-through window that follows the recorded window; it hides
+  while paused or when the target is minimized. It is **not part of the MP4** (MeetRec records
+  only the target window), but it is visible to screen-sharing tools if you share the whole
+  desktop.
+- Cues are written during recording to a crash journal (`<recording>.partial.srt`); the final
+  `.srt`/`.txt` appear next to the MP4 after stop.
 - Recognition runs on a below-normal-priority worker with a bounded queue. On a very slow
-  machine the transcript may lag behind the recording; the recording itself is unaffected.
+  machine the transcript/captions may lag behind the recording; the recording itself is
+  unaffected.
 - The model weights are licensed under the FunASR Model Open Source License Agreement v1.1;
   the pack includes the license and attribution. See
   `docs/adr/ADR-009-local-meeting-transcription.md`.

@@ -381,6 +381,13 @@ void SettingsWindow::UpdateLayout() {
         layout.transcriptNote =
             Gdiplus::RectF(contentX + S(30), contentTop + S(280), contentWidth - S(30),
                            S(18));
+        layout.liveCaptionBox =
+            Gdiplus::RectF(contentX, contentTop + S(310), S(18), S(18));
+        layout.liveCaptionLabel =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(308), contentWidth, S(22));
+        layout.liveCaptionNote =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(330), contentWidth - S(30),
+                           S(18));
     } else {
         layout.aboutLogo = Gdiplus::RectF(contentX, contentTop, S(44), S(44));
         layout.aboutTitle =
@@ -473,6 +480,10 @@ void SettingsWindow::BuildHits() {
             Gdiplus::RectF(layout_.transcriptBox.X, layout_.transcriptBox.Y,
                            layout_.transcriptLabel.GetRight() - layout_.transcriptBox.X,
                            layout_.transcriptBox.Height));
+        add(Hit::LiveCaptions,
+            Gdiplus::RectF(layout_.liveCaptionBox.X, layout_.liveCaptionBox.Y,
+                           layout_.liveCaptionLabel.GetRight() - layout_.liveCaptionBox.X,
+                           layout_.liveCaptionBox.Height));
     } else {
         add(Hit::Diagnostics, layout_.aboutDiagnostics);
         add(Hit::Logs, layout_.aboutLogs);
@@ -563,6 +574,18 @@ void SettingsWindow::Activate(Hit id) {
             break;
         case Hit::Language:
             ShowLanguageMenu();
+            break;
+        case Hit::LiveCaptions:
+            if (!settings_.generateTranscript) {
+                MessageBoxW(hwnd_,
+                            i18n::Text(i18n::Str::SettingsLiveCaptionsNeedsTranscript),
+                            i18n::Text(i18n::Str::SettingsLiveCaptions),
+                            MB_OK | MB_ICONINFORMATION);
+                break;
+            }
+            settings_.showLiveCaptions = !settings_.showLiveCaptions;
+            SaveAndNotify();
+            InvalidateRect(hwnd_, nullptr, FALSE);
             break;
         case Hit::Transcript: {
             const bool enabling = !settings_.generateTranscript;
@@ -1205,8 +1228,8 @@ void SettingsWindow::DrawField(Gdiplus::Graphics& graphics, const Gdiplus::RectF
 
 void SettingsWindow::DrawCheckRow(Gdiplus::Graphics& graphics, const Gdiplus::RectF& box,
                                   const Gdiplus::RectF& label, const std::wstring& text,
-                                  bool checked, Hit id) {
-    ui::DrawCheckBox(graphics, box, checked, true, hover_ == id, dpi_);
+                                  bool checked, Hit id, bool enabled) {
+    ui::DrawCheckBox(graphics, box, checked, enabled, hover_ == id, dpi_);
     ui::DrawText(graphics, fonts_, text, label, ui::FontRole::Body, ui::colors::Text(),
                  ui::Align::Near, ui::VAlign::Center, false);
 }
@@ -1335,6 +1358,13 @@ void SettingsWindow::DrawRecording(Gdiplus::Graphics& graphics) {
     ui::DrawText(graphics, fonts_, transcriptNote, layout_.transcriptNote,
                  ui::FontRole::Small, ui::colors::TextSecondary(), ui::Align::Near,
                  ui::VAlign::Center, true);
+    DrawCheckRow(graphics, layout_.liveCaptionBox, layout_.liveCaptionLabel,
+                 i18n::Text(i18n::Str::SettingsLiveCaptions),
+                 settings_.showLiveCaptions, Hit::LiveCaptions,
+                 settings_.generateTranscript);
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::SettingsLiveCaptionsNote),
+                 layout_.liveCaptionNote, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, true);
 }
 
 void SettingsWindow::DrawAbout(Gdiplus::Graphics& graphics) {

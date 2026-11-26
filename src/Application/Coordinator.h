@@ -47,6 +47,7 @@ class WindowPlacementManager;
 struct SavedPlacement;
 } // namespace vsr::window
 namespace vsr::speech {
+class CaptionFeed;
 class SpeechSession;
 } // namespace vsr::speech
 
@@ -77,6 +78,9 @@ struct StartRecordingRequest {
     bool generateTranscript = false;
     std::wstring speechModelDirectory; // empty = <exe>/models/sensevoice
     bool transcriptChinese = true;     // labels inside the generated files
+    // Optional live-caption sink owned by the UI; the speech worker pushes
+    // finalized cues while recording.
+    std::shared_ptr<speech::CaptionFeed> captionFeed;
 };
 
 enum class StopReason { User, TargetLost, DisplayLost, DeviceLost, DiskLow, WriteFailed, Shutdown };

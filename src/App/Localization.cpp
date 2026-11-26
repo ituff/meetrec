@@ -342,6 +342,11 @@ constexpr Entry kZh[] = {
      L"请先运行 scripts\\fetch-speech-model.ps1 下载模型，或把模型包解压到："},
     {Str::SettingsTranscriptAudioRequired,
      L"请先启用系统声音或麦克风，否则无法生成会议转录稿。"},
+    {Str::SettingsLiveCaptions, L"录制时显示实时字幕"},
+    {Str::SettingsLiveCaptionsNote, L"句级字幕；识别在本机完成。"},
+    {Str::SettingsLiveCaptionsNeedsTranscript,
+     L"请先开启「录制后生成会议转录稿」。"},
+    {Str::TrayCaptions, L"实时字幕"},
 };
 
 constexpr Entry kEn[] = {
@@ -706,6 +711,12 @@ constexpr Entry kEn[] = {
     {Str::SettingsTranscriptAudioRequired,
      L"Enable system audio or the microphone first — a transcript needs at least one "
      L"source."},
+    {Str::SettingsLiveCaptions, L"Show live captions while recording"},
+    {Str::SettingsLiveCaptionsNote,
+     L"Sentence-level captions; recognition stays on this PC."},
+    {Str::SettingsLiveCaptionsNeedsTranscript,
+     L"Enable a meeting transcript first."},
+    {Str::TrayCaptions, L"Live captions"},
 };
 
 constexpr size_t kStrCount = static_cast<size_t>(Str::Count);

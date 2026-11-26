@@ -241,6 +241,12 @@ void SpeechSession::Impl::DrainSource(bool microphone) {
         transcript.microphone = microphone;
         transcript.language = recognized.language;
         transcript.text = std::move(text);
+        if (options.captions) {
+            // Copy before the store takes ownership; the overlay reads this on
+            // the UI thread and must never see a moved-from string.
+            options.captions->Push(transcript.text, microphone, transcript.startUs,
+                                   transcript.endUs);
+        }
         store.Add(std::move(transcript));
         segmentCount.fetch_add(1, std::memory_order_relaxed);
 

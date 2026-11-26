@@ -188,8 +188,12 @@ Notes:
 - Recognition is local; audio is never uploaded. Supported languages: Mandarin, Cantonese,
   English, Japanese and Korean.
 - SenseVoice has no hotword boosting; names and product terms may be wrong and need review.
-- P1 produces the transcript after stop; there is no live overlay yet. During recording,
-  `<recording>.partial.srt` is kept as a crash-safe journal.
+- With **Show live captions while recording** enabled, a sentence-level caption overlay
+  follows the recorded window (toggle it from the tray menu or with `Ctrl+Alt+S`). It is
+  click-through, never appears in the MP4, and hides while paused or when the target is
+  minimized. Cues appear per sentence, not word by word.
+- During recording, `<recording>.partial.srt` is kept as a crash-safe journal; the final
+  `.srt`/`.txt` are written after stop.
 - If the model pack or runtime DLLs are missing, recording still works and only the transcript
   is skipped (see the log).
 
@@ -267,7 +271,7 @@ Open *⋯ More → Settings...* from the main window header. Four pages:
 |---|---|
 | **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
-| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray), save a meeting transcript |
+| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray), save a meeting transcript, show live captions while recording |
 | **About** | Version, author and project links |
 
 Encoder modes:

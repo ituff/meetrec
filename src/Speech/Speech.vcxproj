@@ -31,6 +31,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CaptionFeed.cpp" />
     <ClCompile Include="SenseVoiceRecognizer.cpp" />
     <ClCompile Include="SpeechModelPack.cpp" />
     <ClCompile Include="SpeechResampler.cpp" />
@@ -40,6 +41,7 @@
     <ClCompile Include="TranscriptStore.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CaptionFeed.h" />
     <ClInclude Include="SenseVoiceRecognizer.h" />
     <ClInclude Include="SpeechModelPack.h" />
     <ClInclude Include="SpeechResampler.h" />

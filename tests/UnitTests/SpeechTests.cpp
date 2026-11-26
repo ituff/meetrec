@@ -4,6 +4,7 @@
 #include "TestFramework.h"
 
 #include <Infrastructure/Strings.h>
+#include <Speech/CaptionFeed.h>
 #include <Speech/SpeechModelPack.h>
 #include <Speech/SpeechResampler.h>
 #include <Speech/SubtitleFormat.h>
@@ -215,6 +216,39 @@ VSR_TEST(TranscriptStore, EmptyRecordingLeavesNoFiles) {
     VSR_CHECK(!std::filesystem::exists(base.wstring() + L".srt"));
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
+}
+
+VSR_TEST(CaptionFeed, PublishesNewestCuesAndClears) {
+    using namespace vsr::speech;
+    CaptionFeed feed;
+    VSR_CHECK(feed.Empty());
+    feed.Push(L"first line", false, 0, 1'000'000);
+    feed.Push(L"second line", true, 1'000'000, 2'000'000);
+    VSR_CHECK(!feed.Empty());
+    const std::vector<CaptionCue> cues = feed.Snapshot(2);
+    VSR_CHECK_EQ(cues.size(), static_cast<std::size_t>(2));
+    VSR_CHECK_EQ(cues[0].text, std::wstring(L"first line"));
+    VSR_CHECK_EQ(cues[1].text, std::wstring(L"second line"));
+    VSR_CHECK(cues[1].microphone);
+    VSR_CHECK(feed.Sequence() >= 2);
+
+    feed.Clear();
+    VSR_CHECK(feed.Empty());
+    VSR_CHECK(feed.Snapshot(2).empty());
+}
+
+VSR_TEST(CaptionFeed, KeepsOnlyTheMostRecentCues) {
+    using namespace vsr::speech;
+    CaptionFeed feed;
+    for (int i = 0; i < 10; ++i) {
+        feed.Push(L"cue " + std::to_wstring(i), false, i * 1'000'000,
+                  (i + 1) * 1'000'000);
+    }
+    const std::vector<CaptionCue> cues = feed.Snapshot(2);
+    VSR_CHECK_EQ(cues.size(), static_cast<std::size_t>(2));
+    VSR_CHECK_EQ(cues[0].text, std::wstring(L"cue 8"));
+    VSR_CHECK_EQ(cues[1].text, std::wstring(L"cue 9"));
+    VSR_CHECK_EQ(feed.Snapshot(100).size(), static_cast<std::size_t>(8));
 }
 
 VSR_TEST(SpeechModelPack, ReportsMissingPackWithPath) {

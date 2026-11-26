@@ -35,7 +35,7 @@ bool SpeechVad::Create(const std::filesystem::path& model, std::wstring& error) 
     config.silero_vad.threshold = 0.40f;
     config.silero_vad.min_silence_duration = 0.50f;
     config.silero_vad.min_speech_duration = 0.25f;
-    config.silero_vad.max_speech_duration = 15.0f;
+    config.silero_vad.max_speech_duration = 10.0f;
     config.silero_vad.window_size = 512;
     config.sample_rate = 16000;
     config.num_threads = 1;

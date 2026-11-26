@@ -23,6 +23,7 @@
 #include <WindowManagement/WindowEnumerator.h>
 
 #include "AudioDevices.h"
+#include "CaptionOverlay.h"
 #include "Localization.h"
 #include "TrayIcon.h"
 #include "UiDraw.h"
@@ -48,6 +49,8 @@ public:
     void ShowAndActivate();
     HWND Hwnd() const noexcept { return hwnd_; }
     void RefreshUi();
+    void UpdateCaptionOverlay(AppState state);
+    void OnToggleLiveCaptions();
     // Opens (or activates) the compressor window from the menus and the
     // --compress-window development entry.
     void ShowCompressWindow();
@@ -296,6 +299,10 @@ private:
     TrayIcon tray_;
     std::unique_ptr<PreviewPanel> preview_;
     std::unique_ptr<SettingsWindow> settings_;
+    std::shared_ptr<speech::CaptionFeed> captionFeed_;
+    CaptionOverlay captionOverlay_;
+    bool captionOverlayActive_ = false;
+    bool captionOverlayPaused_ = false;
     std::unique_ptr<WindowPicker> picker_;
     std::unique_ptr<ToastWindow> toast_;
     std::unique_ptr<CompressWindow> compressor_;
@@ -328,6 +335,8 @@ private:
     bool systemAudio_ = false;
     bool microphone_ = false;
     bool generateTranscript_ = false;
+    bool showLiveCaptions_ = true;
+    bool liveCaptionsHotkeyRegistered_ = false;
     std::wstring speechModelDirectory_;
     bool micMuteHotkeyRegistered_ = false;
     bool showPreview_ = true;

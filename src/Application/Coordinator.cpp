@@ -776,6 +776,7 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
                 speechOptions.sourceSampleRate = audioRate_;
                 speechOptions.microphone = wantMicrophone;
                 speechOptions.chinese = request.transcriptChinese;
+                speechOptions.captions = request.captionFeed;
                 const unsigned cores = std::thread::hardware_concurrency();
                 speechOptions.numThreads =
                     static_cast<int>(cores >= 8 ? 4u : (cores >= 4 ? 2u : 1u));

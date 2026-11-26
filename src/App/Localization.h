@@ -329,6 +329,10 @@ enum class Str {
     SettingsTranscriptModelMissingTitle,
     SettingsTranscriptModelMissingBody,
     SettingsTranscriptAudioRequired,
+    SettingsLiveCaptions,
+    SettingsLiveCaptionsNote,
+    SettingsLiveCaptionsNeedsTranscript,
+    TrayCaptions,
 
     Count
 };

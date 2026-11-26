@@ -74,8 +74,9 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
   Originals are never modified; output is `<name>-min.mp4`.
 - **Local meeting transcript (P1, opt-in)**: with the separately distributed SenseVoiceSmall
   int8 model pack, MeetRec recognizes the two audio sources independently and writes a
-  speaker-labelled `<recording>.srt` and `.txt` next to the MP4. Everything runs on this PC;
-  audio is never uploaded. Live overlay captions are the next phase.
+  speaker-labelled `<recording>.srt` and `.txt` next to the MP4, and show a sentence-level
+  click-through caption overlay over the recorded window. Everything runs on this PC; audio is
+  never uploaded. Toggle captions from Settings → Recording, the tray menu, or `Ctrl+Alt+S`.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
@@ -348,7 +349,8 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   NVENC / AMD AMF),默认仍用 CPU 编码以保证文件最小;硬件编码失败会自动回退。
 - **本地会议转录(P1,可选)**:安装单独分发的 SenseVoiceSmall int8 模型包后,程序会分别识别
   系统声音(对方)和麦克风(我),录制结束在 MP4 旁生成带说话人标签的 `<录制名>.srt` 与
-  `.txt`。全程本机推理,音频不上传;实时悬浮字幕为下一阶段。
+  `.txt`,并在录制窗口上方显示句级、可点击穿透的实时字幕。全程本机推理,音频不上传;
+  可在「设置 → 录制」、托盘菜单或 `Ctrl+Alt+S` 开关字幕。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。

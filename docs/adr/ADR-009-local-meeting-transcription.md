@@ -1,6 +1,6 @@
 # ADR-009: Local meeting transcription with SenseVoiceSmall int8 (P1)
 
-- **Status:** Accepted (P1 implemented; live overlay captions are the next phase)
+- **Status:** Accepted (P1 transcript and P2 live caption overlay implemented)
 - **Date:** 2026-11-26
 - **Deciders:** MeetRec (Virtual Screen Recorder) project
 - **Related requirements:** meeting transcript (new, 2026-11), FR-090..FR-092 (settings),
@@ -62,8 +62,9 @@ We will ship **post-recording meeting transcription as an optional local module*
   and is logged; it never fails `Start`.
 - **Logging**: cue text is never logged (FR-094); only counts, paths, timings and error codes.
 
-P1 deliberately stops before live overlay captions. The recognition path already produces
-finalized cues during recording, which is the foundation for the P2 overlay.
+P1 delivers the transcript files. P2 adds a **sentence-level live caption overlay** driven by
+the same finalized cues (see the P2 addendum below); it does not add word-by-word interim
+decoding, which would multiply CPU use on the recording machine.
 
 ## Alternatives considered
 
@@ -108,3 +109,34 @@ finalized cues during recording, which is the foundation for the P2 overlay.
   reports the missing runtime instead of crashing.
 - A model directory with a Chinese path (junction) produced the same 9 cues, confirming UTF-8
   path handling on Windows.
+
+## P2 addendum: live caption overlay (2026-11-26)
+
+The transcript worker now publishes each finalized cue to a `CaptionFeed` (mutex-protected
+ring of the newest cues, no UI dependency). A `CaptionOverlay` window owned by the main window
+polls the feed:
+
+- `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST`,
+  so it is click-through, never takes focus, and follows the recorded window's bottom edge
+  (100 ms timer). It hides while paused/minimized and is destroyed with the main window.
+- It draws the newest cue plus the previous one in a dark rounded panel; the source color and
+  accent bar distinguish "对方/Them" (blue) from "我/Me" (green). Text is wrapped by the shared
+  subtitle formatter; a speaker prefix is prepended to the first line so it never sits alone.
+- Enabled by **Settings -> Recording -> Show live captions while recording**
+  (`showLiveCaptions`, default on), the tray **Live captions** item, or `Ctrl+Alt+S`.
+- VAD `max_speech_duration` was reduced from 15 s to 10 s so a continuous utterance cannot
+  delay its caption by 15 s. The final SRT uses the same (slightly shorter) cues.
+
+Why no interim decoding: SenseVoice is non-autoregressive, so partial text requires
+re-decoding the growing utterance every few hundred milliseconds. At the measured RTF
+(~0.14 at 4 threads) that costs more than a core for two sources; the sentence-level overlay
+keeps the recording path safe and is what the evaluation corpus supports.
+
+Validation:
+
+- `artifacts/Debug/tests/UnitTests.exe`: 121 tests pass (CaptionFeed ordering/trim added).
+- A 22 s window recording with the evaluation WAV played through the default render endpoint
+  showed the overlay over the recorded window: previous cue dim, latest cue in blue with the
+  speaker prefix inline, positioned above the taskbar; the MP4 and SRT/TXT were produced.
+- The dev CLI path (`--transcript`) starts GDI+ only for the overlay lifetime; removing the
+  overlay leaves recording unchanged.

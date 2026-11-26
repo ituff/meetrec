@@ -131,6 +131,11 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("showLiveCaptions");
+        if (v.GetType() == json::Type::Boolean) settings.showLiveCaptions = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
         const json::Value& v = root.Find("speechModelDirectory");
         if (v.GetType() == json::Type::String) {
             settings.speechModelDirectory = Utf8ToWide(v.AsString());
@@ -246,6 +251,7 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "audioOutputDeviceId" ||
                            kv.first == "audioInputDeviceId" ||
                            kv.first == "generateTranscript" ||
+                           kv.first == "showLiveCaptions" ||
                            kv.first == "speechModelDirectory" ||
                            kv.first == "enableCrashDumps" ||
                            kv.first == "autoCheckUpdates" ||
@@ -284,6 +290,7 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("audioOutputDeviceId", json::Value(WideToUtf8(settings.audioOutputDeviceId)));
     root.Set("audioInputDeviceId", json::Value(WideToUtf8(settings.audioInputDeviceId)));
     root.Set("generateTranscript", json::Value(settings.generateTranscript));
+    root.Set("showLiveCaptions", json::Value(settings.showLiveCaptions));
     root.Set("speechModelDirectory", json::Value(WideToUtf8(settings.speechModelDirectory)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
     root.Set("autoCheckUpdates", json::Value(settings.autoCheckUpdates));

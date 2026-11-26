@@ -33,8 +33,10 @@
 #include <Infrastructure/Strings.h>
 #include <Transcode/TranscodeService.h>
 #include <Update/UpdateApplier.h>
+#include <Speech/CaptionFeed.h>
 #include <Update/UpdateChecker.h>
 
+#include "CaptionOverlay.h"
 #include "Localization.h"
 #include "MainWindow.h"
 #include "SpeechSelfTest.h"
@@ -613,6 +615,11 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                 display.Value().monitorRect.bottom - display.Value().monitorRect.top);
     }
 
+    std::shared_ptr<speech::CaptionFeed> captionFeed;
+    if (generateTranscript && targetWindow != nullptr) {
+        captionFeed = std::make_shared<speech::CaptionFeed>();
+    }
+
     StartRecordingRequest request;
     request.targetWindow = targetWindow; // null => display-only dev mode
     request.outputDirectory = outputDir;
@@ -627,6 +634,7 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     request.captureMicrophone = captureAudio;
     request.generateTranscript = generateTranscript;
     request.transcriptChinese = true;
+    request.captionFeed = captionFeed;
     request.audioOutputDeviceId = audioOutputDeviceId;
     request.audioInputDeviceId = audioInputDeviceId;
     request.backend = backend;
@@ -679,12 +687,44 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     wprintf(L"[dev-record] recording active; holding for %d s\n", seconds);
     fflush(stdout);
 
+    // The dev CLI normally has no window message pump; the live-caption
+    // overlay needs one for its timer and paints, so pump while holding.
+    // GDI+ is normally started by RunInteractive; this path starts it only
+    // while the overlay is alive and shuts it down after destroying it.
+    bool overlayShown = captionFeed != nullptr && targetWindow != nullptr;
+    ULONG_PTR overlayGdiplusToken = 0;
+    std::unique_ptr<CaptionOverlay> overlay;
+    if (overlayShown) {
+        Gdiplus::GdiplusStartupInput gdiplusInput;
+        if (Gdiplus::GdiplusStartup(&overlayGdiplusToken, &gdiplusInput, nullptr) !=
+            Gdiplus::Ok) {
+            overlayGdiplusToken = 0;
+            overlayShown = false;
+        } else {
+            overlay = std::make_unique<CaptionOverlay>();
+            overlay->Show(targetWindow, captionFeed, true);
+        }
+    }
+
     while (std::chrono::steady_clock::now() < recordStart + std::chrono::seconds(seconds)) {
         const StatusSnapshot snap = coordinator_->GetStatus();
         if (snap.state == AppState::Ready || snap.state == AppState::Faulted) break;
-        Sleep(200);
+        MSG message = {};
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        Sleep(10);
     }
 
+    if (overlay) {
+        overlay->Hide();
+        overlay.reset();
+    }
+    if (overlayGdiplusToken != 0) {
+        Gdiplus::GdiplusShutdown(overlayGdiplusToken);
+        overlayGdiplusToken = 0;
+    }
     (void)coordinator_->Stop(StopReason::User);
     (void)coordinator_->Shutdown();
     const StatusSnapshot finalSnap = coordinator_->GetStatus();

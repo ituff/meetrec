@@ -19,6 +19,7 @@
 
 #include <Infrastructure/Result.h>
 
+#include "CaptionFeed.h"
 #include "SpeechModelPack.h"
 #include "TranscriptStore.h"
 
@@ -31,6 +32,8 @@ struct SpeechSessionOptions {
     bool microphone = false; // capture and recognize the mic source too
     bool chinese = true;     // transcript labels/content language
     int numThreads = 4;      // SenseVoice intra-op threads
+    // Optional live-caption sink; finalized cues are pushed while recording.
+    std::shared_ptr<CaptionFeed> captions;
 };
 
 class SpeechSession {

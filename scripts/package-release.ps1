@@ -9,7 +9,7 @@
 
 param(
     [string]$Configuration = "Release",
-    [string]$Version = "1.5.3",
+    [string]$Version = "1.6.0",
     [string]$FfmpegDir = "C:\ffmpeg\bin",
     [string]$FfmpegLicense = "",
     [string]$FfmpegSourceUrl = "https://github.com/FFmpeg/FFmpeg",

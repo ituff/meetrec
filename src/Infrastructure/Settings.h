@@ -52,6 +52,9 @@ struct Settings {
     // the local SenseVoice int8 pack and write <recording>.srt/.txt. Off by
     // default because it needs the separately distributed model pack.
     bool generateTranscript = false;
+    // Show the live caption overlay while a transcript-enabled recording is
+    // active. Requires generateTranscript.
+    bool showLiveCaptions = true;
     // Optional model-pack directory override (empty = <exe>/models/sensevoice).
     std::wstring speechModelDirectory;
     // UI language: "system" follows the Windows display language; "zh-CN" and

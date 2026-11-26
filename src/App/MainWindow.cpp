@@ -69,7 +69,9 @@ constexpr UINT kCmdTrayExit = 2306;
 constexpr UINT kCmdTrayCompress = 2307;
 constexpr UINT kCmdTrayUpdate = 2308;
 constexpr UINT kCmdTrayMute = 2309;
+constexpr UINT kCmdTrayCaptions = 2310;
 constexpr int kMicMuteHotkeyId = 0x4D3A; // Ctrl+Alt+M while a recording is active
+constexpr int kLiveCaptionsHotkeyId = 0x4C53; // Ctrl+Alt+S
 
 struct UpdateCheckPayload {
     bool manual = false;
@@ -268,6 +270,7 @@ void MainWindow::OnCreate() {
     thumbGeneration_ = std::make_shared<std::atomic<int>>(0);
 
     LoadSettings();
+    captionFeed_ = std::make_shared<speech::CaptionFeed>();
     RecreateFonts();
 
     preview_ = std::make_unique<PreviewPanel>(coordinator_);
@@ -292,6 +295,16 @@ void MainWindow::OnCreate() {
                      L"Ctrl+Alt+M is already in use; the footer button and tray menu still "
                      L"toggle the recording microphone.",
                      {{"hotkey", "Ctrl+Alt+M"},
+                      {"error", std::to_string(GetLastError())}});
+    }
+    liveCaptionsHotkeyRegistered_ =
+        RegisterHotKey(hwnd_, kLiveCaptionsHotkeyId,
+                       MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'S') != FALSE;
+    if (!liveCaptionsHotkeyRegistered_) {
+        log::Warning("UI", "HOTKEY_REGISTER_FAILED", L"",
+                     L"Ctrl+Alt+S is already in use; the tray menu still toggles live "
+                     L"captions.",
+                     {{"hotkey", "Ctrl+Alt+S"},
                       {"error", std::to_string(GetLastError())}});
     }
     if (autoCheckUpdates_) nextUpdateCheckTick_ = GetTickCount64() + 6000;
@@ -543,7 +556,10 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             InvalidateAll();
             return 0;
         case WM_HOTKEY:
-            if (wp == kMicMuteHotkeyId) {
+            if (wp == kLiveCaptionsHotkeyId) {
+                OnToggleLiveCaptions();
+                return 0;
+            } else if (wp == kMicMuteHotkeyId) {
                 OnToggleRecordingMicMute();
                 return 0;
             }
@@ -772,6 +788,10 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 UnregisterHotKey(hwnd, kMicMuteHotkeyId);
                 micMuteHotkeyRegistered_ = false;
             }
+            if (liveCaptionsHotkeyRegistered_) {
+                UnregisterHotKey(hwnd, kLiveCaptionsHotkeyId);
+                liveCaptionsHotkeyRegistered_ = false;
+            }
             if (stopOp_.joinable()) stopOp_.join();
             if (levelMonitor_ != nullptr) {
                 levelMonitor_->Stop();
@@ -862,6 +882,7 @@ void MainWindow::OnTimer() {
     }
 
     previousState_ = snap.state;
+    UpdateCaptionOverlay(snap.state);
 
     if (snap.state == AppState::Preparing || snap.state == AppState::Stopping) {
         spinnerAngle_ = std::fmod(spinnerAngle_ + 24.0f, 360.0f);
@@ -2239,6 +2260,7 @@ void MainWindow::LoadSettings() {
     systemAudio_ = settings.recordSystemAudio;
     microphone_ = settings.recordMicrophone;
     generateTranscript_ = settings.generateTranscript;
+    showLiveCaptions_ = settings.showLiveCaptions;
     speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
@@ -2281,6 +2303,7 @@ void MainWindow::ApplySettingsFromStore() {
     systemAudio_ = settings.recordSystemAudio;
     microphone_ = settings.recordMicrophone;
     generateTranscript_ = settings.generateTranscript;
+    showLiveCaptions_ = settings.showLiveCaptions;
     speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
@@ -2323,6 +2346,7 @@ void MainWindow::PersistSettings() {
     settings.recordSystemAudio = systemAudio_;
     settings.recordMicrophone = microphone_;
     settings.generateTranscript = generateTranscript_;
+    settings.showLiveCaptions = showLiveCaptions_;
     settings.speechModelDirectory = speechModelDirectory_;
     settings.audioOutputDeviceId = SelectedAudioDeviceId(true);
     settings.audioInputDeviceId = SelectedAudioDeviceId(false);
@@ -2701,6 +2725,10 @@ void MainWindow::ShowTrayMenu() {
              snap.microphoneMutedManually ? ui::Icon::MicrophoneMuted : ui::Icon::Microphone,
              kCmdTrayMute, true, false, false, false});
     }
+    items.push_back({i18n::Text(i18n::Str::TrayCaptions),
+                     liveCaptionsHotkeyRegistered_ ? L"Ctrl+Alt+S" : L"",
+                     ui::Icon::File, kCmdTrayCaptions, generateTranscript_,
+                     showLiveCaptions_, false, false});
     items.push_back(
         {i18n::Text(i18n::Str::TrayStop),
          active ? i18n::Format(snap.state == AppState::Paused
@@ -2739,6 +2767,9 @@ void MainWindow::ShowTrayMenu() {
             break;
         case kCmdTrayMute:
             OnToggleRecordingMicMute();
+            break;
+        case kCmdTrayCaptions:
+            OnToggleLiveCaptions();
             break;
         case kCmdTrayStop:
             OnStopClicked();
@@ -2895,6 +2926,7 @@ void MainWindow::OnStartClicked() {
     request.captureMicrophone = microphone_;
     request.generateTranscript = generateTranscript_;
     request.speechModelDirectory = speechModelDirectory_;
+    request.captionFeed = captionFeed_;
     request.transcriptChinese = i18n::CurrentLanguage() == i18n::Language::ZhCn;
     request.captureCursor = captureCursor_;
     request.audioOutputDeviceId = SelectedAudioDeviceId(true);
@@ -2907,6 +2939,7 @@ void MainWindow::OnStartClicked() {
     }
     PersistSettings();
     lastActiveElapsedMs_ = 0;
+    if (captionFeed_) captionFeed_->Clear();
     auto result = coordinator_.Start(request);
     if (!result) {
         const Error error = result.TakeError();
@@ -2945,6 +2978,42 @@ void MainWindow::OnStopAsync() {
         stopOpDone_.store(false);
         (void)coordinator_.Stop(StopReason::User);
         RefreshUi();
+    }
+}
+
+void MainWindow::OnToggleLiveCaptions() {
+    if (!generateTranscript_) return;
+    showLiveCaptions_ = !showLiveCaptions_;
+    PersistSettings();
+    UpdateCaptionOverlay(coordinator_.GetStatus().state);
+    RefreshUi();
+}
+
+void MainWindow::UpdateCaptionOverlay(AppState state) {
+    const bool active = state == AppState::Recording || state == AppState::Paused;
+    const bool wanted = active && showLiveCaptions_ && generateTranscript_ &&
+                        target_ != nullptr && captionFeed_ != nullptr;
+
+    if (!wanted) {
+        if (captionOverlayActive_) {
+            captionOverlay_.Hide();
+            captionOverlayActive_ = false;
+            captionOverlayPaused_ = false;
+        }
+        return;
+    }
+
+    if (!captionOverlayActive_) {
+        captionOverlay_.Show(target_, captionFeed_,
+                             i18n::CurrentLanguage() == i18n::Language::ZhCn);
+        captionOverlayActive_ = true;
+        captionOverlayPaused_ = false;
+    }
+
+    const bool paused = state == AppState::Paused;
+    if (paused != captionOverlayPaused_) {
+        captionOverlay_.SetPaused(paused);
+        captionOverlayPaused_ = paused;
     }
 }
 

@@ -53,6 +53,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Application.cpp" />
+    <ClCompile Include="CaptionOverlay.cpp" />
     <ClCompile Include="AppMenu.cpp" />
     <ClCompile Include="AudioDevices.cpp" />
     <ClCompile Include="CompressWindow.cpp" />
@@ -69,6 +70,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
+    <ClInclude Include="CaptionOverlay.h" />
     <ClInclude Include="AppMenu.h" />
     <ClInclude Include="AudioDevices.h" />
     <ClInclude Include="CompressWindow.h" />

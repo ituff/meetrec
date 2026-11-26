@@ -47,6 +47,7 @@ private:
         AutoUpdate,
         Language,
         Transcript,
+        LiveCaptions,
         SystemAudio,
         Mic,
         OutputDevice,
@@ -97,6 +98,9 @@ private:
         Gdiplus::RectF transcriptBox;
         Gdiplus::RectF transcriptLabel;
         Gdiplus::RectF transcriptNote;
+        Gdiplus::RectF liveCaptionBox;
+        Gdiplus::RectF liveCaptionLabel;
+        Gdiplus::RectF liveCaptionNote;
 
         Gdiplus::RectF audioHint;
         Gdiplus::RectF audioCard[2];
@@ -160,7 +164,7 @@ private:
                    const std::wstring& text, bool hover, bool chevron = true);
     void DrawCheckRow(Gdiplus::Graphics& graphics, const Gdiplus::RectF& box,
                       const Gdiplus::RectF& label, const std::wstring& text, bool checked,
-                      Hit id);
+                      Hit id, bool enabled = true);
     void DrawToggleRow(Gdiplus::Graphics& graphics, const Gdiplus::RectF& card,
                        const Gdiplus::RectF& title, const Gdiplus::RectF& toggle,
                        const std::wstring& label, bool on, Hit id);
