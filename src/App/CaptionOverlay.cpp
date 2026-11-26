@@ -75,6 +75,8 @@ void CaptionOverlay::EnsureWindow() {
     if (hwnd_ == nullptr) return;
     SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     SetLayeredWindowAttributes(hwnd_, 0, 238, LWA_ALPHA);
+    lastWidth_ = -1;
+    lastHeight_ = -1;
     SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 1, 1,
                  SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
@@ -263,7 +265,8 @@ bool CaptionOverlay::Position() {
                                                ui::Scale(8, dpi_)));
     }
 
-    if (x != lastX_ || y != lastY_ || width != lastWidth_ || height != lastHeight_) {
+    const bool sizeChanged = width != lastWidth_ || height != lastHeight_;
+    if (x != lastX_ || y != lastY_ || sizeChanged) {
         lastX_ = x;
         lastY_ = y;
         lastWidth_ = width;
@@ -283,7 +286,7 @@ bool CaptionOverlay::Position() {
     }
     SetWindowPos(hwnd_, HWND_TOPMOST, x, y, width, height,
                  SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-    ApplyRegion();
+    if (sizeChanged) ApplyRegion();
     SetShown(true);
     return true;
 }
@@ -297,7 +300,9 @@ void CaptionOverlay::ApplyRegion() {
     if (width <= 0 || height <= 0) return;
     HRGN region = CreateRoundRectRgn(0, 0, width + 1, height + 1,
                                      ui::Scale(16, dpi_), ui::Scale(16, dpi_));
-    SetWindowRgn(hwnd_, region, TRUE);
+    if (region != nullptr && SetWindowRgn(hwnd_, region, TRUE) == 0) {
+        DeleteObject(region);
+    }
 }
 
 void CaptionOverlay::ReleaseBackBuffer() {
