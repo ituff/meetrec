@@ -17,6 +17,7 @@
 
 #include <Speech/CaptionFeed.h>
 
+#include "CaptionStyle.h"
 #include "UiDraw.h"
 
 namespace vsr::app {
@@ -31,8 +32,11 @@ public:
 
     // Starts following `target` and polling `feed`. Safe to call again for a
     // new recording; the overlay is reused.
-    void Show(HWND target, std::shared_ptr<speech::CaptionFeed> feed, bool chinese);
+    void Show(HWND target, std::shared_ptr<speech::CaptionFeed> feed, bool chinese,
+              const CaptionStyle& style = CaptionStyle{});
     void Hide();
+    // Applies a new font/size/color/anchor while the overlay is visible.
+    void SetStyle(const CaptionStyle& style);
     // Pause keeps the target/feed but hides the text; Resume shows it again
     // when the next cue arrives.
     void SetPaused(bool paused);
@@ -52,11 +56,17 @@ private:
     void RecreateFonts(UINT dpi);
     void ApplyRegion();
     void SetShown(bool shown);
+    float LatestLineHeight() const;
+    float PreviousLineHeight() const;
+    int WrapUnits() const;
+    int PreferredWidth() const;
+    int ContentWidth() const;
 
     HWND hwnd_ = nullptr;
     HWND target_ = nullptr;
     std::shared_ptr<speech::CaptionFeed> feed_;
     bool chinese_ = true;
+    CaptionStyle style_;
     bool paused_ = false;
     bool shown_ = false;
     UINT dpi_ = 96;

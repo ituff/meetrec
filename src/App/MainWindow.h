@@ -84,6 +84,7 @@ private:
         PauseResume,
         Stop,
         MicMute,
+        CaptionButton,
         ResultOpenFile,
         ResultOpenFolder,
         ResultAgain,
@@ -156,6 +157,7 @@ private:
         Gdiplus::RectF secondaryButton;
         Gdiplus::RectF stopButton;
         Gdiplus::RectF muteButton;
+        Gdiplus::RectF captionButton;
 
         Gdiplus::RectF resultArea;
         Gdiplus::RectF resultIcon;
@@ -336,6 +338,10 @@ private:
     bool microphone_ = false;
     bool generateTranscript_ = false;
     bool showLiveCaptions_ = true;
+    std::string captionFont_ = "yahei";
+    int captionFontSize_ = 22;
+    std::string captionColor_ = "auto";
+    std::string captionPosition_ = "bottom-center";
     bool liveCaptionsHotkeyRegistered_ = false;
     std::wstring speechModelDirectory_;
     bool micMuteHotkeyRegistered_ = false;

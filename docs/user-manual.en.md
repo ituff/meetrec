@@ -189,9 +189,12 @@ Notes:
   English, Japanese and Korean.
 - SenseVoice has no hotword boosting; names and product terms may be wrong and need review.
 - With **Show live captions while recording** enabled, a sentence-level caption overlay
-  follows the recorded window (toggle it from the tray menu or with `Ctrl+Alt+S`). It is
-  click-through, never appears in the MP4, and hides while paused or when the target is
-  minimized. Cues appear per sentence, not word by word.
+  follows the recorded window. Toggle it with the footer **字幕/CC** button, the tray menu, or
+  `Ctrl+Alt+S`. It is click-through, never appears in the MP4, and hides while paused or when
+  the target is minimized. Cues appear per sentence, not word by word.
+- **Caption style** lets you change the font, size, text color and anchor (bottom center /
+  top center / bottom left / bottom right). The **Auto** color follows the speaker: blue for
+  the participants, green for you.
 - During recording, `<recording>.partial.srt` is kept as a crash-safe journal; the final
   `.srt`/`.txt` are written after stop.
 - If the model pack or runtime DLLs are missing, recording still works and only the transcript
@@ -271,7 +274,7 @@ Open *⋯ More → Settings...* from the main window header. Four pages:
 |---|---|
 | **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
-| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray), save a meeting transcript, show live captions while recording |
+| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray), save a meeting transcript, show live captions while recording, caption style (font / size / color / position) |
 | **About** | Version, author and project links |
 
 Encoder modes:

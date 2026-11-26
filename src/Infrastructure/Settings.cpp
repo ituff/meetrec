@@ -136,6 +136,31 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("captionFont");
+        if (v.GetType() == json::Type::String) settings.captionFont = v.AsString();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("captionFontSize");
+        if (v.GetType() == json::Type::Number) {
+            const int size = static_cast<int>(v.AsInt(22));
+            if (size >= 14 && size <= 48) settings.captionFontSize = size;
+            else anyFallback = true;
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("captionColor");
+        if (v.GetType() == json::Type::String) settings.captionColor = v.AsString();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("captionPosition");
+        if (v.GetType() == json::Type::String) settings.captionPosition = v.AsString();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
         const json::Value& v = root.Find("speechModelDirectory");
         if (v.GetType() == json::Type::String) {
             settings.speechModelDirectory = Utf8ToWide(v.AsString());
@@ -252,6 +277,10 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "audioInputDeviceId" ||
                            kv.first == "generateTranscript" ||
                            kv.first == "showLiveCaptions" ||
+                           kv.first == "captionFont" ||
+                           kv.first == "captionFontSize" ||
+                           kv.first == "captionColor" ||
+                           kv.first == "captionPosition" ||
                            kv.first == "speechModelDirectory" ||
                            kv.first == "enableCrashDumps" ||
                            kv.first == "autoCheckUpdates" ||
@@ -291,6 +320,10 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("audioInputDeviceId", json::Value(WideToUtf8(settings.audioInputDeviceId)));
     root.Set("generateTranscript", json::Value(settings.generateTranscript));
     root.Set("showLiveCaptions", json::Value(settings.showLiveCaptions));
+    root.Set("captionFont", json::Value(settings.captionFont));
+    root.Set("captionFontSize", json::Value(settings.captionFontSize));
+    root.Set("captionColor", json::Value(settings.captionColor));
+    root.Set("captionPosition", json::Value(settings.captionPosition));
     root.Set("speechModelDirectory", json::Value(WideToUtf8(settings.speechModelDirectory)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
     root.Set("autoCheckUpdates", json::Value(settings.autoCheckUpdates));

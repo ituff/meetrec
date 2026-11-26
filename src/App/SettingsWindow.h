@@ -48,6 +48,10 @@ private:
         Language,
         Transcript,
         LiveCaptions,
+        CaptionFont,
+        CaptionSize,
+        CaptionColor,
+        CaptionPosition,
         SystemAudio,
         Mic,
         OutputDevice,
@@ -101,6 +105,15 @@ private:
         Gdiplus::RectF liveCaptionBox;
         Gdiplus::RectF liveCaptionLabel;
         Gdiplus::RectF liveCaptionNote;
+        Gdiplus::RectF captionStyleLabel;
+        Gdiplus::RectF captionFontLabel;
+        Gdiplus::RectF captionFontField;
+        Gdiplus::RectF captionSizeLabel;
+        Gdiplus::RectF captionSizeField;
+        Gdiplus::RectF captionColorLabel;
+        Gdiplus::RectF captionColorField;
+        Gdiplus::RectF captionPositionLabel;
+        Gdiplus::RectF captionPositionField;
 
         Gdiplus::RectF audioHint;
         Gdiplus::RectF audioCard[2];
@@ -172,6 +185,10 @@ private:
     void ShowQualityMenu();
     void ShowEncoderMenu();
     void ShowDeviceMenu(bool output);
+    void ShowCaptionFontMenu();
+    void ShowCaptionSizeMenu();
+    void ShowCaptionColorMenu();
+    void ShowCaptionPositionMenu();
     void BrowseForFolder();
     void ShowDiagnostics();
     void OpenLogs();

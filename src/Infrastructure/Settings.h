@@ -55,6 +55,14 @@ struct Settings {
     // Show the live caption overlay while a transcript-enabled recording is
     // active. Requires generateTranscript.
     bool showLiveCaptions = true;
+    // Caption overlay appearance. Keys are validated by CaptionStyle.h:
+    // font: yahei|segoe|simsun|arial; size: 14..48 logical px;
+    // color: auto|white|yellow|blue|green|orange;
+    // position: bottom-center|top-center|bottom-left|bottom-right.
+    std::string captionFont = "yahei";
+    int captionFontSize = 22;
+    std::string captionColor = "auto";
+    std::string captionPosition = "bottom-center";
     // Optional model-pack directory override (empty = <exe>/models/sensevoice).
     std::wstring speechModelDirectory;
     // UI language: "system" follows the Windows display language; "zh-CN" and

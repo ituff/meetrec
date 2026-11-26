@@ -123,7 +123,12 @@ polls the feed:
   accent bar distinguish "对方/Them" (blue) from "我/Me" (green). Text is wrapped by the shared
   subtitle formatter; a speaker prefix is prepended to the first line so it never sits alone.
 - Enabled by **Settings -> Recording -> Show live captions while recording**
-  (`showLiveCaptions`, default on), the tray **Live captions** item, or `Ctrl+Alt+S`.
+  (`showLiveCaptions`, default on), the footer **字幕/CC** button, the tray **Live captions**
+  item, or `Ctrl+Alt+S`.
+- Appearance lives in `CaptionStyle` (`captionFont`, `captionFontSize`, `captionColor`,
+  `captionPosition`): YaHei/Segoe UI/SimSun/Arial, 16-32 px, auto/white/yellow/blue/green/
+  orange text, and bottom-center/top-center/bottom-left/bottom-right anchors. The overlay
+  shrinks to the text width and re-lays out when the style changes during a recording.
 - VAD `max_speech_duration` was reduced from 15 s to 10 s so a continuous utterance cannot
   delay its caption by 15 s. The final SRT uses the same (slightly shorter) cues.
 

@@ -701,8 +701,12 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
             overlayGdiplusToken = 0;
             overlayShown = false;
         } else {
+            Settings overlaySettings = SettingsStore().Load(nullptr);
+            const CaptionStyle overlayStyle = CaptionStyleFromKeys(
+                overlaySettings.captionFont, overlaySettings.captionFontSize,
+                overlaySettings.captionColor, overlaySettings.captionPosition);
             overlay = std::make_unique<CaptionOverlay>();
-            overlay->Show(targetWindow, captionFeed, true);
+            overlay->Show(targetWindow, captionFeed, true, overlayStyle);
         }
     }
 
@@ -840,6 +844,11 @@ int RunDevTestWindow(unsigned fps, int seconds, const std::wstring& title) {
     static std::uint64_t frameCounter = 0;
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&frameCounter));
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    // QA visibility: keep the test window above other applications so the
+    // caption overlay (created later, also topmost) can be screenshotted even
+    // when the desktop is busy. This is a dev-only window.
+    SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
     const UINT interval = fps > 0 ? static_cast<UINT>(1000 / fps) : 33u;
     SetTimer(hwnd, 1, interval, nullptr);

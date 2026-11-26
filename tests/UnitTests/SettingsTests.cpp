@@ -134,6 +134,10 @@ VSR_TEST(Settings, TranscriptDefaults) {
     Settings s;
     VSR_CHECK(!s.generateTranscript);
     VSR_CHECK(s.speechModelDirectory.empty());
+    VSR_CHECK_EQ(s.captionFont, std::string("yahei"));
+    VSR_CHECK_EQ(s.captionFontSize, 22);
+    VSR_CHECK_EQ(s.captionColor, std::string("auto"));
+    VSR_CHECK_EQ(s.captionPosition, std::string("bottom-center"));
 }
 VSR_TEST(Settings, EncoderPreferenceDefaultsToSoftware) {
     Settings s;

@@ -16,13 +16,9 @@ namespace {
 constexpr wchar_t kOverlayClassName[] = L"VsrCaptionOverlay";
 constexpr UINT_PTR kOverlayTimerId = 0xCA97;
 constexpr UINT kOverlayTimerMs = 100;
-constexpr int kMaxWidthLogical = 760;
-constexpr int kMinWidthLogical = 240;
 constexpr int kPaddingLogical = 16;
-constexpr int kLatestLineLogical = 30;
-constexpr int kPreviousLineLogical = 18;
 constexpr int kLineGapLogical = 6;
-constexpr int kBottomMarginLogical = 24;
+constexpr int kMarginLogical = 24;
 constexpr int kSideMarginLogical = 16;
 
 Gdiplus::Font* MakeFont(const wchar_t* family, float size) {
@@ -38,6 +34,32 @@ Gdiplus::Font* MakeFont(const wchar_t* family, float size) {
 
 std::wstring LimitLine(const std::wstring& line, bool truncated) {
     return truncated ? line + L"\u2026" : line;
+}
+
+int DisplayUnits(const std::wstring& text) {
+    int units = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        char32_t cp = static_cast<char32_t>(text[i]);
+        std::size_t step = 1;
+        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < text.size()) {
+            const char32_t low = static_cast<char32_t>(text[i + 1]);
+            if (low >= 0xDC00 && low <= 0xDFFF) {
+                cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+                step = 2;
+            }
+        }
+        const bool wide =
+            (cp >= 0x1100 && cp <= 0x11FF) || (cp >= 0x2E80 && cp <= 0x303E) ||
+            (cp >= 0x3041 && cp <= 0x33FF) || (cp >= 0x3400 && cp <= 0x4DBF) ||
+            (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0xA000 && cp <= 0xA4CF) ||
+            (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+            (cp >= 0xFE30 && cp <= 0xFE4F) || (cp >= 0xFF00 && cp <= 0xFF60) ||
+            (cp >= 0xFFE0 && cp <= 0xFFE6) || (cp >= 0x1F300 && cp <= 0x1FAFF) ||
+            (cp >= 0x20000 && cp <= 0x3FFFD);
+        units += wide ? 2 : 1;
+        i += step;
+    }
+    return units;
 }
 
 } // namespace
@@ -94,16 +116,29 @@ void CaptionOverlay::RecreateFonts(UINT dpi) {
     delete captionFont_;
     delete previousFont_;
     dpi_ = dpi;
-    captionFont_ = MakeFont(L"Microsoft YaHei UI", ui::ScaleF(22.0f, dpi_));
-    previousFont_ = MakeFont(L"Microsoft YaHei UI", ui::ScaleF(13.0f, dpi_));
+    const int size = CaptionFontSizeClamp(style_.fontSize);
+    const std::wstring family =
+        style_.fontFamily.empty() ? std::wstring(L"Microsoft YaHei UI")
+                                  : style_.fontFamily;
+    captionFont_ = MakeFont(family.c_str(), ui::ScaleF(static_cast<float>(size), dpi_));
+    previousFont_ = MakeFont(
+        family.c_str(),
+        ui::ScaleF(std::max(11.0f, static_cast<float>(size) * 0.6f), dpi_));
 }
 
 void CaptionOverlay::Show(HWND target, std::shared_ptr<speech::CaptionFeed> feed,
-                          bool chinese) {
+                          bool chinese, const CaptionStyle& style) {
     target_ = target;
     feed_ = std::move(feed);
     chinese_ = chinese;
+    style_ = style;
+    delete captionFont_;
+    delete previousFont_;
+    captionFont_ = nullptr;
+    previousFont_ = nullptr;
     paused_ = false;
+    lastWidth_ = -1;
+    lastHeight_ = -1;
     lastSequence_ = 0;
     cues_.clear();
     latestLines_.clear();
@@ -113,9 +148,73 @@ void CaptionOverlay::Show(HWND target, std::shared_ptr<speech::CaptionFeed> feed
 
     EnsureWindow();
     if (hwnd_ == nullptr) return;
-
+    RecreateFonts(dpi_);
     UpdateContent();
     SetTimer(hwnd_, kOverlayTimerId, kOverlayTimerMs, nullptr);
+}
+
+void CaptionOverlay::SetStyle(const CaptionStyle& style) {
+    if (style_.fontFamily == style.fontFamily &&
+        style_.fontSize == style.fontSize &&
+        style_.autoColor == style.autoColor &&
+        style_.textColor.GetValue() == style.textColor.GetValue() &&
+        style_.anchor == style.anchor) {
+        return;
+    }
+    style_ = style;
+    delete captionFont_;
+    delete previousFont_;
+    captionFont_ = nullptr;
+    previousFont_ = nullptr;
+    if (hwnd_ != nullptr) {
+        RecreateFonts(dpi_);
+        lastWidth_ = -1;
+        lastHeight_ = -1;
+        lastSequence_ = 0;
+        UpdateContent();
+    }
+}
+
+float CaptionOverlay::LatestLineHeight() const {
+    return ui::ScaleF(std::max(24.0f, static_cast<float>(style_.fontSize) * 1.36f),
+                      dpi_);
+}
+
+float CaptionOverlay::PreviousLineHeight() const {
+    return ui::ScaleF(
+        std::max(16.0f, static_cast<float>(style_.fontSize) * 0.6f * 1.4f), dpi_);
+}
+
+int CaptionOverlay::PreferredWidth() const {
+    const int logical = std::clamp(style_.fontSize * 34, 520, 980);
+    return ui::Scale(logical, dpi_);
+}
+
+int CaptionOverlay::WrapUnits() const {
+    const int widthLogical = std::clamp(style_.fontSize * 34, 520, 980);
+    const int available = widthLogical - kPaddingLogical * 2;
+    const int units = static_cast<int>(
+        (static_cast<double>(available) * 2.0 /
+         static_cast<double>(std::max(14, style_.fontSize))) *
+        0.85);
+    return std::clamp(units, 24, 60);
+}
+
+int CaptionOverlay::ContentWidth() const {
+    const float latestFont = ui::ScaleF(static_cast<float>(style_.fontSize), dpi_);
+    const float previousFont = ui::ScaleF(
+        std::max(11.0f, static_cast<float>(style_.fontSize) * 0.6f), dpi_);
+    int latestUnits = 0;
+    for (const std::wstring& line : latestLines_) {
+        latestUnits = std::max(latestUnits, DisplayUnits(line));
+    }
+    const int previousUnits = DisplayUnits(previousLine_);
+    const float latestWidth = static_cast<float>(latestUnits) * latestFont * 0.60f;
+    const float previousWidth =
+        static_cast<float>(previousUnits) * previousFont * 0.60f;
+    const float content = std::max(latestWidth, previousWidth) +
+                          ui::ScaleF(static_cast<float>(kPaddingLogical * 2 + 12), dpi_);
+    return static_cast<int>(std::ceil(content));
 }
 
 void CaptionOverlay::Hide() {
@@ -183,7 +282,8 @@ void CaptionOverlay::UpdateContent() {
     const speech::CaptionCue& latest = cues_.back();
     latestMicrophone_ = latest.microphone;
     const std::wstring latestText = speech::SanitizeTranscriptText(latest.text);
-    latestLines_ = speech::WrapSubtitleText(latestText, 56);
+    latestLines_ = speech::WrapSubtitleText(
+        latestText, static_cast<std::size_t>(WrapUnits()));
     if (latestLines_.size() > 3) {
         latestLines_.resize(3);
         latestLines_.back() = LimitLine(latestLines_.back(), true);
@@ -204,8 +304,10 @@ void CaptionOverlay::UpdateContent() {
         const speech::CaptionCue& previous = cues_[cues_.size() - 2];
         const std::wstring previousText =
             speech::SanitizeTranscriptText(previous.text);
+        const std::size_t previousUnits = static_cast<std::size_t>(
+            std::min(110, static_cast<int>(WrapUnits() * 1.55)));
         const std::vector<std::wstring> lines =
-            speech::WrapSubtitleText(previousText, 84);
+            speech::WrapSubtitleText(previousText, previousUnits);
         if (!lines.empty()) {
             previousLine_ = speech::SpeakerPrefix(previous.microphone, chinese_) +
                             LimitLine(lines.front(), lines.size() > 1);
@@ -240,18 +342,41 @@ bool CaptionOverlay::Position() {
     const int targetWidth = targetRect.right - targetRect.left;
 
     const int width = std::max(
-        ui::Scale(kMinWidthLogical, dpi_),
-        std::min(ui::Scale(kMaxWidthLogical, dpi_), targetWidth - ui::Scale(32, dpi_)));
+        ui::Scale(240, dpi_),
+        std::min({ContentWidth(), PreferredWidth(),
+                  targetWidth - ui::Scale(32, dpi_)}));
 
-    int height = ui::Scale(kPaddingLogical * 2, dpi_);
+    const float latestLine = LatestLineHeight();
+    float heightF = ui::ScaleF(static_cast<float>(kPaddingLogical * 2), dpi_);
     if (hasPrevious_) {
-        height += ui::Scale(kPreviousLineLogical, dpi_) + ui::Scale(kLineGapLogical, dpi_);
+        heightF += PreviousLineHeight() +
+                   ui::ScaleF(static_cast<float>(kLineGapLogical), dpi_);
     }
-    height += static_cast<int>(latestLines_.size()) *
-              ui::Scale(kLatestLineLogical, dpi_);
+    heightF += static_cast<float>(latestLines_.size()) * latestLine;
+    const int height = static_cast<int>(std::lround(heightF));
+    const int margin = ui::Scale(kMarginLogical, dpi_);
 
     int x = targetRect.left + (targetWidth - width) / 2;
-    int y = targetRect.bottom - height - ui::Scale(kBottomMarginLogical, dpi_);
+    int y = targetRect.bottom - height - margin;
+    switch (style_.anchor) {
+        case CaptionAnchor::TopCenter:
+            x = targetRect.left + (targetWidth - width) / 2;
+            y = targetRect.top + margin;
+            break;
+        case CaptionAnchor::BottomLeft:
+            x = targetRect.left + ui::Scale(kSideMarginLogical, dpi_);
+            y = targetRect.bottom - height - margin;
+            break;
+        case CaptionAnchor::BottomRight:
+            x = targetRect.right - width - ui::Scale(kSideMarginLogical, dpi_);
+            y = targetRect.bottom - height - margin;
+            break;
+        case CaptionAnchor::BottomCenter:
+        default:
+            x = targetRect.left + (targetWidth - width) / 2;
+            y = targetRect.bottom - height - margin;
+            break;
+    }
 
     MONITORINFO info = {};
     info.cbSize = sizeof(info);
@@ -357,18 +482,20 @@ void CaptionOverlay::Paint() {
             Gdiplus::SolidBrush brush(Gdiplus::Color(190, 199, 208, 222));
             graphics.DrawString(previousLine_.c_str(), -1, previousFont_,
                                 Gdiplus::PointF(side, y), &format, &brush);
-            y += ui::ScaleF(static_cast<float>(kPreviousLineLogical + kLineGapLogical),
-                            dpi_);
+            y += PreviousLineHeight() +
+                 ui::ScaleF(static_cast<float>(kLineGapLogical), dpi_);
         }
 
         const Gdiplus::Color latestColor =
-            latestMicrophone_ ? Gdiplus::Color(255, 176, 236, 192)
-                              : Gdiplus::Color(255, 176, 208, 255);
+            style_.autoColor
+                ? (latestMicrophone_ ? Gdiplus::Color(255, 176, 236, 192)
+                                     : Gdiplus::Color(255, 176, 208, 255))
+                : style_.textColor;
+        const float latestLine = LatestLineHeight();
         // A slim source accent bar makes "Them" vs "Me" obvious without
         // stealing width from the text.
         const float barHeight =
-            static_cast<float>(latestLines_.size()) *
-            ui::ScaleF(static_cast<float>(kLatestLineLogical), dpi_);
+            static_cast<float>(latestLines_.size()) * latestLine;
         ui::FillRoundRect(
             graphics,
             Gdiplus::RectF(ui::ScaleF(6.0f, dpi_), y, ui::ScaleF(3.0f, dpi_),
@@ -379,7 +506,7 @@ void CaptionOverlay::Paint() {
         for (const std::wstring& line : latestLines_) {
             graphics.DrawString(line.c_str(), -1, captionFont_,
                                 Gdiplus::PointF(side, y), &format, &brush);
-            y += ui::ScaleF(static_cast<float>(kLatestLineLogical), dpi_);
+            y += latestLine;
         }
     }
 

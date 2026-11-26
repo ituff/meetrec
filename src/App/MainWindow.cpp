@@ -1543,6 +1543,15 @@ void MainWindow::DrawFooter(Gdiplus::Graphics& graphics, const StatusSnapshot& s
                        hover_ == Hit::Stop, pressed_ == Hit::Stop, true,
                        ui::Icon::Square);
     }
+    if (layout_.captionButton.Width > 0.0f) {
+        const bool captionsOn = generateTranscript_ && showLiveCaptions_;
+        ui::DrawButton(graphics, fonts_, layout_.captionButton,
+                       i18n::Text(i18n::Str::CaptionButtonLabel),
+                       captionsOn ? ui::ButtonStyle::Primary
+                                  : ui::ButtonStyle::Secondary,
+                       hover_ == Hit::CaptionButton, pressed_ == Hit::CaptionButton,
+                       true, ui::Icon::None);
+    }
 }
 
 void MainWindow::DrawSpinner(Gdiplus::Graphics& graphics, const Gdiplus::RectF& rect,
@@ -1911,10 +1920,30 @@ void MainWindow::UpdateLayout() {
             layout.muteButton =
                 Gdiplus::RectF(anchorX - S(10) - S(40), buttonY, S(40), S(40));
         }
+        // The caption toggle sits left of the mic/pause/start controls. It is
+        // always present on the main page so users can discover the feature;
+        // with transcript generation off, clicking it opens the settings page.
+        layout.captionButton = Gdiplus::RectF();
+        {
+            float anchorX = 0.0f;
+            if (lastSnapshot_.state == AppState::Recording) {
+                anchorX = showMute ? layout.muteButton.X : layout.secondaryButton.X;
+            } else if (lastSnapshot_.state == AppState::Paused) {
+                anchorX = showMute ? layout.muteButton.X : layout.primaryButton.X;
+            } else if (lastSnapshot_.state == AppState::Ready) {
+                anchorX = layout.primaryButton.X;
+            }
+            if (anchorX > 0.0f) {
+                layout.captionButton =
+                    Gdiplus::RectF(anchorX - S(10) - S(40), buttonY, S(40), S(40));
+            }
+        }
         // Keep the status text clear of the footer buttons at the minimum
         // window width.
         float controlsLeft = width - pad;
-        if (lastSnapshot_.state == AppState::Recording) {
+        if (layout.captionButton.Width > 0.0f) {
+            controlsLeft = layout.captionButton.X;
+        } else if (lastSnapshot_.state == AppState::Recording) {
             controlsLeft = showMute ? layout.muteButton.X : layout.secondaryButton.X;
         } else if (lastSnapshot_.state == AppState::Paused) {
             controlsLeft = showMute ? layout.muteButton.X : layout.primaryButton.X;
@@ -2046,6 +2075,9 @@ void MainWindow::BuildHitTargets() {
         } else {
             add(Hit::Start, layout_.primaryButton);
         }
+        if (layout_.captionButton.Width > 0.0f) {
+            add(Hit::CaptionButton, layout_.captionButton);
+        }
     } else if (page_ == Page::Result) {
         add(Hit::ResultOpenFile, layout_.resultPrimary);
         add(Hit::ResultOpenFolder, layout_.resultSecondary);
@@ -2106,6 +2138,10 @@ bool MainWindow::IsHitEnabled(Hit id) const {
         case Hit::MicMute:
             return page_ == Page::Main && lastSnapshot_.microphoneCaptured &&
                    (state == AppState::Recording || state == AppState::Paused);
+        case Hit::CaptionButton:
+            return page_ == Page::Main &&
+                   (state == AppState::Recording || state == AppState::Paused ||
+                    state == AppState::Ready);
         case Hit::Stop:
             return page_ == Page::Main &&
                    (state == AppState::Recording || state == AppState::Paused);
@@ -2217,6 +2253,15 @@ void MainWindow::Activate(Hit id) {
         case Hit::MicMute:
             OnToggleRecordingMicMute();
             break;
+        case Hit::CaptionButton:
+            if (!generateTranscript_) {
+                // Discoverability: take the user to the recording settings
+                // page, where the transcript and caption toggles live.
+                ShowSettingsPage(2);
+            } else {
+                OnToggleLiveCaptions();
+            }
+            break;
         case Hit::Stop:
             OnStopClicked();
             break;
@@ -2261,6 +2306,10 @@ void MainWindow::LoadSettings() {
     microphone_ = settings.recordMicrophone;
     generateTranscript_ = settings.generateTranscript;
     showLiveCaptions_ = settings.showLiveCaptions;
+    captionFont_ = settings.captionFont;
+    captionFontSize_ = settings.captionFontSize;
+    captionColor_ = settings.captionColor;
+    captionPosition_ = settings.captionPosition;
     speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
@@ -2304,6 +2353,10 @@ void MainWindow::ApplySettingsFromStore() {
     microphone_ = settings.recordMicrophone;
     generateTranscript_ = settings.generateTranscript;
     showLiveCaptions_ = settings.showLiveCaptions;
+    captionFont_ = settings.captionFont;
+    captionFontSize_ = settings.captionFontSize;
+    captionColor_ = settings.captionColor;
+    captionPosition_ = settings.captionPosition;
     speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
@@ -2347,6 +2400,10 @@ void MainWindow::PersistSettings() {
     settings.recordMicrophone = microphone_;
     settings.generateTranscript = generateTranscript_;
     settings.showLiveCaptions = showLiveCaptions_;
+    settings.captionFont = captionFont_;
+    settings.captionFontSize = captionFontSize_;
+    settings.captionColor = captionColor_;
+    settings.captionPosition = captionPosition_;
     settings.speechModelDirectory = speechModelDirectory_;
     settings.audioOutputDeviceId = SelectedAudioDeviceId(true);
     settings.audioInputDeviceId = SelectedAudioDeviceId(false);
@@ -3003,11 +3060,16 @@ void MainWindow::UpdateCaptionOverlay(AppState state) {
         return;
     }
 
+    const CaptionStyle style = CaptionStyleFromKeys(
+        captionFont_, captionFontSize_, captionColor_, captionPosition_);
     if (!captionOverlayActive_) {
         captionOverlay_.Show(target_, captionFeed_,
-                             i18n::CurrentLanguage() == i18n::Language::ZhCn);
+                             i18n::CurrentLanguage() == i18n::Language::ZhCn, style);
         captionOverlayActive_ = true;
         captionOverlayPaused_ = false;
+    } else {
+        // Picks up changes made in Settings while a recording is active.
+        captionOverlay_.SetStyle(style);
     }
 
     const bool paused = state == AppState::Paused;

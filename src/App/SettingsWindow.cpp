@@ -45,6 +45,10 @@ constexpr UINT kCmdQualityBase = 3010;
 constexpr UINT kCmdEncoderBase = 3020;
 constexpr UINT kCmdOutputDeviceBase = 3030;
 constexpr UINT kCmdInputDeviceBase = 3040;
+constexpr UINT kCmdCaptionFontBase = 3050;
+constexpr UINT kCmdCaptionSizeBase = 3060;
+constexpr UINT kCmdCaptionColorBase = 3070;
+constexpr UINT kCmdCaptionPositionBase = 3080;
 
 bool InRect(const RECT& rect, POINT point) {
     return point.x >= rect.left && point.x < rect.right && point.y >= rect.top &&
@@ -388,6 +392,24 @@ void SettingsWindow::UpdateLayout() {
         layout.liveCaptionNote =
             Gdiplus::RectF(contentX + S(30), contentTop + S(330), contentWidth - S(30),
                            S(18));
+        layout.captionStyleLabel =
+            Gdiplus::RectF(contentX, contentTop + S(352), contentWidth, S(18));
+        layout.captionFontLabel =
+            Gdiplus::RectF(contentX, contentTop + S(372), S(190), S(18));
+        layout.captionFontField =
+            Gdiplus::RectF(contentX, contentTop + S(390), S(190), S(34));
+        layout.captionSizeLabel =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(372), S(90), S(18));
+        layout.captionSizeField =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(390), S(90), S(34));
+        layout.captionColorLabel =
+            Gdiplus::RectF(contentX, contentTop + S(428), S(190), S(18));
+        layout.captionColorField =
+            Gdiplus::RectF(contentX, contentTop + S(446), S(190), S(34));
+        layout.captionPositionLabel =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(428), S(160), S(18));
+        layout.captionPositionField =
+            Gdiplus::RectF(contentX + S(210), contentTop + S(446), S(160), S(34));
     } else {
         layout.aboutLogo = Gdiplus::RectF(contentX, contentTop, S(44), S(44));
         layout.aboutTitle =
@@ -484,6 +506,10 @@ void SettingsWindow::BuildHits() {
             Gdiplus::RectF(layout_.liveCaptionBox.X, layout_.liveCaptionBox.Y,
                            layout_.liveCaptionLabel.GetRight() - layout_.liveCaptionBox.X,
                            layout_.liveCaptionBox.Height));
+        add(Hit::CaptionFont, layout_.captionFontField);
+        add(Hit::CaptionSize, layout_.captionSizeField);
+        add(Hit::CaptionColor, layout_.captionColorField);
+        add(Hit::CaptionPosition, layout_.captionPositionField);
     } else {
         add(Hit::Diagnostics, layout_.aboutDiagnostics);
         add(Hit::Logs, layout_.aboutLogs);
@@ -586,6 +612,18 @@ void SettingsWindow::Activate(Hit id) {
             settings_.showLiveCaptions = !settings_.showLiveCaptions;
             SaveAndNotify();
             InvalidateRect(hwnd_, nullptr, FALSE);
+            break;
+        case Hit::CaptionFont:
+            ShowCaptionFontMenu();
+            break;
+        case Hit::CaptionSize:
+            ShowCaptionSizeMenu();
+            break;
+        case Hit::CaptionColor:
+            ShowCaptionColorMenu();
+            break;
+        case Hit::CaptionPosition:
+            ShowCaptionPositionMenu();
             break;
         case Hit::Transcript: {
             const bool enabling = !settings_.generateTranscript;
@@ -752,6 +790,116 @@ void SettingsWindow::ShowEncoderMenu() {
     if (command < kCmdEncoderBase) return;
     const UINT index = command - kCmdEncoderBase;
     settings_.encoderPreference = index == 1 ? "hardware" : (index == 2 ? "software" : "auto");
+    SaveAndNotify();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void SettingsWindow::ShowCaptionFontMenu() {
+    const struct {
+        const char* key;
+        i18n::Str label;
+    } options[] = {
+        {"yahei", i18n::Str::CaptionFontYahei},
+        {"segoe", i18n::Str::CaptionFontSegoe},
+        {"simsun", i18n::Str::CaptionFontSimSun},
+        {"arial", i18n::Str::CaptionFontArial},
+    };
+    int current = 0;
+    std::vector<menu::Item> items;
+    for (int i = 0; i < 4; ++i) {
+        if (settings_.captionFont == options[i].key) current = i;
+        items.push_back({i18n::Text(options[i].label), L"", ui::Icon::None,
+                         kCmdCaptionFontBase + static_cast<UINT>(i), true,
+                         current == i, false, false});
+    }
+    POINT point = {static_cast<LONG>(layout_.captionFontField.X),
+                   static_cast<LONG>(layout_.captionFontField.GetBottom())};
+    ClientToScreen(hwnd_, &point);
+    const UINT command =
+        static_cast<UINT>(menu::Show(hwnd_, point, items, fonts_, false));
+    if (command < kCmdCaptionFontBase) return;
+    settings_.captionFont = options[command - kCmdCaptionFontBase].key;
+    SaveAndNotify();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void SettingsWindow::ShowCaptionSizeMenu() {
+    const int sizes[] = {16, 20, 22, 26, 32};
+    int current = 2;
+    std::vector<menu::Item> items;
+    for (int i = 0; i < 5; ++i) {
+        if (settings_.captionFontSize == sizes[i]) current = i;
+        items.push_back({std::to_wstring(sizes[i]) + L" px", L"", ui::Icon::None,
+                         kCmdCaptionSizeBase + static_cast<UINT>(i), true,
+                         current == i, false, false});
+    }
+    POINT point = {static_cast<LONG>(layout_.captionSizeField.X),
+                   static_cast<LONG>(layout_.captionSizeField.GetBottom())};
+    ClientToScreen(hwnd_, &point);
+    const UINT command =
+        static_cast<UINT>(menu::Show(hwnd_, point, items, fonts_, false));
+    if (command < kCmdCaptionSizeBase) return;
+    settings_.captionFontSize = sizes[command - kCmdCaptionSizeBase];
+    SaveAndNotify();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void SettingsWindow::ShowCaptionColorMenu() {
+    const struct {
+        const char* key;
+        i18n::Str label;
+    } options[] = {
+        {"auto", i18n::Str::CaptionColorAuto},
+        {"white", i18n::Str::CaptionColorWhite},
+        {"yellow", i18n::Str::CaptionColorYellow},
+        {"blue", i18n::Str::CaptionColorBlue},
+        {"green", i18n::Str::CaptionColorGreen},
+        {"orange", i18n::Str::CaptionColorOrange},
+    };
+    int current = 0;
+    std::vector<menu::Item> items;
+    for (int i = 0; i < 6; ++i) {
+        if (settings_.captionColor == options[i].key) current = i;
+        items.push_back({i18n::Text(options[i].label), L"", ui::Icon::None,
+                         kCmdCaptionColorBase + static_cast<UINT>(i), true,
+                         current == i, false, false});
+    }
+    POINT point = {static_cast<LONG>(layout_.captionColorField.X),
+                   static_cast<LONG>(layout_.captionColorField.GetBottom())};
+    ClientToScreen(hwnd_, &point);
+    const UINT command =
+        static_cast<UINT>(menu::Show(hwnd_, point, items, fonts_, false));
+    if (command < kCmdCaptionColorBase) return;
+    settings_.captionColor = options[command - kCmdCaptionColorBase].key;
+    SaveAndNotify();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void SettingsWindow::ShowCaptionPositionMenu() {
+    const struct {
+        const char* key;
+        i18n::Str label;
+    } options[] = {
+        {"bottom-center", i18n::Str::CaptionPositionBottomCenter},
+        {"top-center", i18n::Str::CaptionPositionTopCenter},
+        {"bottom-left", i18n::Str::CaptionPositionBottomLeft},
+        {"bottom-right", i18n::Str::CaptionPositionBottomRight},
+    };
+    int current = 0;
+    std::vector<menu::Item> items;
+    for (int i = 0; i < 4; ++i) {
+        if (settings_.captionPosition == options[i].key) current = i;
+        items.push_back({i18n::Text(options[i].label), L"", ui::Icon::None,
+                         kCmdCaptionPositionBase + static_cast<UINT>(i), true,
+                         current == i, false, false});
+    }
+    POINT point = {static_cast<LONG>(layout_.captionPositionField.X),
+                   static_cast<LONG>(layout_.captionPositionField.GetBottom())};
+    ClientToScreen(hwnd_, &point);
+    const UINT command =
+        static_cast<UINT>(menu::Show(hwnd_, point, items, fonts_, false));
+    if (command < kCmdCaptionPositionBase) return;
+    settings_.captionPosition = options[command - kCmdCaptionPositionBase].key;
     SaveAndNotify();
     InvalidateRect(hwnd_, nullptr, FALSE);
 }
@@ -1365,6 +1513,47 @@ void SettingsWindow::DrawRecording(Gdiplus::Graphics& graphics) {
     ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::SettingsLiveCaptionsNote),
                  layout_.liveCaptionNote, ui::FontRole::Small,
                  ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, true);
+
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::SettingsCaptionStyle),
+                 layout_.captionStyleLabel, ui::FontRole::BodyStrong, ui::colors::Text(),
+                 ui::Align::Near, ui::VAlign::Center, false);
+
+    std::wstring fontLabel = i18n::Text(i18n::Str::CaptionFontYahei);
+    if (settings_.captionFont == "segoe") fontLabel = i18n::Text(i18n::Str::CaptionFontSegoe);
+    else if (settings_.captionFont == "simsun") fontLabel = i18n::Text(i18n::Str::CaptionFontSimSun);
+    else if (settings_.captionFont == "arial") fontLabel = i18n::Text(i18n::Str::CaptionFontArial);
+    std::wstring sizeLabel = std::to_wstring(settings_.captionFontSize) + L" px";
+    std::wstring colorLabel = i18n::Text(i18n::Str::CaptionColorAuto);
+    if (settings_.captionColor == "white") colorLabel = i18n::Text(i18n::Str::CaptionColorWhite);
+    else if (settings_.captionColor == "yellow") colorLabel = i18n::Text(i18n::Str::CaptionColorYellow);
+    else if (settings_.captionColor == "blue") colorLabel = i18n::Text(i18n::Str::CaptionColorBlue);
+    else if (settings_.captionColor == "green") colorLabel = i18n::Text(i18n::Str::CaptionColorGreen);
+    else if (settings_.captionColor == "orange") colorLabel = i18n::Text(i18n::Str::CaptionColorOrange);
+    std::wstring positionLabel = i18n::Text(i18n::Str::CaptionPositionBottomCenter);
+    if (settings_.captionPosition == "top-center") positionLabel = i18n::Text(i18n::Str::CaptionPositionTopCenter);
+    else if (settings_.captionPosition == "bottom-left") positionLabel = i18n::Text(i18n::Str::CaptionPositionBottomLeft);
+    else if (settings_.captionPosition == "bottom-right") positionLabel = i18n::Text(i18n::Str::CaptionPositionBottomRight);
+
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::CaptionFontLabel),
+                 layout_.captionFontLabel, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, false);
+    DrawField(graphics, layout_.captionFontField, fontLabel,
+              hover_ == Hit::CaptionFont);
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::CaptionSizeLabel),
+                 layout_.captionSizeLabel, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, false);
+    DrawField(graphics, layout_.captionSizeField, sizeLabel,
+              hover_ == Hit::CaptionSize);
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::CaptionColorLabel),
+                 layout_.captionColorLabel, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, false);
+    DrawField(graphics, layout_.captionColorField, colorLabel,
+              hover_ == Hit::CaptionColor);
+    ui::DrawText(graphics, fonts_, i18n::Text(i18n::Str::CaptionPositionLabel),
+                 layout_.captionPositionLabel, ui::FontRole::Small,
+                 ui::colors::TextSecondary(), ui::Align::Near, ui::VAlign::Center, false);
+    DrawField(graphics, layout_.captionPositionField, positionLabel,
+              hover_ == Hit::CaptionPosition);
 }
 
 void SettingsWindow::DrawAbout(Gdiplus::Graphics& graphics) {

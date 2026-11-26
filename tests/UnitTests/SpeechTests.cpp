@@ -3,6 +3,7 @@
 // pack and is covered by `MeetRec --speech-test`.
 #include "TestFramework.h"
 
+#include <App/CaptionStyle.h>
 #include <Infrastructure/Strings.h>
 #include <Speech/CaptionFeed.h>
 #include <Speech/SpeechModelPack.h>
@@ -249,6 +250,31 @@ VSR_TEST(CaptionFeed, KeepsOnlyTheMostRecentCues) {
     VSR_CHECK_EQ(cues[0].text, std::wstring(L"cue 8"));
     VSR_CHECK_EQ(cues[1].text, std::wstring(L"cue 9"));
     VSR_CHECK_EQ(feed.Snapshot(100).size(), static_cast<std::size_t>(8));
+}
+
+VSR_TEST(CaptionStyle, MapsKeysAndClampsValues) {
+    using namespace vsr::app;
+    VSR_CHECK_EQ(CaptionFontFamilyFromKey("segoe"), std::wstring(L"Segoe UI"));
+    VSR_CHECK_EQ(CaptionFontFamilyFromKey("simsun"), std::wstring(L"SimSun"));
+    VSR_CHECK_EQ(CaptionFontFamilyFromKey("bogus"),
+                 std::wstring(L"Microsoft YaHei UI"));
+    VSR_CHECK_EQ(CaptionFontSizeClamp(8), 14);
+    VSR_CHECK_EQ(CaptionFontSizeClamp(99), 48);
+    VSR_CHECK(CaptionColorIsAuto("auto"));
+    VSR_CHECK(CaptionColorIsAuto(""));
+    VSR_CHECK(!CaptionColorIsAuto("white"));
+    VSR_CHECK_EQ(CaptionTextColorFromKey("yellow").GetValue(),
+                 Gdiplus::Color(255, 245, 222, 140).GetValue());
+    VSR_CHECK(CaptionAnchorFromKey("top-center") == CaptionAnchor::TopCenter);
+    VSR_CHECK(CaptionAnchorFromKey("bottom-right") == CaptionAnchor::BottomRight);
+    VSR_CHECK(CaptionAnchorFromKey("bogus") == CaptionAnchor::BottomCenter);
+
+    const CaptionStyle style =
+        CaptionStyleFromKeys("arial", 20, "green", "bottom-left");
+    VSR_CHECK_EQ(style.fontFamily, std::wstring(L"Arial"));
+    VSR_CHECK_EQ(style.fontSize, 20);
+    VSR_CHECK(!style.autoColor);
+    VSR_CHECK(style.anchor == CaptionAnchor::BottomLeft);
 }
 
 VSR_TEST(SpeechModelPack, ReportsMissingPackWithPath) {

@@ -71,6 +71,7 @@
   <ItemGroup>
     <ClInclude Include="Application.h" />
     <ClInclude Include="CaptionOverlay.h" />
+    <ClInclude Include="CaptionStyle.h" />
     <ClInclude Include="AppMenu.h" />
     <ClInclude Include="AudioDevices.h" />
     <ClInclude Include="CompressWindow.h" />
