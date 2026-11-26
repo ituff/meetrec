@@ -167,6 +167,7 @@ Zoom、腾讯会议或正在演示的 PPT),可选混入系统声音(对方/参�
    下载完成后模型安装到程序目录的 `models\sensevoice\`(程序目录不可写时安装到
    `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice`)。
    离线环境也可从 Releases 下载 `MeetRec-<版本>-win64-speech-model.zip` 手动解压到程序目录。
+   模型未安装时,转录选项右侧也会显示「下载」按钮,可直接重新触发下载。
 2. 模型就绪后状态会显示「模型已就绪」,勾选会自动打开。
 3. 正常录制并结束。MP4 旁会生成 `<录制名>.srt`(字幕)和 `<录制名>.txt`(逐句文字稿),
    分别标注「对方」(系统声音)和「我」(麦克风)。

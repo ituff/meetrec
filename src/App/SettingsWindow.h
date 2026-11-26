@@ -54,6 +54,7 @@ private:
         CaptionSize,
         CaptionColor,
         CaptionPosition,
+        DownloadModel,
         SystemAudio,
         Mic,
         OutputDevice,
@@ -104,6 +105,7 @@ private:
         Gdiplus::RectF transcriptBox;
         Gdiplus::RectF transcriptLabel;
         Gdiplus::RectF transcriptNote;
+        Gdiplus::RectF modelDownloadButton;
         Gdiplus::RectF liveCaptionBox;
         Gdiplus::RectF liveCaptionLabel;
         Gdiplus::RectF liveCaptionNote;

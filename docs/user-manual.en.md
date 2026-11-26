@@ -179,7 +179,8 @@ The result card shows file name, duration, size and path, with three actions:
    with a Cancel button. The model is installed into `models\sensevoice\` next to the app
    (or `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice` when the app folder is not
    writable). For offline use, the separate `MeetRec-<version>-win64-speech-model.zip` can be
-   extracted manually.
+   extracted manually. When the model is missing, a **Download** button also appears next to
+   the transcript option.
 2. Once the model is ready the status shows “Model ready” and the checkbox stays on.
 3. Record normally. After stop, `<recording>.srt` (subtitles) and `<recording>.txt` (plain
    transcript) are written next to the MP4, labelled "Them" (system audio) and "Me"

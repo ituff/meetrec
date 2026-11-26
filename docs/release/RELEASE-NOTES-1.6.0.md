@@ -33,7 +33,8 @@ MeetRec 1.6.0 新增**本地会议转录**与**实时字幕**：录制结束后�
 
 - 主安装包保持轻量；**首次开启转录时程序会弹窗询问是否下载语音模型**（约 155 MB），
   随后显示下载 / 校验 / 解压 / 安装进度条，可随时取消。下载完成后自动启用转录。
-- 模型安装到程序目录的 `models\sensevoice\`；程序目录不可写（如安装在 Program Files）时
+- 模型未安装时,转录选项右侧还会显示「下载」按钮,可随时重新触发。模型安装到程序目录的
+  `models\sensevoice\`；程序目录不可写（如安装在 Program Files）时
   安装到 `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice`。也可用
   `VSR_SPEECH_MODEL_DIR` 指定目录。
 - 离线/企业环境仍可手动使用单独的模型包：

@@ -387,8 +387,11 @@ void SettingsWindow::UpdateLayout() {
         layout.transcriptLabel =
             Gdiplus::RectF(contentX + S(30), contentTop + S(258), contentWidth, S(22));
         layout.transcriptNote =
-            Gdiplus::RectF(contentX + S(30), contentTop + S(280), contentWidth - S(30),
+            Gdiplus::RectF(contentX + S(30), contentTop + S(280), contentWidth - S(108),
                            S(18));
+        layout.modelDownloadButton =
+            Gdiplus::RectF(contentX + contentWidth - S(72), contentTop + S(276), S(72),
+                           S(24));
         layout.liveCaptionBox =
             Gdiplus::RectF(contentX, contentTop + S(310), S(18), S(18));
         layout.liveCaptionLabel =
@@ -510,6 +513,7 @@ void SettingsWindow::BuildHits() {
             Gdiplus::RectF(layout_.liveCaptionBox.X, layout_.liveCaptionBox.Y,
                            layout_.liveCaptionLabel.GetRight() - layout_.liveCaptionBox.X,
                            layout_.liveCaptionBox.Height));
+        if (!speechModelReady_) add(Hit::DownloadModel, layout_.modelDownloadButton);
         add(Hit::CaptionFont, layout_.captionFontField);
         add(Hit::CaptionSize, layout_.captionSizeField);
         add(Hit::CaptionColor, layout_.captionColorField);
@@ -628,6 +632,9 @@ void SettingsWindow::Activate(Hit id) {
             break;
         case Hit::CaptionPosition:
             ShowCaptionPositionMenu();
+            break;
+        case Hit::DownloadModel:
+            ShowModelDownload();
             break;
         case Hit::Transcript: {
             const bool enabling = !settings_.generateTranscript;
@@ -1522,6 +1529,12 @@ void SettingsWindow::DrawRecording(Gdiplus::Graphics& graphics) {
     ui::DrawText(graphics, fonts_, transcriptNote, layout_.transcriptNote,
                  ui::FontRole::Small, ui::colors::TextSecondary(), ui::Align::Near,
                  ui::VAlign::Center, true);
+    if (!speechModelReady_) {
+        ui::DrawButton(graphics, fonts_, layout_.modelDownloadButton,
+                       i18n::Text(i18n::Str::SettingsModelDownload),
+                       ui::ButtonStyle::Secondary, hover_ == Hit::DownloadModel,
+                       pressed_ == Hit::DownloadModel, true);
+    }
     DrawCheckRow(graphics, layout_.liveCaptionBox, layout_.liveCaptionLabel,
                  i18n::Text(i18n::Str::SettingsLiveCaptions),
                  settings_.showLiveCaptions, Hit::LiveCaptions,

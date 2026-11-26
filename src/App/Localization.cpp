@@ -387,6 +387,7 @@ constexpr Entry kZh[] = {
     {Str::ModelDownloadCancel, L"取消"},
     {Str::ModelDownloadClose, L"关闭"},
     {Str::ModelDownloadDone, L"完成"},
+    {Str::SettingsModelDownload, L"下载"},
 };
 
 constexpr Entry kEn[] = {
@@ -798,6 +799,7 @@ constexpr Entry kEn[] = {
     {Str::ModelDownloadCancel, L"Cancel"},
     {Str::ModelDownloadClose, L"Close"},
     {Str::ModelDownloadDone, L"Done"},
+    {Str::SettingsModelDownload, L"Download"},
 };
 
 constexpr size_t kStrCount = static_cast<size_t>(Str::Count);

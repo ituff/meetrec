@@ -372,6 +372,7 @@ enum class Str {
     ModelDownloadCancel,
     ModelDownloadClose,
     ModelDownloadDone,
+    SettingsModelDownload,
 
     Count
 };
