@@ -19,6 +19,7 @@
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Paths.h>
 #include <Infrastructure/Strings.h>
+#include <Speech/SpeechModelPack.h>
 
 #include "AppMenu.h"
 #include "Application.h"
@@ -194,6 +195,14 @@ void SettingsWindow::LoadSettings() {
     std::error_code ec;
     std::filesystem::create_directories(settings_.outputDirectory, ec);
     i18n::SetLanguage(i18n::LanguageFromSetting(settings_.uiLanguage));
+    RefreshSpeechModelStatus();
+}
+
+void SettingsWindow::RefreshSpeechModelStatus() {
+    const speech::SpeechModelStatus status =
+        speech::LocateSpeechModel(settings_.speechModelDirectory);
+    speechModelReady_ = status.ready;
+    speechModelDirectory_ = status.paths.directory.wstring();
 }
 
 void SettingsWindow::SaveAndNotify() {
@@ -365,6 +374,13 @@ void SettingsWindow::UpdateLayout() {
             Gdiplus::RectF(contentX, contentTop + S(226), S(18), S(18));
         layout.previewLabel =
             Gdiplus::RectF(contentX + S(30), contentTop + S(224), contentWidth, S(22));
+        layout.transcriptBox =
+            Gdiplus::RectF(contentX, contentTop + S(260), S(18), S(18));
+        layout.transcriptLabel =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(258), contentWidth, S(22));
+        layout.transcriptNote =
+            Gdiplus::RectF(contentX + S(30), contentTop + S(280), contentWidth - S(30),
+                           S(18));
     } else {
         layout.aboutLogo = Gdiplus::RectF(contentX, contentTop, S(44), S(44));
         layout.aboutTitle =
@@ -453,6 +469,10 @@ void SettingsWindow::BuildHits() {
             Gdiplus::RectF(layout_.previewBox.X, layout_.previewBox.Y,
                            layout_.previewLabel.GetRight() - layout_.previewBox.X,
                            layout_.previewBox.Height));
+        add(Hit::Transcript,
+            Gdiplus::RectF(layout_.transcriptBox.X, layout_.transcriptBox.Y,
+                           layout_.transcriptLabel.GetRight() - layout_.transcriptBox.X,
+                           layout_.transcriptBox.Height));
     } else {
         add(Hit::Diagnostics, layout_.aboutDiagnostics);
         add(Hit::Logs, layout_.aboutLogs);
@@ -544,6 +564,33 @@ void SettingsWindow::Activate(Hit id) {
         case Hit::Language:
             ShowLanguageMenu();
             break;
+        case Hit::Transcript: {
+            const bool enabling = !settings_.generateTranscript;
+            if (enabling) {
+                RefreshSpeechModelStatus();
+                if (!speechModelReady_) {
+                    std::wstring message =
+                        i18n::Text(i18n::Str::SettingsTranscriptModelMissingBody);
+                    message += L"\n\n";
+                    message += speechModelDirectory_;
+                    MessageBoxW(hwnd_, message.c_str(),
+                                i18n::Text(i18n::Str::SettingsTranscriptModelMissingTitle),
+                                MB_OK | MB_ICONINFORMATION);
+                    break;
+                }
+                if (!settings_.recordSystemAudio && !settings_.recordMicrophone) {
+                    MessageBoxW(hwnd_,
+                                i18n::Text(i18n::Str::SettingsTranscriptAudioRequired),
+                                i18n::Text(i18n::Str::SettingsTranscript),
+                                MB_OK | MB_ICONINFORMATION);
+                    break;
+                }
+            }
+            settings_.generateTranscript = enabling;
+            SaveAndNotify();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            break;
+        }
         case Hit::SystemAudio:
             settings_.recordSystemAudio = !settings_.recordSystemAudio;
             SaveAndNotify();
@@ -1277,6 +1324,17 @@ void SettingsWindow::DrawRecording(Gdiplus::Graphics& graphics) {
     DrawCheckRow(graphics, layout_.previewBox, layout_.previewLabel,
                  i18n::Text(i18n::Str::PreviewDefault), settings_.showPreview,
                  Hit::Preview);
+    DrawCheckRow(graphics, layout_.transcriptBox, layout_.transcriptLabel,
+                 i18n::Text(i18n::Str::SettingsTranscript),
+                 settings_.generateTranscript, Hit::Transcript);
+    const std::wstring transcriptNote =
+        speechModelReady_
+            ? std::wstring(i18n::Text(i18n::Str::SettingsTranscriptNoteReady))
+            : std::wstring(i18n::Text(i18n::Str::SettingsTranscriptNoteMissing)) + L" " +
+                  speechModelDirectory_;
+    ui::DrawText(graphics, fonts_, transcriptNote, layout_.transcriptNote,
+                 ui::FontRole::Small, ui::colors::TextSecondary(), ui::Align::Near,
+                 ui::VAlign::Center, true);
 }
 
 void SettingsWindow::DrawAbout(Gdiplus::Graphics& graphics) {

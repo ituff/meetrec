@@ -46,6 +46,7 @@ private:
         MinimizeTray,
         AutoUpdate,
         Language,
+        Transcript,
         SystemAudio,
         Mic,
         OutputDevice,
@@ -93,6 +94,9 @@ private:
         Gdiplus::RectF autoUpdateNote;
         Gdiplus::RectF languageLabel;
         Gdiplus::RectF languageField;
+        Gdiplus::RectF transcriptBox;
+        Gdiplus::RectF transcriptLabel;
+        Gdiplus::RectF transcriptNote;
 
         Gdiplus::RectF audioHint;
         Gdiplus::RectF audioCard[2];
@@ -133,6 +137,7 @@ private:
     void OnCreate();
     void OnDpiChanged(UINT dpi);
     void LoadSettings();
+    void RefreshSpeechModelStatus();
     void SaveAndNotify();
     void ApplyLanguage();
     void RefreshAudioDevices();
@@ -185,6 +190,8 @@ private:
     std::wstring defaultInputName_;
     std::vector<std::string> languageValues_;
     Layout layout_;
+    bool speechModelReady_ = false;
+    std::wstring speechModelDirectory_;
     std::vector<HitTarget> hits_;
     Hit hover_ = Hit::None;
     Hit pressed_ = Hit::None;

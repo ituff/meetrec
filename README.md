@@ -72,6 +72,10 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
   menu): re-encode existing MP4/MKV screen recordings from any app with the same
   screen-content recipe, at below-normal priority and paused while MeetRec is recording.
   Originals are never modified; output is `<name>-min.mp4`.
+- **Local meeting transcript (P1, opt-in)**: with the separately distributed SenseVoiceSmall
+  int8 model pack, MeetRec recognizes the two audio sources independently and writes a
+  speaker-labelled `<recording>.srt` and `.txt` next to the MP4. Everything runs on this PC;
+  audio is never uploaded. Live overlay captions are the next phase.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
@@ -149,6 +153,19 @@ powershell -File scripts\test.ps1
 powershell -File scripts\clean.ps1
 ```
 
+The first build fetches the pinned, checksum-verified sherpa-onnx runtime into
+`artifacts/third_party/` (cached afterwards). Meeting transcription also needs the separate
+model pack; it is not required to build or record:
+
+```powershell
+# Optional ~230 MB model pack (put it next to the exe for local runs)
+powershell -File scripts\fetch-speech-model.ps1 -Destination artifacts\Debug\app\models\sensevoice
+
+# Or point the app at an existing pack
+$env:VSR_SPEECH_MODEL_DIR = "D:\Models\sensevoice"
+MeetRec.exe --speech-test sample16k.wav --out artifacts\speech-smoke
+```
+
 Outputs follow the artifact convention (design.md §7.3):
 
 ```text
@@ -195,6 +212,8 @@ MeetRec.exe --dev-record ...             # headless virtual-display recording
 MeetRec.exe --dev-record-window ...      # headless window recording
 MeetRec.exe --self-check                 # read-only capability report (support tool)
 MeetRec.exe --encode-test ...            # full encode-pipeline validation without a driver
+MeetRec.exe --speech-test WAV [--model DIR] [--out BASE]
+                                         # run VAD + SenseVoice over a 16-bit PCM WAV
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # compress one existing recording
 MeetRec.exe --compress-window [FILE...]  # open the compressor window, optionally pre-filled
@@ -213,6 +232,7 @@ MeetRec.exe --update-window              # open the update window when a check f
 | `--encoder auto\|hardware\|software` | Encoder selection: auto/software use x264, hardware uses the detected GPU encoder (QSV/NVENC/AMF) |
 | `--backend ffmpeg\|mf\|auto` | Recording backend; `auto` prefers ffmpeg, falls back to MF |
 | `--audio` | Add system audio (loopback) + microphone, mixed into one AAC track |
+| `--transcript` | With `--audio`: write `<recording>.srt`/`.txt` next to the MP4 |
 | `--audio-out/-in <endpoint-id>` | Pin the recorded render/capture endpoints |
 
 Exit codes for `--dev-record`: `0` success · `2` driver/display missing · `3` start rejected ·
@@ -226,7 +246,8 @@ encoder MFTs are unreliable on some Insider builds. Support-only audio dumps:
 a system-only run.
 
 Data locations (per user): `%LOCALAPPDATA%\VirtualScreenRecorder\` (`settings.json`,
-`Logs\`, `Diagnostics\`).
+`Logs\`, `Diagnostics\`). The optional speech model pack lives in `models\sensevoice\` next to
+`MeetRec.exe` (or the path in `VSR_SPEECH_MODEL_DIR`).
 
 ## Testing
 
@@ -264,7 +285,10 @@ Project status: P0 MVP complete; P1 items implemented beyond baseline are listed
 Driver code in `src/Driver` is derived from Microsoft's
 [Windows-driver-samples IndirectDisplay](https://github.com/microsoft/Windows-driver-samples)
 sample (MIT License, Copyright (c) Microsoft Corporation); the bundled FFmpeg is GPLv3 with
-license text staged next to the executable. All other first-party code is part of the Virtual
+license text staged next to the executable. The optional speech runtime is
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0); the SenseVoiceSmall model
+pack is distributed separately under the FunASR Model Open Source License Agreement v1.1 with
+its license text and attribution included. All other first-party code is part of the Virtual
 Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md).
 
 ---
@@ -322,6 +346,9 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   MP4/MKV 用同一套屏幕内容编码配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。
   原文件不会被修改,输出为 `<原名>-min.mp4`。可选**硬件加速**(自动检测 Intel QSV / NVIDIA
   NVENC / AMD AMF),默认仍用 CPU 编码以保证文件最小;硬件编码失败会自动回退。
+- **本地会议转录(P1,可选)**:安装单独分发的 SenseVoiceSmall int8 模型包后,程序会分别识别
+  系统声音(对方)和麦克风(我),录制结束在 MP4 旁生成带说话人标签的 `<录制名>.srt` 与
+  `.txt`。全程本机推理,音频不上传;实时悬浮字幕为下一阶段。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。
@@ -390,6 +417,18 @@ powershell -File scripts\test.ps1
 powershell -File scripts\clean.ps1
 ```
 
+首次构建会下载并校验固定版本的 sherpa-onnx 运行时到 `artifacts/third_party/`(之后复用缓存)。
+会议转录还需要单独的模型包;构建和录制本身不依赖它:
+
+```powershell
+# 可选:约 230 MB 的模型包(本地运行时放到 exe 旁)
+powershell -File scripts\fetch-speech-model.ps1 -Destination artifacts\Debug\app\models\sensevoice
+
+# 或用环境变量指定已有模型目录
+$env:VSR_SPEECH_MODEL_DIR = "D:\Models\sensevoice"
+MeetRec.exe --speech-test sample16k.wav --out artifacts\speech-smoke
+```
+
 产物遵循 artifact 约定(design.md §7.3):
 
 ```text
@@ -433,6 +472,8 @@ MeetRec.exe --dev-record ...             # 无界面虚拟显示器录制
 MeetRec.exe --dev-record-window ...      # 无界面窗口录制
 MeetRec.exe --self-check                 # 只读能力报告(支持/诊断工具)
 MeetRec.exe --encode-test ...            # 无驱动的完整编码管线验证
+MeetRec.exe --speech-test WAV [--model DIR] [--out BASE]
+                                         # 对 16-bit PCM WAV 跑 VAD + SenseVoice
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # 压缩单个已有录制文件
 MeetRec.exe --compress-window [FILE...]  # 打开压缩窗口,可预填文件
@@ -451,6 +492,7 @@ MeetRec.exe --update-window              # 检查到更新时直接打开更新�
 | `--encoder auto\|hardware\|software` | 编码器选择:auto/software 用 x264,hardware 用检测到的 GPU 编码器(QSV/NVENC/AMF) |
 | `--backend ffmpeg\|mf\|auto` | 录制后端;`auto` 优先 ffmpeg,回退 MF |
 | `--audio` | 加入系统声音(loopback)+ 麦克风,混入一条 AAC 音轨 |
+| `--transcript` | 配合 `--audio`:在 MP4 旁生成 `<录制名>.srt`/`.txt` |
 | `--audio-out/-in <endpoint-id>` | 指定录制回放/捕获端点 |
 
 `--dev-record` 退出码:`0` 成功 · `2` 驱动/显示器不可用 · `3` 启动被拒绝 ·
@@ -465,7 +507,8 @@ Insider 版本上不稳定的系统媒体栈编码器。设置里的「编码方
 `VSR_AUDIO_DUMP`;`VSR_MIC_DISABLE=1` 强制仅系统声音。
 
 数据位置(每用户):`%LOCALAPPDATA%\VirtualScreenRecorder\`(`settings.json`、`Logs\`、
-`Diagnostics\`)。
+`Diagnostics\`)。可选的语音模型包放在 `MeetRec.exe` 旁的 `models\sensevoice\`,或由
+`VSR_SPEECH_MODEL_DIR` 指定。
 
 ## 测试
 
@@ -501,5 +544,7 @@ scripts/                     # 构建 / 测试 / 清理 / 驱动部署
 `src/Driver` 中的驱动代码派生自微软
 [Windows-driver-samples IndirectDisplay](https://github.com/microsoft/Windows-driver-samples)
 示例(MIT 许可,Copyright (c) Microsoft Corporation);内置 FFmpeg 为 GPLv3,许可证文本
-随包附带。其余第一方代码属于 Virtual Screen Recorder 项目。详见
+随包附带。可选语音运行时为 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
+(Apache-2.0);SenseVoiceSmall 模型包单独分发,遵循 FunASR Model Open Source License
+Agreement v1.1,包内附带许可证与署名。其余第一方代码属于 Virtual Screen Recorder 项目。详见
 [docs/sample-audit-idd.md](docs/sample-audit-idd.md)。

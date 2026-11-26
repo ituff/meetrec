@@ -171,6 +171,28 @@ The result card shows file name, duration, size and path, with three actions:
 - **Open folder** — locate it in File Explorer;
 - **Record again** — return to Ready with the same settings for the next session.
 
+### Step 8 (optional): Save a meeting transcript
+
+1. Download the separate `MeetRec-<version>-win64-speech-model.zip` from Releases and extract it
+   into the MeetRec folder so `models\sensevoice\` contains `model.int8.onnx`, `tokens.txt` and
+   `silero_vad.onnx`.
+2. Enable **Settings → Recording → Save a meeting transcript**. At least one audio source
+   (system audio or microphone) must be enabled; if the model is missing, the checkbox shows
+   the expected path.
+3. Record normally. After stop, `<recording>.srt` (subtitles) and `<recording>.txt` (plain
+   transcript) are written next to the MP4, labelled "Them" (system audio) and "Me"
+   (microphone).
+
+Notes:
+
+- Recognition is local; audio is never uploaded. Supported languages: Mandarin, Cantonese,
+  English, Japanese and Korean.
+- SenseVoice has no hotword boosting; names and product terms may be wrong and need review.
+- P1 produces the transcript after stop; there is no live overlay yet. During recording,
+  `<recording>.partial.srt` is kept as a crash-safe journal.
+- If the model pack or runtime DLLs are missing, recording still works and only the transcript
+  is skipped (see the log).
+
 ## 5. Recording from the tray
 
 - You can minimize MeetRec itself while recording (**this minimizes MeetRec — not the recorded
@@ -245,7 +267,7 @@ Open *⋯ More → Settings...* from the main window header. Four pages:
 |---|---|
 | **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
-| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray) |
+| **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray), save a meeting transcript |
 | **About** | Version, author and project links |
 
 Encoder modes:

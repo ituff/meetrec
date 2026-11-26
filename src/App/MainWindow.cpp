@@ -2238,6 +2238,8 @@ void MainWindow::LoadSettings() {
     encoderPreference_ = encoder::EncoderPreferenceFromString(settings.encoderPreference);
     systemAudio_ = settings.recordSystemAudio;
     microphone_ = settings.recordMicrophone;
+    generateTranscript_ = settings.generateTranscript;
+    speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
     minimizeToTray_ = settings.minimizeToTray;
@@ -2278,6 +2280,8 @@ void MainWindow::ApplySettingsFromStore() {
     encoderPreference_ = encoder::EncoderPreferenceFromString(settings.encoderPreference);
     systemAudio_ = settings.recordSystemAudio;
     microphone_ = settings.recordMicrophone;
+    generateTranscript_ = settings.generateTranscript;
+    speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
     minimizeToTray_ = settings.minimizeToTray;
@@ -2318,6 +2322,8 @@ void MainWindow::PersistSettings() {
                                      : "auto";
     settings.recordSystemAudio = systemAudio_;
     settings.recordMicrophone = microphone_;
+    settings.generateTranscript = generateTranscript_;
+    settings.speechModelDirectory = speechModelDirectory_;
     settings.audioOutputDeviceId = SelectedAudioDeviceId(true);
     settings.audioInputDeviceId = SelectedAudioDeviceId(false);
     settings.showPreview = showPreview_;
@@ -2887,6 +2893,9 @@ void MainWindow::OnStartClicked() {
     request.encoderPreference = encoderPreference_;
     request.captureAudio = systemAudio_;
     request.captureMicrophone = microphone_;
+    request.generateTranscript = generateTranscript_;
+    request.speechModelDirectory = speechModelDirectory_;
+    request.transcriptChinese = i18n::CurrentLanguage() == i18n::Language::ZhCn;
     request.captureCursor = captureCursor_;
     request.audioOutputDeviceId = SelectedAudioDeviceId(true);
     request.audioInputDeviceId = SelectedAudioDeviceId(false);

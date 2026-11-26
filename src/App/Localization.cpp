@@ -333,6 +333,15 @@ constexpr Entry kZh[] = {
      L"录制正在进行，无法安装更新。请先结束录制，然后点击“立即安装”。"},
     {Str::SettingsAutoUpdate, L"自动检查更新"},
     {Str::SettingsAutoUpdateNote, L"每天最多检查一次 GitHub Release。"},
+    {Str::SettingsTranscript, L"录制后生成会议转录稿"},
+    {Str::SettingsTranscriptNoteReady,
+     L"模型已就绪：SenseVoiceSmall int8（本地识别）"},
+    {Str::SettingsTranscriptNoteMissing, L"未安装语音模型："},
+    {Str::SettingsTranscriptModelMissingTitle, L"语音模型未安装"},
+    {Str::SettingsTranscriptModelMissingBody,
+     L"请先运行 scripts\\fetch-speech-model.ps1 下载模型，或把模型包解压到："},
+    {Str::SettingsTranscriptAudioRequired,
+     L"请先启用系统声音或麦克风，否则无法生成会议转录稿。"},
 };
 
 constexpr Entry kEn[] = {
@@ -688,6 +697,15 @@ constexpr Entry kEn[] = {
      L"Recording is in progress. Finish the recording first, then click Install now."},
     {Str::SettingsAutoUpdate, L"Check for updates automatically"},
     {Str::SettingsAutoUpdateNote, L"Checks GitHub Releases at most once a day."},
+    {Str::SettingsTranscript, L"Save a meeting transcript"},
+    {Str::SettingsTranscriptNoteReady, L"Model ready: SenseVoiceSmall int8 (local)"},
+    {Str::SettingsTranscriptNoteMissing, L"Speech model not installed:"},
+    {Str::SettingsTranscriptModelMissingTitle, L"Speech model not installed"},
+    {Str::SettingsTranscriptModelMissingBody,
+     L"Run scripts\\fetch-speech-model.ps1 to download the model, or extract the pack to:"},
+    {Str::SettingsTranscriptAudioRequired,
+     L"Enable system audio or the microphone first — a transcript needs at least one "
+     L"source."},
 };
 
 constexpr size_t kStrCount = static_cast<size_t>(Str::Count);

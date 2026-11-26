@@ -20,6 +20,14 @@ $solutionDirParam = "/p:SolutionDir=$root\"
 
 . (Join-Path $PSScriptRoot "common.ps1")
 
+# The transcript module links a third-party sherpa-onnx runtime. Fetch the
+# pinned, checksum-verified package once per checkout (cached under artifacts).
+$sherpaHeader = Join-Path $root "artifacts\third_party\sherpa-onnx\include\sherpa-onnx\c-api\c-api.h"
+if (-not (Test-Path $sherpaHeader)) {
+    Write-Host "Fetching the pinned sherpa-onnx runtime (first build only)..."
+    & (Join-Path $PSScriptRoot "fetch-sherpa-onnx.ps1")
+}
+
 Write-Host "== Virtual Screen Recorder build ($Configuration|x64) =="
 $msbuild = Get-MsBuildPath
 

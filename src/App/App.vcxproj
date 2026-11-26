@@ -36,8 +36,17 @@
            while normal launches show only the UI. -->
       <SubSystem>Windows</SubSystem>
       <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
-      <AdditionalDependencies>windowsapp.lib;dwmapi.lib;shcore.lib;mfplat.lib;mfuuid.lib;mfreadwrite.lib;mfsrcsnk.lib;d3d11.lib;dxgi.lib;dxguid.lib;SwDevice.lib;gdiplus.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- sherpa-onnx is delay-loaded: a deployment that lost the runtime DLLs
+           still starts and records, and the transcript feature reports why it
+           is unavailable. -->
+      <AdditionalLibraryDirectories>$(VsrSherpaOnnxDir)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>sherpa-onnx-c-api.lib;delayimp.lib;windowsapp.lib;dwmapi.lib;shcore.lib;mfplat.lib;mfuuid.lib;mfreadwrite.lib;mfsrcsnk.lib;d3d11.lib;dxgi.lib;dxguid.lib;SwDevice.lib;gdiplus.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>sherpa-onnx-c-api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(VsrSherpaOnnxDir)bin\*.dll" copy /Y "$(VsrSherpaOnnxDir)bin\*.dll" "$(OutDir)" &gt;nul</Command>
+      <Message>Copying the sherpa-onnx runtime DLLs next to MeetRec.exe</Message>
+    </PostBuildEvent>
     <Manifest>
       <AdditionalManifestFiles>$(ProjectDir)VirtualScreenRecorder.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
@@ -51,6 +60,7 @@
     <ClCompile Include="MainWindow.cpp" />
     <ClCompile Include="PreviewPanel.cpp" />
     <ClCompile Include="SettingsWindow.cpp" />
+    <ClCompile Include="SpeechSelfTest.cpp" />
     <ClCompile Include="ToastWindow.cpp" />
     <ClCompile Include="TrayIcon.cpp" />
     <ClCompile Include="UiDraw.cpp" />
@@ -66,6 +76,7 @@
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="PreviewPanel.h" />
     <ClInclude Include="SettingsWindow.h" />
+    <ClInclude Include="SpeechSelfTest.h" />
     <ClInclude Include="ToastWindow.h" />
     <ClInclude Include="TrayIcon.h" />
     <ClInclude Include="UiDraw.h" />
@@ -84,6 +95,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Application\Application.vcxproj" />
+    <ProjectReference Include="..\Speech\Speech.vcxproj" />
     <ProjectReference Include="..\Transcode\Transcode.vcxproj" />
     <ProjectReference Include="..\Update\Update.vcxproj" />
   </ItemGroup>

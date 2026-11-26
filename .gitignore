@@ -1,6 +1,10 @@
 # Build outputs
 artifacts/
 !artifacts/.gitkeep
+
+# Optional speech model pack (~230 MB), downloaded by scripts/fetch-speech-model.ps1
+models/
+
 *.user
 *.suo
 .vs/

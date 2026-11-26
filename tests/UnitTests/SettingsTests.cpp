@@ -130,6 +130,11 @@ VSR_TEST(Settings, SaveAndLoadRoundTripViaTempFile) {
 }
 
 
+VSR_TEST(Settings, TranscriptDefaults) {
+    Settings s;
+    VSR_CHECK(!s.generateTranscript);
+    VSR_CHECK(s.speechModelDirectory.empty());
+}
 VSR_TEST(Settings, EncoderPreferenceDefaultsToSoftware) {
     Settings s;
     VSR_CHECK_EQ(s.encoderPreference, std::string("software"));

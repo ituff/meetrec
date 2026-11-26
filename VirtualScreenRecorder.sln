@@ -14,6 +14,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Encoder", "src\Encoder\Enco
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Transcode", "src\Transcode\Transcode.vcxproj", "{B4C6D2E8-1F3A-4B5C-9D7E-2A4C6E8F0B13}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Speech", "src\Speech\Speech.vcxproj", "{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Update", "src\Update\Update.vcxproj", "{C5D7E3F9-2A4B-4C6D-8E9F-3B5D7F9A1C24}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Application", "src\Application\Application.vcxproj", "{BF6A8B95-7AAD-4DC2-A4E5-D6C8BAF2A7B1}"
@@ -93,6 +95,12 @@ Global
 		{F3ACEFD9-BEE1-4BA6-8C89-BAACFED6EBF5}.Release|x64.ActiveCfg = Release|x64
 		{F3ACEFD9-BEE1-4BA6-8C89-BAACFED6EBF5}.Release|x64.Build.0 = Release|x64
 		{F3ACEFD9-BEE1-4BA6-8C89-BAACFED6EBF5}.ReleaseSigned|x64.ActiveCfg = Release|x64
+		{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}.Debug|x64.ActiveCfg = Debug|x64
+		{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}.Debug|x64.Build.0 = Debug|x64
+		{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}.Release|x64.ActiveCfg = Release|x64
+		{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}.Release|x64.Build.0 = Release|x64
+		{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}.ReleaseSigned|x64.ActiveCfg = ReleaseSigned|x64
+		{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}.ReleaseSigned|x64.Build.0 = ReleaseSigned|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

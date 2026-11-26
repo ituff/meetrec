@@ -34,6 +34,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The transcript module fetches this pinned third-party runtime on the
+      # first build; cache it so pull-request runs stay quick.
+      - name: Cache sherpa-onnx runtime
+        uses: actions/cache@v4
+        with:
+          path: artifacts/third_party/sherpa-onnx
+          key: sherpa-onnx-2.0.3-win-x64-mt-v1
+
       - name: Resolve version
         id: version
         shell: pwsh

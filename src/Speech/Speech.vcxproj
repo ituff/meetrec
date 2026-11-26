@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{7C1A2B3D-4E5F-4A6B-8C9D-0E1F2A3B4C5D}</ProjectGuid>
+    <RootNamespace>vsr</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)artifacts\obj\$(Configuration)\$(ProjectName)\</OutDir>
+    <IntDir>$(OutDir)</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(VsrSherpaOnnxDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="SenseVoiceRecognizer.cpp" />
+    <ClCompile Include="SpeechModelPack.cpp" />
+    <ClCompile Include="SpeechResampler.cpp" />
+    <ClCompile Include="SpeechSession.cpp" />
+    <ClCompile Include="SpeechVad.cpp" />
+    <ClCompile Include="SubtitleFormat.cpp" />
+    <ClCompile Include="TranscriptStore.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="SenseVoiceRecognizer.h" />
+    <ClInclude Include="SpeechModelPack.h" />
+    <ClInclude Include="SpeechResampler.h" />
+    <ClInclude Include="SpeechSession.h" />
+    <ClInclude Include="SpeechVad.h" />
+    <ClInclude Include="SubtitleFormat.h" />
+    <ClInclude Include="TranscriptStore.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Infrastructure\Infrastructure.vcxproj" />
+  </ItemGroup>
+  <!-- The runtime is a third-party release asset, not a checked-in binary.
+       Fetch the pinned sherpa-onnx MT build once; later builds reuse it. -->
+  <Target Name="EnsureSherpaOnnx" BeforeTargets="ClCompile"
+          Condition="!Exists('$(VsrSherpaOnnxDir)include\sherpa-onnx\c-api\c-api.h')">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\fetch-sherpa-onnx.ps1&quot;" />
+  </Target>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

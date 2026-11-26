@@ -48,6 +48,12 @@ struct Settings {
     // source, so the UI lets the user match the app's devices.
     std::wstring audioOutputDeviceId;
     std::wstring audioInputDeviceId;
+    // P1 meeting transcript: recognize the recording's two audio sources with
+    // the local SenseVoice int8 pack and write <recording>.srt/.txt. Off by
+    // default because it needs the separately distributed model pack.
+    bool generateTranscript = false;
+    // Optional model-pack directory override (empty = <exe>/models/sensevoice).
+    std::wstring speechModelDirectory;
     // UI language: "system" follows the Windows display language; "zh-CN" and
     // "en-US" are explicit overrides. Unknown values fall back to "system".
     std::string uiLanguage = "system";

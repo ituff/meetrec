@@ -126,6 +126,19 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         }
     }
     {
+        const json::Value& v = root.Find("generateTranscript");
+        if (v.GetType() == json::Type::Boolean) settings.generateTranscript = v.AsBool();
+        else if (!v.IsNull()) anyFallback = true;
+    }
+    {
+        const json::Value& v = root.Find("speechModelDirectory");
+        if (v.GetType() == json::Type::String) {
+            settings.speechModelDirectory = Utf8ToWide(v.AsString());
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("showPreview");
         if (v.GetType() == json::Type::Boolean) settings.showPreview = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
@@ -232,6 +245,8 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "recordMicrophone" ||
                            kv.first == "audioOutputDeviceId" ||
                            kv.first == "audioInputDeviceId" ||
+                           kv.first == "generateTranscript" ||
+                           kv.first == "speechModelDirectory" ||
                            kv.first == "enableCrashDumps" ||
                            kv.first == "autoCheckUpdates" ||
                            kv.first == "lastUpdateCheckUnix" ||
@@ -268,6 +283,8 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("recordMicrophone", json::Value(settings.recordMicrophone));
     root.Set("audioOutputDeviceId", json::Value(WideToUtf8(settings.audioOutputDeviceId)));
     root.Set("audioInputDeviceId", json::Value(WideToUtf8(settings.audioInputDeviceId)));
+    root.Set("generateTranscript", json::Value(settings.generateTranscript));
+    root.Set("speechModelDirectory", json::Value(WideToUtf8(settings.speechModelDirectory)));
     root.Set("enableCrashDumps", json::Value(settings.enableCrashDumps));
     root.Set("autoCheckUpdates", json::Value(settings.autoCheckUpdates));
     root.Set("lastUpdateCheckUnix",

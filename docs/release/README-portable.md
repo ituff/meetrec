@@ -58,6 +58,14 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 - 源码 / 构建提供方：<https://github.com/BtbN/FFmpeg-Builds>
 - MeetRec 以独立子进程 + 管道方式调用 ffmpeg，不链接 FFmpeg 库。
 
+## 会议转录（可选，P1）
+
+单独下载 `MeetRec-<版本>-win64-speech-model.zip`，解压到本程序目录，使文件位于
+`models\sensevoice\`，然后在「设置 → 录制 → 录制后生成会议转录稿」中开启。识别全程在本机
+完成，音频不会上传；支持普通话、粤语、英语、日语、韩语。SenseVoice 不支持热词，人名/产品名
+需要校对；P1 只生成录制结束后的 `.srt`/`.txt`，没有实时悬浮字幕。模型许可证与归属见模型包内
+`licenses/`。
+
 ---
 
 # MeetRec 1.5.3 — Windows 10/11 x64 (portable)
@@ -73,3 +81,5 @@ If recording uses too much CPU, set **Settings → Recording → Encoder → Har
 Requirements: Windows 10 2004+ x64 or Windows 11 x64; Direct3D 11 GPU. There is no 32-bit build; 32-bit Windows 10 and ARM64 are not supported. Windows 10 reached end of regular support on 2025-10-14.
 
 Settings/logs: `%LOCALAPPDATA%\VirtualScreenRecorder`. Default recordings go to the user's Videos folder (the exact path is shown in the app). The build is not code-signed; SmartScreen may warn about an unknown publisher. See `licenses/` for the bundled FFmpeg GPLv3 license and exact source revision.
+
+**Optional meeting transcript (P1):** download the separate `MeetRec-<version>-win64-speech-model.zip`, extract it into the application folder so the files land in `models\sensevoice\`, then enable **Settings → Recording → Save a meeting transcript**. Recognition is local; audio is never uploaded. It supports Mandarin, Cantonese, English, Japanese and Korean. SenseVoice has no hotword boosting, so names and product terms need review. P1 writes `.srt`/`.txt` next to the MP4 after stop (no live overlay yet). Model license and attribution are in the pack's `licenses/` folder.

@@ -323,6 +323,12 @@ enum class Str {
     UpdateWhileRecording,
     SettingsAutoUpdate,
     SettingsAutoUpdateNote,
+    SettingsTranscript,
+    SettingsTranscriptNoteReady,
+    SettingsTranscriptNoteMissing,
+    SettingsTranscriptModelMissingTitle,
+    SettingsTranscriptModelMissingBody,
+    SettingsTranscriptAudioRequired,
 
     Count
 };

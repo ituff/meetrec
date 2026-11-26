@@ -327,6 +327,8 @@ private:
     encoder::EncoderPreference encoderPreference_ = encoder::EncoderPreference::Auto;
     bool systemAudio_ = false;
     bool microphone_ = false;
+    bool generateTranscript_ = false;
+    std::wstring speechModelDirectory_;
     bool micMuteHotkeyRegistered_ = false;
     bool showPreview_ = true;
     bool captureCursor_ = false;

@@ -37,6 +37,7 @@
 
 #include "Localization.h"
 #include "MainWindow.h"
+#include "SpeechSelfTest.h"
 #include "Version.h"
 
 #include <Application/OutputFile.h>
@@ -542,6 +543,7 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                               bool captureAudio, encoder::WriterBackend backend,
                               const std::wstring& audioOutputDeviceId,
                               const std::wstring& audioInputDeviceId,
+                              bool generateTranscript,
                               const std::wstring& competeFile,
                               std::uint64_t* droppedFramesOut) {
     // T040: command-line development entry point recording the virtual
@@ -623,6 +625,8 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
     // Dev runs mix the mic in with the loopback (VSR_MIC_DISABLE=1 forces a
     // system-only run).
     request.captureMicrophone = captureAudio;
+    request.generateTranscript = generateTranscript;
+    request.transcriptChinese = true;
     request.audioOutputDeviceId = audioOutputDeviceId;
     request.audioInputDeviceId = audioInputDeviceId;
     request.backend = backend;
@@ -825,6 +829,7 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
                                     bool captureAudio, encoder::WriterBackend backend,
                                     const std::wstring& audioOutputDeviceId,
                                     const std::wstring& audioInputDeviceId,
+                                    bool generateTranscript,
                                     const std::wstring& competeFile,
                                     std::uint64_t* droppedFramesOut) {
     wprintf(L"[dev-record-window] starting\n");
@@ -874,7 +879,8 @@ int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
 
     const int code = RunDevRecord(seconds, presetName, outputDir, hwnd, encoderPreference,
                                   captureAudio, backend, audioOutputDeviceId,
-                                  audioInputDeviceId, competeFile, droppedFramesOut);
+                                  audioInputDeviceId, generateTranscript, competeFile,
+                                  droppedFramesOut);
 
     PostMessageW(hwnd, WM_CLOSE, 0, 0);
     WaitForSingleObject(child, 5000);
@@ -893,7 +899,7 @@ int Application::RunDevCompete(const std::wstring& competeFile, int seconds,
     fflush(stdout);
     const int baseline = RunDevRecordWindow(seconds, presetName, outputDir,
                                             encoder::EncoderPreference::Auto, false,
-                                            encoder::WriterBackend::Auto, {}, {}, {},
+                                            encoder::WriterBackend::Auto, {}, {}, false, {},
                                             &baselineDrops);
     if (baseline != 0) {
         wprintf(L"[dev-compete] FAILED: baseline recording returned %d\n", baseline);
@@ -904,7 +910,7 @@ int Application::RunDevCompete(const std::wstring& competeFile, int seconds,
     fflush(stdout);
     const int competing = RunDevRecordWindow(seconds, presetName, outputDir,
                                              encoder::EncoderPreference::Auto, false,
-                                             encoder::WriterBackend::Auto, {}, {},
+                                             encoder::WriterBackend::Auto, {}, {}, false,
                                              competeFile, &competingDrops);
     if (competing != 0) {
         wprintf(L"[dev-compete] FAILED: competition recording returned %d\n", competing);
@@ -1054,6 +1060,7 @@ struct DevRecordOptions {
     vsr::encoder::EncoderPreference encoder = vsr::encoder::EncoderPreference::Auto;
     vsr::encoder::WriterBackend backend = vsr::encoder::WriterBackend::Auto;
     bool audio = false;
+    bool transcript = false;
     std::wstring audioOutId; // empty = Windows default endpoint
     std::wstring audioInId;
 };
@@ -1065,6 +1072,10 @@ DevRecordOptions ParseDevRecordOptions(int argc, wchar_t* argv[]) {
     for (int i = 2; i < argc; ++i) {
         if (wcscmp(argv[i], L"--audio") == 0) {
             o.audio = true;
+            continue;
+        }
+        if (wcscmp(argv[i], L"--transcript") == 0) {
+            o.transcript = true;
             continue;
         }
         if (i + 1 >= argc) break;
@@ -1099,8 +1110,10 @@ DevRecordOptions ParseDevRecordOptions(int argc, wchar_t* argv[]) {
 int wmain(int argc, wchar_t* argv[]) {
     using namespace vsr::app;
 
-    // NFR-023: resolve DLL dependencies only from known-safe locations; the
-    // product ships no side-by-side DLLs of its own.
+    // NFR-023: resolve DLL dependencies only from known-safe locations. The
+    // optional speech runtime (sherpa-onnx-c-api.dll + onnxruntime.dll) is
+    // delay-loaded from the application directory; everything else comes from
+    // System32.
     SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
                              LOAD_LIBRARY_SEARCH_SYSTEM32);
 
@@ -1124,6 +1137,12 @@ int wmain(int argc, wchar_t* argv[]) {
 
     if (argc >= 2 && wcscmp(argv[1], L"--update-check") == 0) {
         const int code = Application::Instance().RunUpdateCheck();
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
+    if (argc >= 3 && wcscmp(argv[1], L"--speech-test") == 0) {
+        const int code = RunSpeechSelfTest(argc, argv);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -1160,7 +1179,7 @@ int wmain(int argc, wchar_t* argv[]) {
         const int code = Application::Instance().RunDevRecord(o.seconds, o.preset, o.outputDir,
                                                               nullptr, o.encoder, o.audio,
                                                               o.backend, o.audioOutId,
-                                                              o.audioInId);
+                                                              o.audioInId, o.transcript);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }
@@ -1195,7 +1214,8 @@ int wmain(int argc, wchar_t* argv[]) {
         const int code = Application::Instance().RunDevRecordWindow(o.seconds, o.preset,
                                                                     o.outputDir, o.encoder,
                                                                     o.audio, o.backend,
-                                                                    o.audioOutId, o.audioInId);
+                                                                    o.audioOutId, o.audioInId,
+                                                                    o.transcript);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
         return code;
     }

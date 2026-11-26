@@ -39,6 +39,7 @@ public:
                      encoder::WriterBackend backend = encoder::WriterBackend::Auto,
                      const std::wstring& audioOutputDeviceId = {},
                      const std::wstring& audioInputDeviceId = {},
+                     bool generateTranscript = false,
                      const std::wstring& competeFile = {},
                      std::uint64_t* droppedFramesOut = nullptr);
     // Driverless E2E entry: spawns a self-contained animated test window in a
@@ -53,6 +54,7 @@ public:
                            encoder::WriterBackend backend = encoder::WriterBackend::Auto,
                            const std::wstring& audioOutputDeviceId = {},
                            const std::wstring& audioInputDeviceId = {},
+                           bool generateTranscript = false,
                            const std::wstring& competeFile = {},
                            std::uint64_t* droppedFramesOut = nullptr);
     // ADR-007 verification: records a baseline run and then a run with a
