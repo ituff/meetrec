@@ -145,3 +145,28 @@ Validation:
   speaker prefix inline, positioned above the taskbar; the MP4 and SRT/TXT were produced.
 - The dev CLI path (`--transcript`) starts GDI+ only for the overlay lifetime; removing the
   overlay leaves recording unchanged.
+
+## Model installation addendum
+
+The model pack is no longer a manual-only step. When the user enables the transcript and
+`LocateSpeechModel()` reports no pack, the settings window asks for confirmation and starts an
+in-app installer:
+
+- Pinned URLs/hashes from `SpeechModelDownload()` (sherpa-onnx export + Silero VAD). The
+  downloader tries the same GitHub asset proxy as the updater and falls back to github.com;
+  both files are SHA-256 verified before extraction.
+- Windows `tar.exe -xjf` extracts the archive; `model.int8.onnx`, `tokens.txt`,
+  `silero_vad.onnx`, the license pointer and `version.txt` are installed into
+  `PreferredSpeechModelDirectory()`: `<exe>/models/sensevoice` when writable, otherwise
+  `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice`. `LocateSpeechModel()` searches
+  both.
+- A custom modal `ModelDownloadWindow` shows download/verify/extract/install phases, a
+  progress bar, bytes and a Cancel button. Cancelling aborts the HTTP stream or terminates
+  the tar child; a temp-cleanup guard removes the archive and extraction directory.
+- No silent download: the confirmation dialog is required. Offline/enterprise users can still
+  pre-seed the directory or use the release model zip.
+
+Validation: the headless `--download-speech-model` path was exercised against a local HTTP
+mirror of the pinned archive; it downloaded, verified, extracted and installed 230 MB under
+`models/sensevoice`, and `--speech-test` then recognized the 60 s sample without
+`VSR_SPEECH_MODEL_DIR`.

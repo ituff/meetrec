@@ -72,12 +72,14 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
   menu): re-encode existing MP4/MKV screen recordings from any app with the same
   screen-content recipe, at below-normal priority and paused while MeetRec is recording.
   Originals are never modified; output is `<name>-min.mp4`.
-- **Local meeting transcript (P1, opt-in)**: with the separately distributed SenseVoiceSmall
-  int8 model pack, MeetRec recognizes the two audio sources independently and writes a
-  speaker-labelled `<recording>.srt` and `.txt` next to the MP4, and show a sentence-level
-  click-through caption overlay over the recorded window. Everything runs on this PC; audio is
-  never uploaded. Toggle captions from the footer **字幕/CC** button, Settings → Recording, the
-  tray menu, or `Ctrl+Alt+S`; font, size, text color and anchor are configurable.
+- **Local meeting transcript (P1, opt-in)**: with the SenseVoiceSmall int8 model pack,
+  MeetRec recognizes the two audio sources independently and writes a speaker-labelled
+  `<recording>.srt` and `.txt` next to the MP4, and shows a sentence-level click-through
+  caption overlay over the recorded window. The first enable offers to download the model
+  (~155 MB) with progress and cancel; an offline model zip is also published. Everything runs
+  on this PC; audio is never uploaded. Toggle captions from the footer **字幕/CC** button,
+  Settings → Recording, the tray menu, or `Ctrl+Alt+S`; font, size, text color and anchor are
+  configurable.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
   BlueJeans, Huawei Cloud Meeting, Google Meet in a browser).
@@ -216,6 +218,7 @@ MeetRec.exe --self-check                 # read-only capability report (support 
 MeetRec.exe --encode-test ...            # full encode-pipeline validation without a driver
 MeetRec.exe --speech-test WAV [--model DIR] [--out BASE]
                                          # run VAD + SenseVoice over a 16-bit PCM WAV
+MeetRec.exe --download-speech-model      # download/install the transcript model (CLI)
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # compress one existing recording
 MeetRec.exe --compress-window [FILE...]  # open the compressor window, optionally pre-filled
@@ -348,11 +351,11 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   MP4/MKV 用同一套屏幕内容编码配方重新压小;转码以低优先级运行,MeetRec 录制期间自动暂停。
   原文件不会被修改,输出为 `<原名>-min.mp4`。可选**硬件加速**(自动检测 Intel QSV / NVIDIA
   NVENC / AMD AMF),默认仍用 CPU 编码以保证文件最小;硬件编码失败会自动回退。
-- **本地会议转录(P1,可选)**:安装单独分发的 SenseVoiceSmall int8 模型包后,程序会分别识别
-  系统声音(对方)和麦克风(我),录制结束在 MP4 旁生成带说话人标签的 `<录制名>.srt` 与
-  `.txt`,并在录制窗口上方显示句级、可点击穿透的实时字幕。全程本机推理,音频不上传;
-  可用主界面「字幕」按钮、托盘菜单或 `Ctrl+Alt+S` 开关字幕;字体、字号、颜色和位置可在
-  「设置 → 录制 → 字幕样式」中调整。
+- **本地会议转录(P1,可选)**:首次开启时程序会提示下载 SenseVoiceSmall int8 模型
+  (约 155 MB,带进度条和取消),之后分别识别系统声音(对方)和麦克风(我),录制结束在 MP4
+  旁生成带说话人标签的 `<录制名>.srt` 与 `.txt`,并在录制窗口上方显示句级、可点击穿透的
+  实时字幕。全程本机推理,音频不上传;也可用主界面「字幕」按钮、托盘菜单或 `Ctrl+Alt+S`
+  开关字幕;字体、字号、颜色和位置可在「设置 → 录制 → 字幕样式」中调整。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器
   Google Meet)。
@@ -478,6 +481,7 @@ MeetRec.exe --self-check                 # 只读能力报告(支持/诊断工�
 MeetRec.exe --encode-test ...            # 无驱动的完整编码管线验证
 MeetRec.exe --speech-test WAV [--model DIR] [--out BASE]
                                          # 对 16-bit PCM WAV 跑 VAD + SenseVoice
+MeetRec.exe --download-speech-model      # 下载并安装会议转录模型（命令行）
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # 压缩单个已有录制文件
 MeetRec.exe --compress-window [FILE...]  # 打开压缩窗口,可预填文件

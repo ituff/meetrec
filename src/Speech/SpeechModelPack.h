@@ -36,6 +36,26 @@ SpeechModelStatus LocateSpeechModel(const std::filesystem::path& overrideDirecto
 // <exe>/models/sensevoice; the path shown to the user when nothing is found.
 std::filesystem::path DefaultSpeechModelDirectory();
 
+// Writable install directory: <exe>/models/sensevoice when the application
+// folder is writable (portable zip), otherwise
+// %LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice (installed app).
+std::filesystem::path PreferredSpeechModelDirectory();
+
+// Pinned sherpa-onnx SenseVoice int8 assets used by the in-app downloader.
+// The archive is the official sherpa-onnx export; the FunASR/funasr_onnx
+// export is not compatible.
+struct SpeechModelDownloadInfo {
+    std::wstring archiveUrl;
+    std::wstring archiveName;
+    std::string archiveSha256;
+    std::uint64_t archiveBytes = 0;
+    std::wstring vadUrl;
+    std::wstring vadName;
+    std::string vadSha256;
+    std::uint64_t vadBytes = 0;
+};
+SpeechModelDownloadInfo SpeechModelDownload();
+
 // True when the sherpa-onnx runtime DLLs are deployable next to the exe.
 // Used by the session before it calls into the C API.
 bool SpeechRuntimeAvailable(std::wstring& detail);

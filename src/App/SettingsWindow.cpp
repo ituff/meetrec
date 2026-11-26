@@ -23,6 +23,7 @@
 
 #include "AppMenu.h"
 #include "Application.h"
+#include "ModelDownloadWindow.h"
 #include "Version.h"
 
 #if __has_include("VersionGenerated.h")
@@ -61,6 +62,7 @@ SettingsWindow::SettingsWindow(HWND owner, std::function<void()> onChanged)
     : owner_(owner), onChanged_(std::move(onChanged)) {}
 
 SettingsWindow::~SettingsWindow() {
+    modelDownload_.reset();
     if (hwnd_ != nullptr) {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
@@ -206,7 +208,9 @@ void SettingsWindow::RefreshSpeechModelStatus() {
     const speech::SpeechModelStatus status =
         speech::LocateSpeechModel(settings_.speechModelDirectory);
     speechModelReady_ = status.ready;
-    speechModelDirectory_ = status.paths.directory.wstring();
+    speechModelDirectory_ =
+        status.ready ? status.paths.directory.wstring()
+                     : speech::PreferredSpeechModelDirectory().wstring();
 }
 
 void SettingsWindow::SaveAndNotify() {
@@ -628,22 +632,20 @@ void SettingsWindow::Activate(Hit id) {
         case Hit::Transcript: {
             const bool enabling = !settings_.generateTranscript;
             if (enabling) {
-                RefreshSpeechModelStatus();
-                if (!speechModelReady_) {
-                    std::wstring message =
-                        i18n::Text(i18n::Str::SettingsTranscriptModelMissingBody);
-                    message += L"\n\n";
-                    message += speechModelDirectory_;
-                    MessageBoxW(hwnd_, message.c_str(),
-                                i18n::Text(i18n::Str::SettingsTranscriptModelMissingTitle),
-                                MB_OK | MB_ICONINFORMATION);
-                    break;
-                }
                 if (!settings_.recordSystemAudio && !settings_.recordMicrophone) {
                     MessageBoxW(hwnd_,
                                 i18n::Text(i18n::Str::SettingsTranscriptAudioRequired),
                                 i18n::Text(i18n::Str::SettingsTranscript),
                                 MB_OK | MB_ICONINFORMATION);
+                    break;
+                }
+                RefreshSpeechModelStatus();
+                if (!speechModelReady_) {
+                    const int choice = MessageBoxW(
+                        hwnd_, i18n::Text(i18n::Str::ModelDownloadPromptBody),
+                        i18n::Text(i18n::Str::ModelDownloadPromptTitle),
+                        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
+                    if (choice == IDYES) ShowModelDownload();
                     break;
                 }
             }
@@ -902,6 +904,20 @@ void SettingsWindow::ShowCaptionPositionMenu() {
     settings_.captionPosition = options[command - kCmdCaptionPositionBase].key;
     SaveAndNotify();
     InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void SettingsWindow::ShowModelDownload() {
+    if (modelDownload_) modelDownload_.reset();
+    modelDownload_ = std::make_unique<ModelDownloadWindow>(
+        hwnd_, [this](const ModelInstallResult& result) {
+            RefreshSpeechModelStatus();
+            if (result.ok) {
+                settings_.generateTranscript = true;
+                SaveAndNotify();
+            }
+            if (hwnd_ != nullptr) InvalidateRect(hwnd_, nullptr, FALSE);
+        });
+    modelDownload_->Show();
 }
 
 void SettingsWindow::ShowDeviceMenu(bool output) {

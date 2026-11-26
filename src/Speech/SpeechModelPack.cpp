@@ -2,7 +2,10 @@
 
 #include <windows.h>
 
+#include <Infrastructure/Paths.h>
+
 #include <algorithm>
+#include <fstream>
 #include <vector>
 
 namespace vsr::speech {
@@ -58,6 +61,27 @@ SpeechModelPaths PathsIn(const std::filesystem::path& directory) {
     return paths;
 }
 
+bool IsWritableDirectory(const std::filesystem::path& directory) {
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+    if (ec) return false;
+    const std::filesystem::path probe =
+        directory / (L".write-probe-" + std::to_wstring(GetCurrentProcessId()));
+    {
+        std::ofstream out(probe, std::ios::binary | std::ios::trunc);
+        if (!out.good()) return false;
+        out.put('x');
+        out.flush();
+        if (!out.good()) {
+            out.close();
+            std::filesystem::remove(probe, ec);
+            return false;
+        }
+    }
+    std::filesystem::remove(probe, ec);
+    return !ec;
+}
+
 bool DirectoryHasAnyPackFile(const std::filesystem::path& directory) {
     std::error_code ec;
     return std::filesystem::is_regular_file(directory / L"model.int8.onnx", ec) ||
@@ -69,6 +93,49 @@ bool DirectoryHasAnyPackFile(const std::filesystem::path& directory) {
 
 std::filesystem::path DefaultSpeechModelDirectory() {
     return ExecutableDirectory() / L"models" / L"sensevoice";
+}
+
+std::filesystem::path PreferredSpeechModelDirectory() {
+    const std::filesystem::path portable = DefaultSpeechModelDirectory();
+    if (IsWritableDirectory(portable)) return portable;
+    const std::filesystem::path perUser =
+        AppDataDir() / L"models" / L"sensevoice";
+    if (IsWritableDirectory(perUser)) return perUser;
+    return portable;
+}
+
+SpeechModelDownloadInfo SpeechModelDownload() {
+    SpeechModelDownloadInfo info;
+    info.archiveName =
+        L"sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2";
+    info.archiveUrl =
+        L"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" +
+        info.archiveName;
+    info.archiveSha256 =
+        "7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e";
+    info.archiveBytes = 163002883;
+    info.vadName = L"silero_vad.onnx";
+    info.vadUrl =
+        L"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/" +
+        info.vadName;
+    info.vadSha256 =
+        "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6";
+    info.vadBytes = 643854;
+
+    // QA/offline mirrors: same pinned files, alternate transport. The SHA-256
+    // checks still apply.
+    wchar_t overrideUrl[2048] = {};
+    if (GetEnvironmentVariableW(L"VSR_SPEECH_MODEL_URL", overrideUrl,
+                                static_cast<DWORD>(std::size(overrideUrl))) > 0 &&
+        overrideUrl[0] != 0) {
+        info.archiveUrl = overrideUrl;
+    }
+    if (GetEnvironmentVariableW(L"VSR_SPEECH_MODEL_VAD_URL", overrideUrl,
+                                static_cast<DWORD>(std::size(overrideUrl))) > 0 &&
+        overrideUrl[0] != 0) {
+        info.vadUrl = overrideUrl;
+    }
+    return info;
 }
 
 SpeechModelStatus LocateSpeechModel(const std::filesystem::path& overrideDirectory) {
@@ -84,6 +151,7 @@ SpeechModelStatus LocateSpeechModel(const std::filesystem::path& overrideDirecto
     const std::filesystem::path exeDir = ExecutableDirectory();
     candidates.push_back(exeDir / L"models" / L"sensevoice");
     candidates.push_back(exeDir / L"models" / L"sensevoice-int8");
+    candidates.push_back(AppDataDir() / L"models" / L"sensevoice");
 
     SpeechModelStatus status;
     // When nothing is installed, point the UI at the most specific directory

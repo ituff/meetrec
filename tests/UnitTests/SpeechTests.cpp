@@ -277,6 +277,18 @@ VSR_TEST(CaptionStyle, MapsKeysAndClampsValues) {
     VSR_CHECK(style.anchor == CaptionAnchor::BottomLeft);
 }
 
+VSR_TEST(SpeechModelPack, DownloadMetadataIsPinned) {
+    using namespace vsr::speech;
+    const SpeechModelDownloadInfo info = SpeechModelDownload();
+    VSR_CHECK(info.archiveUrl.find(L"sherpa-onnx") != std::wstring::npos);
+    VSR_CHECK(info.archiveName.find(L"int8") != std::wstring::npos);
+    VSR_CHECK_EQ(info.archiveSha256.size(), static_cast<std::size_t>(64));
+    VSR_CHECK_EQ(info.vadSha256.size(), static_cast<std::size_t>(64));
+    VSR_CHECK(info.archiveBytes > 100ull * 1024 * 1024);
+    VSR_CHECK(info.vadBytes > 100ull * 1024);
+    VSR_CHECK(info.vadUrl.find(L"silero_vad.onnx") != std::wstring::npos);
+}
+
 VSR_TEST(SpeechModelPack, ReportsMissingPackWithPath) {
     using namespace vsr::speech;
     const std::filesystem::path dir = TempDir(L"meetrec-model-missing") / L"absent";

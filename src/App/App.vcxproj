@@ -59,6 +59,8 @@
     <ClCompile Include="CompressWindow.cpp" />
     <ClCompile Include="Localization.cpp" />
     <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="ModelDownloadWindow.cpp" />
+    <ClCompile Include="ModelDownloader.cpp" />
     <ClCompile Include="PreviewPanel.cpp" />
     <ClCompile Include="SettingsWindow.cpp" />
     <ClCompile Include="SpeechSelfTest.cpp" />
@@ -77,6 +79,8 @@
     <ClInclude Include="CompressWindow.h" />
     <ClInclude Include="Localization.h" />
     <ClInclude Include="MainWindow.h" />
+    <ClInclude Include="ModelDownloadWindow.h" />
+    <ClInclude Include="ModelDownloader.h" />
     <ClInclude Include="PreviewPanel.h" />
     <ClInclude Include="SettingsWindow.h" />
     <ClInclude Include="SpeechSelfTest.h" />

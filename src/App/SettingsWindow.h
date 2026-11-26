@@ -16,6 +16,8 @@
 
 namespace vsr::app {
 
+class ModelDownloadWindow;
+
 class SettingsWindow {
 public:
     enum class Page { General = 0, Audio = 1, Recording = 2, About = 3 };
@@ -189,6 +191,7 @@ private:
     void ShowCaptionSizeMenu();
     void ShowCaptionColorMenu();
     void ShowCaptionPositionMenu();
+    void ShowModelDownload();
     void BrowseForFolder();
     void ShowDiagnostics();
     void OpenLogs();
@@ -199,6 +202,7 @@ private:
 
     HWND hwnd_ = nullptr;
     HWND owner_ = nullptr;
+    std::unique_ptr<ModelDownloadWindow> modelDownload_;
     HWND pathEdit_ = nullptr;
     std::function<void()> onChanged_;
     Page page_ = Page::General;

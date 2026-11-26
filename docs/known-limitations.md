@@ -101,12 +101,13 @@ release notes sections with the same purpose.
 
 The local transcript is opt-in and separate from the recording pipeline:
 
-- It needs the **separately distributed** SenseVoiceSmall int8 model pack (~230 MB on disk)
-  under `models/sensevoice/`, plus the sherpa-onnx runtime DLLs that ship with the app. If the
-  pack or the DLLs are missing, recording still works and the transcript is skipped (logged;
-  P1 has no user-facing error surface for this).
-- Recognition is **local only**; audio is never uploaded. The app does not download the model
-  automatically.
+- It needs the SenseVoiceSmall int8 model pack (~230 MB on disk) under
+  `models/sensevoice/`, plus the sherpa-onnx runtime DLLs that ship with the app. The first
+  time the transcript is enabled, the app offers to download and install it (with progress and
+  cancel); an offline model zip is also published. If the pack or the DLLs are missing,
+  recording still works and the transcript is skipped (logged).
+- Recognition is **local only**; audio is never uploaded. The app only downloads the model
+  after the user confirms the prompt; it never fetches it silently.
 - Supported languages are the model's: Mandarin, Cantonese, English, Japanese and Korean
   (automatic language detection per utterance). Other languages are not supported.
 - SenseVoice has **no hotword/phrase boosting**. Names, product names and acronyms are often

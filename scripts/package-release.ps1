@@ -83,6 +83,10 @@ if (-not (Test-Path $sherpaLicense)) {
     throw "Missing $sherpaLicense"
 }
 Copy-Item $sherpaLicense (Join-Path $stage "licenses\sherpa-onnx-Apache-2.0.txt")
+$funasrLicense = Join-Path $root "docs\release\licenses\FunASR-MODEL-LICENSE.txt"
+if (Test-Path $funasrLicense) {
+    Copy-Item $funasrLicense (Join-Path $stage "licenses\FunASR-MODEL-LICENSE.txt")
+}
 $sherpaNotice = @"
 sherpa-onnx runtime
 ===================

@@ -1190,6 +1190,12 @@ int wmain(int argc, wchar_t* argv[]) {
         return code;
     }
 
+    if (argc >= 2 && wcscmp(argv[1], L"--download-speech-model") == 0) {
+        const int code = RunSpeechModelDownload();
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
+    }
+
     if (argc >= 3 && wcscmp(argv[1], L"--speech-test") == 0) {
         const int code = RunSpeechSelfTest(argc, argv);
         if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();

@@ -173,12 +173,14 @@ The result card shows file name, duration, size and path, with three actions:
 
 ### Step 8 (optional): Save a meeting transcript
 
-1. Download the separate `MeetRec-<version>-win64-speech-model.zip` from Releases and extract it
-   into the MeetRec folder so `models\sensevoice\` contains `model.int8.onnx`, `tokens.txt` and
-   `silero_vad.onnx`.
-2. Enable **Settings → Recording → Save a meeting transcript**. At least one audio source
-   (system audio or microphone) must be enabled; if the model is missing, the checkbox shows
-   the expected path.
+1. Enable **Settings → Recording → Save a meeting transcript**. At least one audio source
+   (system audio or microphone) must be enabled. The first time, MeetRec asks whether to
+   download the speech model (~155 MB); choosing Yes shows download/verify/extract progress
+   with a Cancel button. The model is installed into `models\sensevoice\` next to the app
+   (or `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice` when the app folder is not
+   writable). For offline use, the separate `MeetRec-<version>-win64-speech-model.zip` can be
+   extracted manually.
+2. Once the model is ready the status shows “Model ready” and the checkbox stays on.
 3. Record normally. After stop, `<recording>.srt` (subtitles) and `<recording>.txt` (plain
    transcript) are written next to the MP4, labelled "Them" (system audio) and "Me"
    (microphone).

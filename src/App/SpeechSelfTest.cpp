@@ -6,6 +6,8 @@
 #include <Speech/SpeechModelPack.h>
 #include <Speech/SpeechSession.h>
 
+#include "ModelDownloader.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -92,6 +94,36 @@ bool ReadPcm16Wav(const std::filesystem::path& path, std::uint32_t& sampleRate,
 }
 
 } // namespace
+
+int RunSpeechModelDownload() {
+    LogConfig logConfig;
+    logConfig.directory = LogDir();
+    Logger::Instance().Configure(logConfig);
+
+    const speech::SpeechModelStatus existing = speech::LocateSpeechModel();
+    if (existing.ready) {
+        wprintf(L"[speech-model] already installed: %s\n",
+                existing.paths.directory.c_str());
+        return 0;
+    }
+
+    std::atomic<bool> cancel{false};
+    int lastPercent = -1;
+    const ModelInstallResult result = DownloadAndInstallSpeechModel(
+        cancel, [&lastPercent](const ModelInstallProgress& progress) {
+            if (progress.percent == lastPercent) return;
+            lastPercent = progress.percent;
+            wprintf(L"\r[speech-model] %d%%", progress.percent);
+            fflush(stdout);
+        });
+    wprintf(L"\n");
+    if (!result.ok) {
+        wprintf(L"[speech-model] FAILED: %s\n", result.error.c_str());
+        return 1;
+    }
+    wprintf(L"[speech-model] installed to %s\n", result.directory.c_str());
+    return 0;
+}
 
 int RunSpeechSelfTest(int argc, wchar_t* argv[]) {
     LogConfig logConfig;
