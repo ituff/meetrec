@@ -180,8 +180,9 @@ The result card shows file name, duration, size and path, with three actions:
    download the speech model (~155 MB); choosing Yes shows download/verify/extract progress
    with a Cancel button. The model is installed into `models\sensevoice\` next to the app
    (or `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice` when the app folder is not
-   writable). For offline use, the separate `MeetRec-<version>-win64-speech-model.zip` can be
-   extracted manually. When the model is missing, a **Download** button also appears next to
+   writable). For offline use, put the model files in `models\sensevoice\` manually or point
+   `VSR_SPEECH_MODEL_DIR` at an existing model directory. When the model is missing, a
+   **Download** button also appears next to
    the transcript option.
 
    | First-run prompt | Download progress |

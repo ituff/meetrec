@@ -20,6 +20,12 @@ MeetRec 1.6.1 是 1.6.0 的补丁版本，新增**实时字幕浮层的自由拖
 - 新增开发/QA 命令 `MeetRec.exe --caption-overlay-test [秒数]`：打开一个静态字幕浮层，
   无需录制或语音模型即可测试拖动和点击穿透。
 
+### 分发方式变更
+
+- 从 1.6.1 起不再随 GitHub Release 发布 `MeetRec-<版本>-win64-speech-model.zip`。
+  模型由应用在首次开启转录时下载并校验，也可手动放置到 `models\sensevoice\`。
+- 主安装包保持轻量，转录运行时 DLL 仍随主包分发。
+
 ### 兼容性
 
 - 不改变录制、音频混音、转录、实时翻译、模型下载和压缩流程。
@@ -39,13 +45,14 @@ MeetRec 1.6.1 是 1.6.0 的补丁版本，新增**实时字幕浮层的自由拖
 资产：
 
 - `MeetRec-1.6.1-win64-with-ffmpeg.zip`（主程序 + ffmpeg + 转录运行时）
-- `MeetRec-1.6.1-win64-speech-model.zip`（可选模型包，解压到程序目录）
 - `SHA256SUMS.txt`
 
 1. 解压主包到一个可写目录（不要只移动 exe）。
-2. 如需转录，再把模型包解压到同一目录，确认 `models\sensevoice\` 存在。
-3. 双击 `MeetRec.exe`。无需安装、无需管理员、无需虚拟显示器驱动。
-4. 在「设置 → 字幕」中开启转录，并启用系统声音或麦克风。
+2. 双击 `MeetRec.exe`。无需安装、无需管理员、无需虚拟显示器驱动。
+3. 在「设置 → 字幕」中开启转录，并启用系统声音或麦克风。首次开启会由程序内下载语音模型
+   （约 155 MB，带进度条和取消），**不再随 Release 提供独立模型包**。
+4. 离线环境可手动把模型文件放到 `models\sensevoice\`，或用 `VSR_SPEECH_MODEL_DIR`
+   指向已有的模型目录。
 
 `ffmpeg.exe`、`ffprobe.exe`、`sherpa-onnx-c-api.dll`、`onnxruntime*.dll` 必须与
 `MeetRec.exe` 同目录；程序会自动发现。设置与日志位于 `%LOCALAPPDATA%\VirtualScreenRecorder`。

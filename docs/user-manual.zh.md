@@ -168,7 +168,7 @@ Zoom、腾讯会议或正在演示的 PPT),可选混入系统声音(对方/参�
    会弹窗询问是否下载语音模型(约 155 MB);选择「是」后显示下载/校验/解压进度,可随时取消。
    下载完成后模型安装到程序目录的 `models\sensevoice\`(程序目录不可写时安装到
    `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice`)。
-   离线环境也可从 Releases 下载 `MeetRec-<版本>-win64-speech-model.zip` 手动解压到程序目录。
+   离线环境可手动把模型文件放到 `models\sensevoice\`，或用 `VSR_SPEECH_MODEL_DIR` 指定已有目录。
    模型未安装时,转录选项右侧也会显示「下载」按钮,可直接重新触发下载。
 
    | 首次开启提示 | 下载进度 |

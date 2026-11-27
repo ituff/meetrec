@@ -13,10 +13,7 @@ param(
     [string]$FfmpegDir = "C:\ffmpeg\bin",
     [string]$FfmpegLicense = "",
     [string]$FfmpegSourceUrl = "https://github.com/FFmpeg/FFmpeg",
-    [string]$OutputRoot = "",
-    # Optional directory holding model.int8.onnx / tokens.txt / silero_vad.onnx.
-    # When supplied, a separate MeetRec-<ver>-win64-speech-model.zip is built.
-    [string]$SpeechModelDir = ""
+    [string]$OutputRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,8 +93,8 @@ License: Apache-2.0 (see licenses/sherpa-onnx-Apache-2.0.txt)
 Source:  https://github.com/k2-fsa/sherpa-onnx
 
 MeetRec delay-loads sherpa-onnx-c-api.dll for local meeting transcription.
-The speech model itself is distributed separately
-(MeetRec-<version>-win64-speech-model.zip) and is not part of this package.
+The speech model itself is not part of this package; the app downloads it on
+first use into models\sensevoice (or uses VSR_SPEECH_MODEL_DIR).
 Removing the DLLs disables transcription; recording is unaffected.
 "@
 [System.IO.File]::WriteAllText(
@@ -146,77 +143,11 @@ try {
 }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
 
-# Optional speech model pack: separate archive, unzipped over the application
-# folder (it contains models/sensevoice/...).
-$modelZip = $null
-$modelHash = $null
-if (-not [string]::IsNullOrWhiteSpace($SpeechModelDir)) {
-    $modelDir = (Resolve-Path -LiteralPath $SpeechModelDir).Path
-    foreach ($required in @("model.int8.onnx", "tokens.txt", "silero_vad.onnx")) {
-        if (-not (Test-Path (Join-Path $modelDir $required))) {
-            throw "Speech model directory is missing $required`: $modelDir"
-        }
-    }
-    $modelName = "MeetRec-$Version-win64-speech-model"
-    $modelStage = Join-Path $OutputRoot $modelName
-    $modelZip = Join-Path $OutputRoot "$modelName.zip"
-    if (Test-Path $modelStage) { Remove-Item -Recurse -Force $modelStage }
-    if (Test-Path $modelZip) { Remove-Item -Force $modelZip }
-    $modelTarget = Join-Path $modelStage "models\sensevoice"
-    $modelLicenses = Join-Path $modelStage "licenses"
-    New-Item -ItemType Directory -Force -Path $modelTarget, $modelLicenses | Out-Null
-    foreach ($file in @("model.int8.onnx", "tokens.txt", "silero_vad.onnx")) {
-        Copy-Item (Join-Path $modelDir $file) $modelTarget -Force
-    }
-    $funasrLicense = Join-Path $root "docs\release\licenses\FunASR-MODEL-LICENSE.txt"
-    if (-not (Test-Path $funasrLicense)) { throw "Missing $funasrLicense" }
-    Copy-Item $funasrLicense (Join-Path $modelLicenses "FunASR-MODEL-LICENSE.txt")
-    $modelNotice = @"
-Meeting transcription model pack
-================================
-
-Extract this archive into the MeetRec application folder so the files land in
-models\sensevoice\ next to MeetRec.exe:
-
-  models\sensevoice\model.int8.onnx
-  models\sensevoice\tokens.txt
-  models\sensevoice\silero_vad.onnx
-
-Model: SenseVoiceSmall int8 (sherpa-onnx export)
-Source: https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
-License: FunASR Model Open Source License Agreement v1.1
-         (see licenses/FunASR-MODEL-LICENSE.txt)
-         源模型：https://github.com/FunAudioLLM/SenseVoice
-
-Recognition runs locally; audio is never uploaded.
-"@
-    [System.IO.File]::WriteAllText(
-        (Join-Path $modelStage "README.txt"),
-        $modelNotice,
-        (New-Object System.Text.UTF8Encoding($false)))
-    Push-Location $modelStage
-    try {
-        & $tar -a -c -f $modelZip *
-        if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
-    } finally {
-        Pop-Location
-    }
-    $modelHash = (Get-FileHash $modelZip -Algorithm SHA256).Hash
-}
-
 $sums = Join-Path $OutputRoot "SHA256SUMS.txt"
 $sumLines = @("$hash  $(Split-Path -Leaf $zip)")
-if ($modelZip -ne $null) {
-    $sumLines += "$modelHash  $(Split-Path -Leaf $modelZip)"
-}
 $sumLines | Set-Content -Path $sums -Encoding ASCII
 
 Write-Host "Package: $zip"
 Write-Host "Size:    $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB"
 Write-Host "SHA256:  $hash"
-if ($modelZip -ne $null) {
-    Write-Host "Speech model pack: $modelZip"
-    Write-Host "Speech model size: $([math]::Round((Get-Item $modelZip).Length / 1MB, 1)) MB"
-    Write-Host "Speech model SHA256: $modelHash"
-}
 Write-Host "Folder:  $stage"

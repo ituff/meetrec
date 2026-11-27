@@ -40,9 +40,9 @@ We will ship **post-recording meeting transcription as an optional local module*
   without `sherpa-onnx-c-api.dll`/`onnxruntime.dll` still starts and records; the transcript
   feature reports why it is unavailable.
 - **Model pack**: the sherpa-onnx export of SenseVoiceSmall int8 (2024-07-17,
-  `model.int8.onnx` 239 MB + `tokens.txt`) plus Silero VAD, distributed **separately** as
-  `MeetRec-<version>-win64-speech-model.zip`. It unpacks to `models/sensevoice/` next to
-  `MeetRec.exe`. The FunASR export used by `funasr_onnx` is **not** compatible (no
+  `model.int8.onnx` 239 MB + `tokens.txt`) plus Silero VAD. Since 1.6.1 it is **downloaded by
+  the app on first use**; it is no longer published as a separate release asset. It unpacks to
+  `models/sensevoice/` next to `MeetRec.exe` (or the project-specific model directory). The FunASR export used by `funasr_onnx` is **not** compatible (no
   sherpa-onnx metadata, different `tokens.txt`); the fetch script documents this.
 - **Audio path**: `AudioCapture` gets a per-source mono tap in its mixer loop, before the two
   sources are summed. `SpeechSession` runs on a dedicated below-normal-priority thread:

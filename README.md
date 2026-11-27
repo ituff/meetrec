@@ -196,7 +196,7 @@ powershell -File scripts\clean.ps1
 ```
 
 The first build fetches the pinned, checksum-verified sherpa-onnx runtime into
-`artifacts/third_party/` (cached afterwards). Meeting transcription also needs the separate
+`artifacts/third_party/` (cached afterwards). Meeting transcription also needs the optional
 model pack; it is not required to build or record:
 
 ```powershell
