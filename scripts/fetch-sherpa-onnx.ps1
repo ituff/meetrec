@@ -17,10 +17,10 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $base = Join-Path $root "artifacts\third_party\sherpa-onnx"
-$asset = "sherpa-onnx-$Version-win-x64-shared-MT-Release.tar.bz2"
+$asset = "sherpa-onnx-v$Version-win-x64-shared-MT-Release.tar.bz2"
 $download = Join-Path $base "dl\$asset"
 $extractedRoot = Join-Path $base "extracted"
-$packageDir = Join-Path $extractedRoot "sherpa-onnx-$Version-win-x64-shared-MT-Release"
+$packageDir = Join-Path $extractedRoot "sherpa-onnx-v$Version-win-x64-shared-MT-Release"
 $header = Join-Path $base "include\sherpa-onnx\c-api\c-api.h"
 $marker = Join-Path $base "version.txt"
 $markerText = "$Version $ExpectedSha256"
