@@ -46,9 +46,10 @@ if (-not (Test-Path $curl)) {
     $curl = (Get-Command curl.exe -ErrorAction Stop).Source
 }
 
-function Get-Asset([string]$Url, [string]$Path, [string]$ExpectedSha) {
+function Get-Asset([string]$Url, [string]$Path, [string]$ExpectedSha, [int]$MaxTimeSec = 3600) {
     Write-Host "Downloading $Url"
-    & $curl -L --retry 5 --retry-delay 3 -C - --max-time 3600 -sS -o $Path $Url
+    # A hanging mirror must not consume the whole CI job timeout.
+    & $curl -L --retry 5 --retry-delay 3 -C - --connect-timeout 20 --max-time $MaxTimeSec -sS -o $Path $Url
     if ($LASTEXITCODE -ne 0) {
         throw "curl failed with exit code $LASTEXITCODE for $Url"
     }
@@ -66,14 +67,18 @@ function Get-WithFallback([string]$GithubUrl, [string]$Path, [string]$ExpectedSh
         $hash = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
         if ($hash -eq $ExpectedSha) { return }
     }
-    $proxy = "https://jscdn.msone.top/$GithubUrl"
-    try {
-        Get-Asset $proxy $Path $ExpectedSha
-    } catch {
-        Write-Warning "Proxy download failed: $($_.Exception.Message)"
-        Write-Host "Retrying directly from github.com..."
-        Get-Asset $GithubUrl $Path $ExpectedSha
+    if ($env:GITHUB_ACTIONS -ne 'true') {
+        $proxy = "https://jscdn.msone.top/$GithubUrl"
+        try {
+            # The mirror can be slow; cap it so a stalled transfer falls back.
+            Get-Asset $proxy $Path $ExpectedSha 600
+            return
+        } catch {
+            Write-Warning "Proxy download failed: $($_.Exception.Message)"
+            Write-Host "Retrying directly from github.com..."
+        }
     }
+    Get-Asset $GithubUrl $Path $ExpectedSha
 }
 
 $modelUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$archiveName"

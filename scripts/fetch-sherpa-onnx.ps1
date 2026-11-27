@@ -44,9 +44,10 @@ $githubUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$Version/
 # fallback and the SHA256 is pinned here, not in the proxy.
 $proxyUrl = "https://jscdn.msone.top/$githubUrl"
 
-function Get-Asset([string]$Url, [string]$Path) {
+function Get-Asset([string]$Url, [string]$Path, [int]$MaxTimeSec = 1800) {
     Write-Host "Downloading $Url"
-    & $curl -L --retry 3 --retry-delay 2 -C - --max-time 1800 -sS -o $Path $Url
+    # A hanging mirror must not consume the whole CI job timeout.
+    & $curl -L --retry 3 --retry-delay 2 -C - --connect-timeout 20 --max-time $MaxTimeSec -sS -o $Path $Url
     if ($LASTEXITCODE -ne 0) {
         throw "curl failed with exit code $LASTEXITCODE for $Url"
     }
@@ -64,16 +65,20 @@ if ((Test-Path $download) -and -not $Force) {
     $hash = (Get-FileHash -Path $download -Algorithm SHA256).Hash
     $downloadOk = $hash -eq $ExpectedSha256
 }
-if (-not $downloadOk) {
+if (-not $downloadOk -and $env:GITHUB_ACTIONS -ne 'true') {
     try {
-        Get-Asset $proxyUrl $download
+        # The China-friendly mirror can be slow or stale; cap the attempt and
+        # fall back to github.com. CI runners reach GitHub directly.
+        Get-Asset $proxyUrl $download 600
         $downloadOk = $true
     } catch {
         Write-Warning "Proxy download failed: $($_.Exception.Message)"
         Write-Host "Retrying directly from github.com..."
-        Get-Asset $githubUrl $download
-        $downloadOk = $true
     }
+}
+if (-not $downloadOk) {
+    Get-Asset $githubUrl $download
+    $downloadOk = $true
 }
 if (-not $downloadOk) { throw "Could not obtain $asset" }
 
