@@ -46,6 +46,10 @@ namespace vsr::window {
 class WindowPlacementManager;
 struct SavedPlacement;
 } // namespace vsr::window
+namespace vsr::speech {
+class CaptionFeed;
+class SpeechSession;
+} // namespace vsr::speech
 
 namespace vsr::app {
 
@@ -68,6 +72,15 @@ struct StartRecordingRequest {
     // wrong endpoint makes that source silent.
     std::wstring audioOutputDeviceId;
     std::wstring audioInputDeviceId;
+    // Local meeting transcript (senseVoice int8 via sherpa-onnx). Requires at
+    // least one audio source; a missing model pack downgrades to a normal
+    // recording with a logged warning, never a start failure.
+    bool generateTranscript = false;
+    std::wstring speechModelDirectory; // empty = <exe>/models/sensevoice
+    bool transcriptChinese = true;     // labels inside the generated files
+    // Optional live-caption sink owned by the UI; the speech worker pushes
+    // finalized cues while recording.
+    std::shared_ptr<speech::CaptionFeed> captionFeed;
 };
 
 enum class StopReason { User, TargetLost, DisplayLost, DeviceLost, DiskLow, WriteFailed, Shutdown };
@@ -179,6 +192,10 @@ private:
     std::unique_ptr<capture::GraphicsDevice> device_;
     std::unique_ptr<capture::ICaptureSession> session_;
     std::unique_ptr<encoder::AudioCapture> audioCapture_;
+    // Optional meeting transcriber fed from the audio mixer's per-source tap.
+    // Created before AudioCapture so the first chunks are not lost; loaded on
+    // its own thread and never part of the recording failure path.
+    std::unique_ptr<speech::SpeechSession> speech_;
     std::mutex audioMutex_;
     std::deque<encoder::AudioChunk> audioQueue_;
     std::atomic<bool> audioReceived_{false};

@@ -48,6 +48,27 @@ struct Settings {
     // source, so the UI lets the user match the app's devices.
     std::wstring audioOutputDeviceId;
     std::wstring audioInputDeviceId;
+    // P1 meeting transcript: recognize the recording's two audio sources with
+    // the local SenseVoice int8 pack and write <recording>.srt/.txt. Off by
+    // default because it needs the separately distributed model pack.
+    bool generateTranscript = false;
+    // Show the live caption overlay while a transcript-enabled recording is
+    // active. Requires generateTranscript.
+    bool showLiveCaptions = true;
+    // Caption overlay appearance. Keys are validated by CaptionStyle.h:
+    // font: yahei|segoe|simsun|arial; size: 14..48 logical px;
+    // color: auto|white|yellow|blue|green|orange;
+    // position: bottom-center|top-center|bottom-left|bottom-right.
+    std::string captionFont = "yahei";
+    int captionFontSize = 22;
+    std::string captionColor = "auto";
+    std::string captionPosition = "bottom-center";
+    // Optional online translation of live captions (Bing/Edge web endpoint;
+    // only the recognized text leaves the machine, never audio).
+    bool translateCaptions = false;
+    std::string captionTranslationLanguage = "en";
+    // Optional model-pack directory override (empty = <exe>/models/sensevoice).
+    std::wstring speechModelDirectory;
     // UI language: "system" follows the Windows display language; "zh-CN" and
     // "en-US" are explicit overrides. Unknown values fall back to "system".
     std::string uiLanguage = "system";

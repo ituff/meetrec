@@ -39,6 +39,7 @@ public:
                      encoder::WriterBackend backend = encoder::WriterBackend::Auto,
                      const std::wstring& audioOutputDeviceId = {},
                      const std::wstring& audioInputDeviceId = {},
+                     bool generateTranscript = false,
                      const std::wstring& competeFile = {},
                      std::uint64_t* droppedFramesOut = nullptr);
     // Driverless E2E entry: spawns a self-contained animated test window in a
@@ -53,6 +54,7 @@ public:
                            encoder::WriterBackend backend = encoder::WriterBackend::Auto,
                            const std::wstring& audioOutputDeviceId = {},
                            const std::wstring& audioInputDeviceId = {},
+                           bool generateTranscript = false,
                            const std::wstring& competeFile = {},
                            std::uint64_t* droppedFramesOut = nullptr);
     // ADR-007 verification: records a baseline run and then a run with a
@@ -99,6 +101,10 @@ public:
                                   const std::vector<std::wstring>& files = {});
     // Development/QA: open the update window as soon as a check finds one.
     void SetOpenUpdateWindowOnStart(bool open) noexcept { openUpdateWindowOnStart_ = open; }
+    // Development/QA: open the settings window on a specific page at startup.
+    void SetOpenSettingsOnStart(int page) noexcept {
+        openSettingsPage_ = page < 0 ? 0 : (page > 4 ? 4 : page);
+    }
     std::wstring OutputDirectory() const { return outputDirectory_; }
     void SetOutputDirectory(const std::wstring& dir) { outputDirectory_ = dir; }
 
@@ -116,6 +122,7 @@ private:
     bool minimizeToTray_ = true;
     bool openCompressorOnStart_ = false;
     bool openUpdateWindowOnStart_ = false;
+    int openSettingsPage_ = -1;
     std::vector<std::wstring> openCompressorFiles_;
     std::wstring outputDirectory_;
 };

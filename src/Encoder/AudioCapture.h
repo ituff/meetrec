@@ -64,6 +64,14 @@ struct AudioCaptureOptions {
     // microphone reports 0 so the meter matches what is recorded.
     using LevelFn = std::function<void(bool microphone, float peak)>;
     LevelFn onLevel;
+    // Optional per-source tap for the meeting transcriber: 16-bit mono at the
+    // mixed-stream rate (usually 48 kHz), accumulated into ~200 ms chunks.
+    // Called on the mixer thread; the callee must copy what it needs and
+    // return promptly. A muted microphone delivers silence, matching the mix.
+    using SourceAudioFn = std::function<void(bool microphone, const std::int16_t* mono,
+                                             std::size_t frames,
+                                             std::uint64_t timestampUs)>;
+    SourceAudioFn onSourceAudio;
     // Optional shared mute state. A null pointer creates a private state, which
     // keeps the idle level monitor's meter in sync with the endpoint as well.
     std::shared_ptr<MicrophoneMuteState> muteState;

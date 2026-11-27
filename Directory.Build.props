@@ -18,6 +18,8 @@
     <VcpkgEnabled>false</VcpkgEnabled>
     <!-- Shared outputs: artifacts/<config>/ for final binaries, artifacts/obj for intermediates -->
     <VsrArtifactsRoot>$(MSBuildThisFileDirectory)artifacts\</VsrArtifactsRoot>
+    <!-- Pinned sherpa-onnx runtime (fetched by scripts/fetch-sherpa-onnx.ps1). -->
+    <VsrSherpaOnnxDir Condition="'$(VsrSherpaOnnxDir)' == ''">$(MSBuildThisFileDirectory)artifacts\third_party\sherpa-onnx\</VsrSherpaOnnxDir>
     <OutDir Condition="'$(OutDir)' == ''">$(VsrArtifactsRoot)obj\$(Configuration)\$(MSBuildProjectName)\</OutDir>
     <IntDir Condition="'$(IntDir)' == ''">$(VsrArtifactsRoot)obj\$(Configuration)\$(MSBuildProjectName)\</IntDir>
   </PropertyGroup>

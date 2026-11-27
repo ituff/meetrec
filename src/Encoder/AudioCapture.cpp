@@ -735,6 +735,56 @@ void AudioCapture::MixerLoop() {
     const float gain = options_.micGain;
     const bool hasMic = options_.microphone;
 
+    // Speech tap: each source is down-mixed separately before the mixer sums
+    // them, so the transcriber can label participants (loopback) and the local
+    // speaker (microphone) without diarization. Chunks are emitted at ~200 ms
+    // so the mixer thread only does a copy per step.
+    const std::uint32_t tapChunkFrames = std::max<std::uint32_t>(1, rate / 5);
+    std::vector<std::int16_t> tapMono[2];
+    std::vector<std::int16_t> tapAccum[2];
+    std::uint64_t tapStartUs[2] = {0, 0};
+    bool tapHasStart[2] = {false, false};
+    for (int source = 0; source < 2; ++source) {
+        tapMono[source].resize(stepCap);
+        tapAccum[source].reserve(tapChunkFrames + stepCap);
+    }
+
+    auto flushTap = [&](int source) {
+        if (!options_.onSourceAudio || tapAccum[source].empty()) return;
+        options_.onSourceAudio(source == 1, tapAccum[source].data(),
+                              tapAccum[source].size(), tapStartUs[source]);
+        tapAccum[source].clear();
+        tapHasStart[source] = false;
+    };
+
+    auto tapSource = [&](int source, const std::vector<std::int16_t>& interleaved,
+                         std::size_t frames, std::uint64_t timestampUs, bool silent) {
+        if (!options_.onSourceAudio || frames == 0) return;
+        if (source == 1 && !hasMic) return;
+        std::vector<std::int16_t>& mono = tapMono[source];
+        if (silent) {
+            std::fill(mono.begin(),
+                      mono.begin() + static_cast<std::ptrdiff_t>(frames),
+                      static_cast<std::int16_t>(0));
+        } else {
+            for (std::size_t frame = 0; frame < frames; ++frame) {
+                std::int32_t sum = 0;
+                for (std::uint32_t channel = 0; channel < channels; ++channel) {
+                    sum += interleaved[frame * channels + channel];
+                }
+                mono[frame] = static_cast<std::int16_t>(
+                    sum / static_cast<std::int32_t>(channels));
+            }
+        }
+        if (!tapHasStart[source]) {
+            tapStartUs[source] = timestampUs;
+            tapHasStart[source] = true;
+        }
+        tapAccum[source].insert(tapAccum[source].end(), mono.begin(),
+                                mono.begin() + static_cast<std::ptrdiff_t>(frames));
+        if (tapAccum[source].size() >= tapChunkFrames) flushTap(source);
+    };
+
     auto flushChunk = [&]() {
         if (chunkFrames == 0) return;
         if (dump != nullptr) {
@@ -783,6 +833,8 @@ void AudioCapture::MixerLoop() {
 
         const std::size_t n = stepFrames * channels;
         const bool micMuted = hasMic && MicrophoneMuted();
+        tapSource(0, loopbackScratch, stepFrames, cursorUs, false);
+        if (hasMic) tapSource(1, micScratch, stepFrames, cursorUs, micMuted);
         mixBuf.resize((chunkFrames + stepFrames) * channels);
         for (std::size_t i = 0; i < n; ++i) {
             std::int32_t mixed = loopbackScratch[i];
@@ -835,6 +887,8 @@ void AudioCapture::MixerLoop() {
         processStep(kStepUs);
         Sleep(2);
     }
+    flushTap(0);
+    flushTap(1);
     flushChunk();
     if (dump != nullptr) fclose(dump);
 

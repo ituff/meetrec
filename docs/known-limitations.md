@@ -97,6 +97,53 @@ release notes sections with the same purpose.
   accumulate memory in the media pipeline — monitored via the AC-008 two-hour soak on
   reference machines.
 
+## Meeting transcript (P1)
+
+The local transcript is opt-in and separate from the recording pipeline:
+
+- It needs the SenseVoiceSmall int8 model pack (~230 MB on disk) under
+  `models/sensevoice/`, plus the sherpa-onnx runtime DLLs that ship with the app. The first
+  time the transcript is enabled, the app offers to download and install it (with progress and
+  cancel); an offline model zip is also published. If the pack or the DLLs are missing,
+  recording still works and the transcript is skipped (logged).
+- Recognition is **local only**; audio is never uploaded. The app only downloads the model
+  after the user confirms the prompt; it never fetches it silently.
+- Supported languages are the model's: Mandarin, Cantonese, English, Japanese and Korean
+  (automatic language detection per utterance). Other languages are not supported.
+- SenseVoice has **no hotword/phrase boosting**. Names, product names and acronyms are often
+  wrong; treat the transcript as a first draft that needs terminology review.
+- Timestamps come from VAD segment boundaries, not native word alignment. Cues are
+  sentence-level (typically 2-15 s); long continuous speech is force-split at 15 s.
+- A very short noise/music segment can be misrecognized (observed: a 0.9 s segment produced
+  Japanese text in an otherwise Chinese meeting). Review short odd cues.
+- The transcript requires **system audio and/or the microphone**. With both sources off, or
+  with transcription disabled in Settings, no `.srt`/`.txt` is produced. The two sources are
+  recognized separately and labelled "对方/Them" (loopback) and "我/Me" (microphone); with
+  speakers, microphone echo produces duplicate lines (use headphones).
+- The live caption overlay is **sentence-level**: a cue appears after the VAD endpoint and the
+  segment decode, typically 0.5-1.5 s after the phrase (continuous speech is force-split after
+  at most 10 s). There is no word-by-word interim text.
+- The overlay is a topmost, click-through window that follows the recorded window; it hides
+  while paused or when the target is minimized. It is **not part of the MP4** (MeetRec records
+  only the target window), but it is visible to screen-sharing tools if you share the whole
+  desktop.
+- Cues are written during recording to a crash journal (`<recording>.partial.srt`); the final
+  `.srt`/`.txt` appear next to the MP4 after stop.
+- **Live translation is opt-in and online.** When enabled, the recognized text is sent to the
+  free Bing/Edge public endpoint (`edge.microsoft.com/translate/translatetext`) and the
+  translation is shown under the original in the overlay; audio is never uploaded. The endpoint
+  is unofficial, requires network access, and may be rate-limited, change or disappear (the
+  older token endpoint was retired in 2026). Failures leave the original caption visible.
+- Translation applies to the **live overlay only**; the `.srt`/`.txt` files contain the original
+  transcript. Target languages: English, Simplified Chinese, Japanese, Korean, French, German,
+  Spanish, Russian.
+- Recognition runs on a below-normal-priority worker with a bounded queue. On a very slow
+  machine the transcript/captions may lag behind the recording; the recording itself is
+  unaffected.
+- The model weights are licensed under the FunASR Model Open Source License Agreement v1.1;
+  the pack includes the license and attribution. See
+  `docs/adr/ADR-009-local-meeting-transcription.md`.
+
 ## Encoder media stack (Windows Insider build 26200 findings)
 
 Recording verification on Insider build 26200 machines exposed encoder-MFT failure modes the

@@ -23,12 +23,14 @@
 #include <WindowManagement/WindowEnumerator.h>
 
 #include "AudioDevices.h"
+#include "CaptionOverlay.h"
 #include "Localization.h"
 #include "TrayIcon.h"
 #include "UiDraw.h"
 
 namespace vsr::app {
 
+class CaptionTranslator;
 class PreviewPanel;
 class SettingsWindow;
 class WindowPicker;
@@ -46,8 +48,14 @@ public:
 
     bool Create();
     void ShowAndActivate();
+    // Development/QA helper used by --settings-window.
+    void OpenSettingsPage(int page) { ShowSettingsPage(page); }
     HWND Hwnd() const noexcept { return hwnd_; }
     void RefreshUi();
+    void UpdateCaptionOverlay(AppState state);
+    void OnToggleLiveCaptions();
+    void CreateCaptionTooltip();
+    void UpdateCaptionTooltip();
     // Opens (or activates) the compressor window from the menus and the
     // --compress-window development entry.
     void ShowCompressWindow();
@@ -81,6 +89,7 @@ private:
         PauseResume,
         Stop,
         MicMute,
+        CaptionButton,
         ResultOpenFile,
         ResultOpenFolder,
         ResultAgain,
@@ -153,6 +162,7 @@ private:
         Gdiplus::RectF secondaryButton;
         Gdiplus::RectF stopButton;
         Gdiplus::RectF muteButton;
+        Gdiplus::RectF captionButton;
 
         Gdiplus::RectF resultArea;
         Gdiplus::RectF resultIcon;
@@ -296,6 +306,14 @@ private:
     TrayIcon tray_;
     std::unique_ptr<PreviewPanel> preview_;
     std::unique_ptr<SettingsWindow> settings_;
+    std::shared_ptr<speech::CaptionFeed> captionFeed_;
+    std::unique_ptr<CaptionTranslator> captionTranslator_;
+    CaptionOverlay captionOverlay_;
+    bool captionOverlayActive_ = false;
+    bool captionOverlayPaused_ = false;
+    HWND captionTooltip_ = nullptr;
+    std::wstring captionTooltipText_;
+    bool captionTooltipAdded_ = false;
     std::unique_ptr<WindowPicker> picker_;
     std::unique_ptr<ToastWindow> toast_;
     std::unique_ptr<CompressWindow> compressor_;
@@ -327,6 +345,16 @@ private:
     encoder::EncoderPreference encoderPreference_ = encoder::EncoderPreference::Auto;
     bool systemAudio_ = false;
     bool microphone_ = false;
+    bool generateTranscript_ = false;
+    bool showLiveCaptions_ = true;
+    std::string captionFont_ = "yahei";
+    int captionFontSize_ = 22;
+    std::string captionColor_ = "auto";
+    std::string captionPosition_ = "bottom-center";
+    bool translateCaptions_ = false;
+    std::string captionTranslationLanguage_ = "en";
+    bool liveCaptionsHotkeyRegistered_ = false;
+    std::wstring speechModelDirectory_;
     bool micMuteHotkeyRegistered_ = false;
     bool showPreview_ = true;
     bool captureCursor_ = false;

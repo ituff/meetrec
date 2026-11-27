@@ -12,6 +12,8 @@
 #include <Infrastructure/Guid.h>
 #include <Infrastructure/Log.h>
 #include <Infrastructure/Strings.h>
+#include <Speech/SpeechModelPack.h>
+#include <Speech/SpeechSession.h>
 #include <WindowManagement/WindowEnumerator.h>
 #include <WindowManagement/WindowPlacement.h>
 
@@ -227,6 +229,7 @@ Result<void> Coordinator::Pause() {
         timeline_.PauseAt(now);
     }
     paused_.store(true);
+    if (speech_ != nullptr) speech_->SetPaused(true);
     SetState(AppState::Paused); // Recording -> Paused
     log::Info("Coordinator", "PAUSED", correlationId_, L"Recording paused.");
     return Result<void>{};
@@ -244,6 +247,7 @@ Result<void> Coordinator::Resume() {
         std::lock_guard<std::mutex> lock(timelineMutex_);
         timeline_.ResumeAt(now);
     }
+    if (speech_ != nullptr) speech_->SetPaused(false);
     paused_.store(false);
     SetState(AppState::Recording); // Paused -> Recording
     log::Info("Coordinator", "RESUMED", correlationId_, L"Recording resumed.");
@@ -364,6 +368,9 @@ void Coordinator::AbandonSessionResources() noexcept {
     (void)queue_.release();
     (void)device_.release();
     (void)encoderCap_.release();
+    // The speech worker is independent of the wedged recording pipeline; leak
+    // its object too so the abandoned mixer can still call into it safely.
+    (void)speech_.release();
     log::Error("Coordinator", "SESSION_ABANDONED", correlationId_,
                L"Session resources abandoned to contain a wedged worker (NFR-014).");
 }
@@ -746,7 +753,53 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
     session_ = std::move(sessionResult.Value());
     session_->SetCursorCaptureEnabled(request.captureCursor);
 
+    if (request.generateTranscript && !(wantSystemAudio || wantMicrophone)) {
+        log::Warning("Coordinator", "SPEECH_AUDIO_REQUIRED", correlationId_,
+                     L"Meeting transcription needs system audio or the microphone; "
+                     L"recording continues without a transcript.");
+    }
+
     if ((wantSystemAudio || wantMicrophone) && audioRate_ > 0) {
+        if (request.generateTranscript) {
+            const speech::SpeechModelStatus model =
+                speech::LocateSpeechModel(request.speechModelDirectory);
+            if (!model.ready) {
+                log::Warning("Coordinator", "SPEECH_MODEL_MISSING", correlationId_,
+                             L"Meeting transcription was requested but the model pack is "
+                             L"not installed; recording continues without a transcript.",
+                             {{"detail", WideToUtf8(model.detail)},
+                              {"directory", WideToUtf8(model.paths.directory.wstring())}});
+            } else {
+                speech::SpeechSessionOptions speechOptions;
+                speechOptions.model = model.paths;
+                speechOptions.basePath = finalPath_.parent_path() / finalPath_.stem();
+                speechOptions.sourceSampleRate = audioRate_;
+                speechOptions.microphone = wantMicrophone;
+                speechOptions.chinese = request.transcriptChinese;
+                speechOptions.captions = request.captionFeed;
+                const unsigned cores = std::thread::hardware_concurrency();
+                speechOptions.numThreads =
+                    static_cast<int>(cores >= 8 ? 4u : (cores >= 4 ? 2u : 1u));
+
+                auto speech = speech::SpeechSession::Start(speechOptions);
+                if (speech) {
+                    speech_ = std::move(speech.Value());
+                    log::Info("Coordinator", "SPEECH_SESSION_STARTED", correlationId_,
+                              L"Meeting transcription is enabled for this recording.",
+                              {{"model", WideToUtf8(model.paths.model.wstring())},
+                               {"threads", std::to_string(speechOptions.numThreads)},
+                               {"mic", speechOptions.microphone ? "1" : "0"}});
+                } else {
+                    const Error e = speech.TakeError();
+                    log::Warning("Coordinator", "SPEECH_SESSION_UNAVAILABLE", correlationId_,
+                                 e.technicalMessage);
+                }
+            }
+        } else {
+            log::Info("Coordinator", "SPEECH_DISABLED", correlationId_,
+                      L"Meeting transcription is disabled in settings.");
+        }
+
         encoder::AudioCaptureOptions audioOptions{};
         audioOptions.loopback = wantSystemAudio;
         audioOptions.microphone = wantMicrophone;
@@ -757,6 +810,27 @@ bool Coordinator::PrepareSession(const StartRecordingRequest& request) {
             (microphone ? micLevel_ : loopbackLevel_)
                 .store(peak, std::memory_order_relaxed);
         };
+        if (speech_ != nullptr) {
+            // Per-source tap before the mix: participants (loopback) and the
+            // local speaker (mic) are recognized separately. Timestamps are
+            // mapped through the same timeline as the video/audio track, so
+            // paused intervals are excluded.
+            audioOptions.onSourceAudio =
+                [this](bool microphone, const std::int16_t* mono, std::size_t frames,
+                       std::uint64_t timestampUs) {
+                    if (speech_ == nullptr) return;
+                    if (paused_.load(std::memory_order_relaxed)) return;
+                    const std::int64_t capture100 =
+                        static_cast<std::int64_t>(timestampUs) * 10;
+                    std::int64_t output100 = 0;
+                    {
+                        std::lock_guard<std::mutex> lock(timelineMutex_);
+                        if (capture100 < timeline_.StaleFrameWatermark100Ns()) return;
+                        output100 = timeline_.OutputTimestamp100Ns(capture100);
+                    }
+                    speech_->PushAudio(microphone, mono, frames, output100 / 10);
+                };
+        }
         auto started = encoder::AudioCapture::Start(
             *clock_, [this](encoder::AudioChunk&& chunk) {
                 audioReceived_.store(true, std::memory_order_relaxed);
@@ -1183,6 +1257,13 @@ void Coordinator::TeardownSession() {
     if (audioCapture_ != nullptr) audioCapture_->Stop();
     log::Info("Coordinator", "TEARDOWN_AUDIO_DRAIN", correlationId_, L"");
     DrainAudio();
+    // Drain the transcriber after the mixer has delivered its tail. This
+    // decodes the last utterances and leaves the partial SRT journal closed;
+    // the final .srt/.txt pair is written once the MP4 name is settled.
+    if (speech_ != nullptr) {
+        log::Info("Coordinator", "TEARDOWN_SPEECH_STOP", correlationId_, L"");
+        speech_->Stop();
+    }
     // WASAPI loopback yields no packets while the render endpoint is idle;
     // a zero-input AAC stream can wedge Finalize, so feed minimal silence
     // when nothing was captured.
@@ -1223,6 +1304,17 @@ void Coordinator::TeardownSession() {
         } else {
             PublishError(finalized.TakeError());
         }
+    }
+
+    if (speech_ != nullptr) {
+        const speech::TranscriptStore::Written transcript = speech_->Finalize();
+        log::Info("Coordinator", "TEARDOWN_SPEECH_FINALIZED", correlationId_,
+                  transcript.srt.empty() ? L"No transcript cues were produced."
+                                         : L"Meeting transcript written next to the recording.",
+                  {{"srt", WideToUtf8(transcript.srt.wstring())},
+                   {"txt", WideToUtf8(transcript.txt.wstring())},
+                   {"segments", std::to_string(speech_->GetStatus().segments)}});
+        speech_.reset();
     }
 
     topologyWatcher_.Stop();

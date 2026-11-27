@@ -10,7 +10,7 @@
 ; ============================================================================
 
 #define AppName "MeetRec"
-#define AppVersion "1.5.3.0"
+#define AppVersion "1.6.0.0"
 #define AppPublisher "Allen Cheng"
 #define AppExe "MeetRec.exe"
 #ifndef Configuration
@@ -45,6 +45,10 @@ TestSigningWarning=INTERNAL TEST BUILD: The bundled virtual display driver is te
 [Files]
 ; Application (FR-003: runs unelevated; manifest requests asInvoker).
 Source: "..\artifacts\{#Configuration}\app\MeetRec.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Optional local-transcription runtime (delay-loaded; recording works without it).
+Source: "..\artifacts\{#Configuration}\app\sherpa-onnx-c-api.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\artifacts\{#Configuration}\app\onnxruntime.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\artifacts\{#Configuration}\app\onnxruntime_providers_shared.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; Driver payload (staged into {app}\driver, installed via pnputil below).
 Source: "..\artifacts\{#Configuration}\driver\VirtualDisplayDriver.dll"; DestDir: "{app}\driver"; Flags: ignoreversion
 Source: "..\artifacts\{#Configuration}\driver\VirtualDisplayDriver.inf"; DestDir: "{app}\driver"; Flags: ignoreversion

@@ -2,6 +2,7 @@
 
 #include <windowsx.h>
 
+#include <commctrl.h>
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -31,6 +32,7 @@
 
 #include "AppMenu.h"
 #include "Application.h"
+#include "CaptionTranslator.h"
 #include "CompressWindow.h"
 #include "PreviewPanel.h"
 #include "SettingsWindow.h"
@@ -69,7 +71,9 @@ constexpr UINT kCmdTrayExit = 2306;
 constexpr UINT kCmdTrayCompress = 2307;
 constexpr UINT kCmdTrayUpdate = 2308;
 constexpr UINT kCmdTrayMute = 2309;
+constexpr UINT kCmdTrayCaptions = 2310;
 constexpr int kMicMuteHotkeyId = 0x4D3A; // Ctrl+Alt+M while a recording is active
+constexpr int kLiveCaptionsHotkeyId = 0x4C53; // Ctrl+Alt+S
 
 struct UpdateCheckPayload {
     bool manual = false;
@@ -268,6 +272,8 @@ void MainWindow::OnCreate() {
     thumbGeneration_ = std::make_shared<std::atomic<int>>(0);
 
     LoadSettings();
+    captionFeed_ = std::make_shared<speech::CaptionFeed>();
+    captionTranslator_ = std::make_unique<CaptionTranslator>(captionFeed_);
     RecreateFonts();
 
     preview_ = std::make_unique<PreviewPanel>(coordinator_);
@@ -294,6 +300,17 @@ void MainWindow::OnCreate() {
                      {{"hotkey", "Ctrl+Alt+M"},
                       {"error", std::to_string(GetLastError())}});
     }
+    liveCaptionsHotkeyRegistered_ =
+        RegisterHotKey(hwnd_, kLiveCaptionsHotkeyId,
+                       MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'S') != FALSE;
+    if (!liveCaptionsHotkeyRegistered_) {
+        log::Warning("UI", "HOTKEY_REGISTER_FAILED", L"",
+                     L"Ctrl+Alt+S is already in use; the tray menu still toggles live "
+                     L"captions.",
+                     {{"hotkey", "Ctrl+Alt+S"},
+                      {"error", std::to_string(GetLastError())}});
+    }
+    CreateCaptionTooltip();
     if (autoCheckUpdates_) nextUpdateCheckTick_ = GetTickCount64() + 6000;
 
     activateMessage_ = RegisterWindowMessageW(L"VsrActivateExistingInstance");
@@ -543,7 +560,10 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             InvalidateAll();
             return 0;
         case WM_HOTKEY:
-            if (wp == kMicMuteHotkeyId) {
+            if (wp == kLiveCaptionsHotkeyId) {
+                OnToggleLiveCaptions();
+                return 0;
+            } else if (wp == kMicMuteHotkeyId) {
                 OnToggleRecordingMicMute();
                 return 0;
             }
@@ -768,9 +788,18 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_DESTROY:
             KillTimer(hwnd, timerId_);
+            if (captionTooltip_ != nullptr) {
+                DestroyWindow(captionTooltip_);
+                captionTooltip_ = nullptr;
+                captionTooltipAdded_ = false;
+            }
             if (micMuteHotkeyRegistered_) {
                 UnregisterHotKey(hwnd, kMicMuteHotkeyId);
                 micMuteHotkeyRegistered_ = false;
+            }
+            if (liveCaptionsHotkeyRegistered_) {
+                UnregisterHotKey(hwnd, kLiveCaptionsHotkeyId);
+                liveCaptionsHotkeyRegistered_ = false;
             }
             if (stopOp_.joinable()) stopOp_.join();
             if (levelMonitor_ != nullptr) {
@@ -862,6 +891,7 @@ void MainWindow::OnTimer() {
     }
 
     previousState_ = snap.state;
+    UpdateCaptionOverlay(snap.state);
 
     if (snap.state == AppState::Preparing || snap.state == AppState::Stopping) {
         spinnerAngle_ = std::fmod(spinnerAngle_ + 24.0f, 360.0f);
@@ -1522,6 +1552,14 @@ void MainWindow::DrawFooter(Gdiplus::Graphics& graphics, const StatusSnapshot& s
                        hover_ == Hit::Stop, pressed_ == Hit::Stop, true,
                        ui::Icon::Square);
     }
+    if (layout_.captionButton.Width > 0.0f) {
+        const bool captionsOn = generateTranscript_ && showLiveCaptions_;
+        ui::DrawButton(graphics, fonts_, layout_.captionButton, std::wstring(),
+                       captionsOn ? ui::ButtonStyle::Primary
+                                  : ui::ButtonStyle::Secondary,
+                       hover_ == Hit::CaptionButton, pressed_ == Hit::CaptionButton,
+                       true, ui::Icon::Captions);
+    }
 }
 
 void MainWindow::DrawSpinner(Gdiplus::Graphics& graphics, const Gdiplus::RectF& rect,
@@ -1890,10 +1928,30 @@ void MainWindow::UpdateLayout() {
             layout.muteButton =
                 Gdiplus::RectF(anchorX - S(10) - S(40), buttonY, S(40), S(40));
         }
+        // The caption toggle sits left of the mic/pause/start controls. It is
+        // always present on the main page so users can discover the feature;
+        // with transcript generation off, clicking it opens the settings page.
+        layout.captionButton = Gdiplus::RectF();
+        {
+            float anchorX = 0.0f;
+            if (lastSnapshot_.state == AppState::Recording) {
+                anchorX = showMute ? layout.muteButton.X : layout.secondaryButton.X;
+            } else if (lastSnapshot_.state == AppState::Paused) {
+                anchorX = showMute ? layout.muteButton.X : layout.primaryButton.X;
+            } else if (lastSnapshot_.state == AppState::Ready) {
+                anchorX = layout.primaryButton.X;
+            }
+            if (anchorX > 0.0f) {
+                layout.captionButton =
+                    Gdiplus::RectF(anchorX - S(10) - S(40), buttonY, S(40), S(40));
+            }
+        }
         // Keep the status text clear of the footer buttons at the minimum
         // window width.
         float controlsLeft = width - pad;
-        if (lastSnapshot_.state == AppState::Recording) {
+        if (layout.captionButton.Width > 0.0f) {
+            controlsLeft = layout.captionButton.X;
+        } else if (lastSnapshot_.state == AppState::Recording) {
             controlsLeft = showMute ? layout.muteButton.X : layout.secondaryButton.X;
         } else if (lastSnapshot_.state == AppState::Paused) {
             controlsLeft = showMute ? layout.muteButton.X : layout.primaryButton.X;
@@ -1967,6 +2025,7 @@ void MainWindow::UpdateLayout() {
 
     layout_ = layout;
     BuildHitTargets();
+    UpdateCaptionTooltip();
     UpdatePreviewChild();
 }
 
@@ -2024,6 +2083,9 @@ void MainWindow::BuildHitTargets() {
             add(Hit::Stop, layout_.stopButton);
         } else {
             add(Hit::Start, layout_.primaryButton);
+        }
+        if (layout_.captionButton.Width > 0.0f) {
+            add(Hit::CaptionButton, layout_.captionButton);
         }
     } else if (page_ == Page::Result) {
         add(Hit::ResultOpenFile, layout_.resultPrimary);
@@ -2085,6 +2147,10 @@ bool MainWindow::IsHitEnabled(Hit id) const {
         case Hit::MicMute:
             return page_ == Page::Main && lastSnapshot_.microphoneCaptured &&
                    (state == AppState::Recording || state == AppState::Paused);
+        case Hit::CaptionButton:
+            return page_ == Page::Main &&
+                   (state == AppState::Recording || state == AppState::Paused ||
+                    state == AppState::Ready);
         case Hit::Stop:
             return page_ == Page::Main &&
                    (state == AppState::Recording || state == AppState::Paused);
@@ -2196,6 +2262,15 @@ void MainWindow::Activate(Hit id) {
         case Hit::MicMute:
             OnToggleRecordingMicMute();
             break;
+        case Hit::CaptionButton:
+            if (!generateTranscript_) {
+                // Discoverability: take the user to the captions settings
+                // page, where the transcript and caption toggles live.
+                ShowSettingsPage(3);
+            } else {
+                OnToggleLiveCaptions();
+            }
+            break;
         case Hit::Stop:
             OnStopClicked();
             break;
@@ -2238,6 +2313,15 @@ void MainWindow::LoadSettings() {
     encoderPreference_ = encoder::EncoderPreferenceFromString(settings.encoderPreference);
     systemAudio_ = settings.recordSystemAudio;
     microphone_ = settings.recordMicrophone;
+    generateTranscript_ = settings.generateTranscript;
+    showLiveCaptions_ = settings.showLiveCaptions;
+    captionFont_ = settings.captionFont;
+    captionFontSize_ = settings.captionFontSize;
+    captionColor_ = settings.captionColor;
+    captionPosition_ = settings.captionPosition;
+    translateCaptions_ = settings.translateCaptions;
+    captionTranslationLanguage_ = settings.captionTranslationLanguage;
+    speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
     minimizeToTray_ = settings.minimizeToTray;
@@ -2278,6 +2362,15 @@ void MainWindow::ApplySettingsFromStore() {
     encoderPreference_ = encoder::EncoderPreferenceFromString(settings.encoderPreference);
     systemAudio_ = settings.recordSystemAudio;
     microphone_ = settings.recordMicrophone;
+    generateTranscript_ = settings.generateTranscript;
+    showLiveCaptions_ = settings.showLiveCaptions;
+    captionFont_ = settings.captionFont;
+    captionFontSize_ = settings.captionFontSize;
+    captionColor_ = settings.captionColor;
+    captionPosition_ = settings.captionPosition;
+    translateCaptions_ = settings.translateCaptions;
+    captionTranslationLanguage_ = settings.captionTranslationLanguage;
+    speechModelDirectory_ = settings.speechModelDirectory;
     showPreview_ = settings.showPreview;
     captureCursor_ = settings.captureCursor;
     minimizeToTray_ = settings.minimizeToTray;
@@ -2318,6 +2411,15 @@ void MainWindow::PersistSettings() {
                                      : "auto";
     settings.recordSystemAudio = systemAudio_;
     settings.recordMicrophone = microphone_;
+    settings.generateTranscript = generateTranscript_;
+    settings.showLiveCaptions = showLiveCaptions_;
+    settings.captionFont = captionFont_;
+    settings.captionFontSize = captionFontSize_;
+    settings.captionColor = captionColor_;
+    settings.captionPosition = captionPosition_;
+    settings.translateCaptions = translateCaptions_;
+    settings.captionTranslationLanguage = captionTranslationLanguage_;
+    settings.speechModelDirectory = speechModelDirectory_;
     settings.audioOutputDeviceId = SelectedAudioDeviceId(true);
     settings.audioInputDeviceId = SelectedAudioDeviceId(false);
     settings.showPreview = showPreview_;
@@ -2695,6 +2797,10 @@ void MainWindow::ShowTrayMenu() {
              snap.microphoneMutedManually ? ui::Icon::MicrophoneMuted : ui::Icon::Microphone,
              kCmdTrayMute, true, false, false, false});
     }
+    items.push_back({i18n::Text(i18n::Str::TrayCaptions),
+                     liveCaptionsHotkeyRegistered_ ? L"Ctrl+Alt+S" : L"",
+                     ui::Icon::File, kCmdTrayCaptions, generateTranscript_,
+                     showLiveCaptions_, false, false});
     items.push_back(
         {i18n::Text(i18n::Str::TrayStop),
          active ? i18n::Format(snap.state == AppState::Paused
@@ -2733,6 +2839,9 @@ void MainWindow::ShowTrayMenu() {
             break;
         case kCmdTrayMute:
             OnToggleRecordingMicMute();
+            break;
+        case kCmdTrayCaptions:
+            OnToggleLiveCaptions();
             break;
         case kCmdTrayStop:
             OnStopClicked();
@@ -2887,6 +2996,10 @@ void MainWindow::OnStartClicked() {
     request.encoderPreference = encoderPreference_;
     request.captureAudio = systemAudio_;
     request.captureMicrophone = microphone_;
+    request.generateTranscript = generateTranscript_;
+    request.speechModelDirectory = speechModelDirectory_;
+    request.captionFeed = captionFeed_;
+    request.transcriptChinese = i18n::CurrentLanguage() == i18n::Language::ZhCn;
     request.captureCursor = captureCursor_;
     request.audioOutputDeviceId = SelectedAudioDeviceId(true);
     request.audioInputDeviceId = SelectedAudioDeviceId(false);
@@ -2898,6 +3011,7 @@ void MainWindow::OnStartClicked() {
     }
     PersistSettings();
     lastActiveElapsedMs_ = 0;
+    if (captionFeed_) captionFeed_->Clear();
     auto result = coordinator_.Start(request);
     if (!result) {
         const Error error = result.TakeError();
@@ -2936,6 +3050,135 @@ void MainWindow::OnStopAsync() {
         stopOpDone_.store(false);
         (void)coordinator_.Stop(StopReason::User);
         RefreshUi();
+    }
+}
+
+void MainWindow::CreateCaptionTooltip() {
+    if (captionTooltip_ != nullptr) return;
+    INITCOMMONCONTROLSEX icc = {sizeof(icc), ICC_WIN95_CLASSES};
+    InitCommonControlsEx(&icc);
+    captionTooltip_ = CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr, GetModuleHandleW(nullptr),
+        nullptr);
+    if (captionTooltip_ == nullptr) {
+        log::Warning("UI", "CAPTION_TOOLTIP_FAILED", L"",
+                     L"Could not create the caption button tooltip.",
+                     {{"error", std::to_string(GetLastError())}});
+        return;
+    }
+    SetWindowPos(captionTooltip_, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SendMessageW(captionTooltip_, TTM_SETMAXTIPWIDTH, 0, 420);
+    UpdateCaptionTooltip();
+}
+
+void MainWindow::UpdateCaptionTooltip() {
+    if (captionTooltip_ == nullptr) return;
+
+    if (layout_.captionButton.Width <= 0.0f) {
+        if (captionTooltipAdded_) {
+            TOOLINFOW info = {};
+            info.cbSize = TTTOOLINFOW_V2_SIZE;
+            info.hwnd = hwnd_;
+            info.uId = 1;
+            SendMessageW(captionTooltip_, TTM_DELTOOLW, 0,
+                         reinterpret_cast<LPARAM>(&info));
+            captionTooltipAdded_ = false;
+        }
+        return;
+    }
+
+    if (!generateTranscript_) {
+        captionTooltipText_ = i18n::Text(i18n::Str::CaptionTooltipSetup);
+    } else {
+        captionTooltipText_ =
+            i18n::Text(showLiveCaptions_ ? i18n::Str::CaptionTooltipOff
+                                         : i18n::Str::CaptionTooltipOn);
+        if (liveCaptionsHotkeyRegistered_) {
+            captionTooltipText_ += L"  (Ctrl+Alt+S)";
+        }
+    }
+
+    TOOLINFOW info = {};
+    // TTTOOLINFOW_V2_SIZE keeps the add working on the common-controls
+    // versions that reject the larger v3 layout.
+    info.cbSize = TTTOOLINFOW_V2_SIZE;
+    info.uFlags = TTF_SUBCLASS | TTF_TRANSPARENT;
+    info.hwnd = hwnd_;
+    info.uId = 1;
+    info.lpszText = const_cast<LPWSTR>(captionTooltipText_.c_str());
+    info.rect.left = static_cast<LONG>(layout_.captionButton.X);
+    info.rect.top = static_cast<LONG>(layout_.captionButton.Y);
+    info.rect.right = static_cast<LONG>(layout_.captionButton.GetRight());
+    info.rect.bottom = static_cast<LONG>(layout_.captionButton.GetBottom());
+
+    if (!captionTooltipAdded_) {
+        const LRESULT added = SendMessageW(captionTooltip_, TTM_ADDTOOLW, 0,
+                                           reinterpret_cast<LPARAM>(&info));
+        captionTooltipAdded_ = added != 0;
+        if (!captionTooltipAdded_) {
+            log::Warning("UI", "CAPTION_TOOLTIP_ADD_FAILED", L"",
+                         L"Could not attach the tooltip to the caption button.",
+                         {{"error", std::to_string(GetLastError())},
+                          {"rect", std::to_string(info.rect.left) + "," +
+                                       std::to_string(info.rect.top) + "," +
+                                       std::to_string(info.rect.right) + "," +
+                                       std::to_string(info.rect.bottom)}});
+        }
+    } else {
+        SendMessageW(captionTooltip_, TTM_UPDATETIPTEXTW, 0,
+                     reinterpret_cast<LPARAM>(&info));
+        SendMessageW(captionTooltip_, TTM_NEWTOOLRECTW, 0,
+                     reinterpret_cast<LPARAM>(&info));
+    }
+}
+
+void MainWindow::OnToggleLiveCaptions() {
+    if (!generateTranscript_) return;
+    showLiveCaptions_ = !showLiveCaptions_;
+    PersistSettings();
+    UpdateCaptionOverlay(coordinator_.GetStatus().state);
+    UpdateCaptionTooltip();
+    RefreshUi();
+}
+
+void MainWindow::UpdateCaptionOverlay(AppState state) {
+    const bool active = state == AppState::Recording || state == AppState::Paused;
+    const bool wanted = active && showLiveCaptions_ && generateTranscript_ &&
+                        target_ != nullptr && captionFeed_ != nullptr;
+
+    if (captionTranslator_) {
+        captionTranslator_->SetTargetLanguage(captionTranslationLanguage_);
+        captionTranslator_->Poll(wanted && translateCaptions_);
+    }
+
+    if (!wanted) {
+        if (captionOverlayActive_) {
+            captionOverlay_.Hide();
+            captionOverlayActive_ = false;
+            captionOverlayPaused_ = false;
+        }
+        return;
+    }
+
+    const CaptionStyle style = CaptionStyleFromKeys(
+        captionFont_, captionFontSize_, captionColor_, captionPosition_);
+    if (!captionOverlayActive_) {
+        captionOverlay_.Show(target_, captionFeed_,
+                             i18n::CurrentLanguage() == i18n::Language::ZhCn, style);
+        captionOverlayActive_ = true;
+        captionOverlayPaused_ = false;
+    } else {
+        // Picks up changes made in Settings while a recording is active.
+        captionOverlay_.SetStyle(style);
+    }
+
+    const bool paused = state == AppState::Paused;
+    if (paused != captionOverlayPaused_) {
+        captionOverlay_.SetPaused(paused);
+        captionOverlayPaused_ = paused;
     }
 }
 

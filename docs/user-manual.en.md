@@ -1,6 +1,6 @@
 # MeetRec User Manual
 
-> Applies to: MeetRec 1.2 · Windows 10 2004+ x64 / Windows 11 x64
+> Applies to: MeetRec 1.6 · Windows 10 2004+ x64 / Windows 11 x64
 > A step-by-step, illustrated guide to everyday use; this manual will also be published to the
 > GitHub Wiki once the repository goes public.
 
@@ -76,6 +76,8 @@ mixes in system audio (the other participants) and your microphone, and saves a 
 ## 3. The main window at a glance
 
 ![Main window and all states](images/ui-overview.png)
+
+*UI illustration from 1.5; 1.6 adds the footer CC caption button and merges the title-bar entries into the **⋯** menu.*
 
 > Note: the composite above is from 1.5.1 and earlier. **Since 1.5.2** the title bar's top
 > right is the **Compress videos** button plus a single **⋯ More** menu — the standalone
@@ -171,6 +173,62 @@ The result card shows file name, duration, size and path, with three actions:
 - **Open folder** — locate it in File Explorer;
 - **Record again** — return to Ready with the same settings for the next session.
 
+### Step 8 (optional): Save a meeting transcript
+
+1. Enable **Settings → Captions → Save a meeting transcript**. At least one audio source
+   (system audio or microphone) must be enabled. The first time, MeetRec asks whether to
+   download the speech model (~155 MB); choosing Yes shows download/verify/extract progress
+   with a Cancel button. The model is installed into `models\sensevoice\` next to the app
+   (or `%LOCALAPPDATA%\VirtualScreenRecorder\models\sensevoice` when the app folder is not
+   writable). For offline use, the separate `MeetRec-<version>-win64-speech-model.zip` can be
+   extracted manually. When the model is missing, a **Download** button also appears next to
+   the transcript option.
+
+   | First-run prompt | Download progress |
+   |---|---|
+   | ![Download prompt](images/ui-model-prompt.png) | ![Download progress](images/ui-model-download.png) |
+
+2. Once the model is ready the status shows “Model ready” and the checkbox stays on.
+3. Record normally. After stop, `<recording>.srt` (subtitles) and `<recording>.txt` (plain
+   transcript) are written next to the MP4, labelled "Them" (system audio) and "Me"
+   (microphone).
+
+![Caption settings](images/ui-captions-settings.png)
+
+*Settings → Captions: enable the transcript and live captions, pick the caption style, and
+optionally translate captions.*
+
+Notes:
+
+- Recognition is local; audio is never uploaded. Supported languages: Mandarin, Cantonese,
+  English, Japanese and Korean.
+- SenseVoice has no hotword boosting; names and product terms may be wrong and need review.
+- With **Show live captions while recording** enabled, a sentence-level caption overlay
+  follows the recorded window. Toggle it with the footer **CC icon** button (hover for the
+  current state and shortcut), the tray menu, or `Ctrl+Alt+S`. It is click-through, never
+  appears in the MP4, and hides while paused or when the target is minimized. Cues appear per
+  sentence, not word by word.
+
+  ![Footer caption button](images/ui-caption-button.png)
+
+  *The CC icon button left of Start recording; hover for a tooltip, click to toggle.*
+- **Caption style** lets you change the font, size, text color and anchor (bottom center /
+  top center / bottom left / bottom right). The **Auto** color follows the speaker: blue for
+  the participants, green for you.
+- **Translate live captions** adds a target language. The overlay then shows the original
+  (small, dim) and the translation (larger). Translation uses the free Bing/Edge public
+  endpoint: **only the recognized text is sent to Microsoft; audio is never uploaded**.
+  Disable the option for fully local recognition.
+
+  ![Live caption overlay](images/ui-caption-overlay.png)
+
+  *Live overlay during recording: original on top in small dim text, translation below it;
+  click-through and never captured into the MP4.*
+- During recording, `<recording>.partial.srt` is kept as a crash-safe journal; the final
+  `.srt`/`.txt` are written after stop.
+- If the model pack or runtime DLLs are missing, recording still works and only the transcript
+  is skipped (see the log).
+
 ## 5. Recording from the tray
 
 - You can minimize MeetRec itself while recording (**this minimizes MeetRec — not the recorded
@@ -239,13 +297,14 @@ is found, and a failed hardware job automatically falls back to CPU encoding.
 
 ## 7. Settings reference
 
-Open *⋯ More → Settings...* from the main window header. Four pages:
+Open *⋯ More → Settings...* from the main window header. Five pages:
 
 | Page | Options |
 |---|---|
 | **General** | UI language (system / 简体中文 / English), automatic update checks, tray behavior |
 | **Audio** | Level meter and default device related options |
 | **Recording** | Save location, file name format, encoder (Automatic / Hardware GPU / Software), post-recording actions (show completion notification / auto-open folder / minimize to tray) |
+| **Captions** | Save a meeting transcript (downloads the model on first use), show live captions while recording, caption style (font / size / color / position), live translation and target language |
 | **About** | Version, author and project links |
 
 Encoder modes:

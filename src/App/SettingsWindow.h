@@ -16,9 +16,11 @@
 
 namespace vsr::app {
 
+class ModelDownloadWindow;
+
 class SettingsWindow {
 public:
-    enum class Page { General = 0, Audio = 1, Recording = 2, About = 3 };
+    enum class Page { General = 0, Audio = 1, Recording = 2, Captions = 3, About = 4 };
 
     SettingsWindow(HWND owner, std::function<void()> onChanged);
     ~SettingsWindow();
@@ -39,6 +41,7 @@ private:
         NavGeneral,
         NavAudio,
         NavRecording,
+        NavCaptions,
         NavAbout,
         Browse,
         Notification,
@@ -46,6 +49,15 @@ private:
         MinimizeTray,
         AutoUpdate,
         Language,
+        Transcript,
+        LiveCaptions,
+        CaptionFont,
+        CaptionSize,
+        CaptionColor,
+        CaptionPosition,
+        DownloadModel,
+        Translation,
+        TranslationLanguage,
         SystemAudio,
         Mic,
         OutputDevice,
@@ -71,7 +83,7 @@ private:
         Gdiplus::RectF title;
         Gdiplus::RectF minimize;
         Gdiplus::RectF close;
-        Gdiplus::RectF nav[4];
+        Gdiplus::RectF nav[5];
         Gdiplus::RectF content;
 
         Gdiplus::RectF saveLabel;
@@ -93,6 +105,29 @@ private:
         Gdiplus::RectF autoUpdateNote;
         Gdiplus::RectF languageLabel;
         Gdiplus::RectF languageField;
+        Gdiplus::RectF transcriptBox;
+        Gdiplus::RectF transcriptLabel;
+        Gdiplus::RectF transcriptNote;
+        Gdiplus::RectF modelDownloadButton;
+        Gdiplus::RectF liveCaptionBox;
+        Gdiplus::RectF liveCaptionLabel;
+        Gdiplus::RectF liveCaptionNote;
+        Gdiplus::RectF captionStyleLabel;
+        Gdiplus::RectF captionFontLabel;
+        Gdiplus::RectF captionFontField;
+        Gdiplus::RectF captionSizeLabel;
+        Gdiplus::RectF captionSizeField;
+        Gdiplus::RectF captionColorLabel;
+        Gdiplus::RectF captionColorField;
+        Gdiplus::RectF captionPositionLabel;
+        Gdiplus::RectF captionPositionField;
+
+        Gdiplus::RectF captionsHint;
+        Gdiplus::RectF translationBox;
+        Gdiplus::RectF translationLabel;
+        Gdiplus::RectF translationLanguageLabel;
+        Gdiplus::RectF translationLanguageField;
+        Gdiplus::RectF translationNote;
 
         Gdiplus::RectF audioHint;
         Gdiplus::RectF audioCard[2];
@@ -133,6 +168,7 @@ private:
     void OnCreate();
     void OnDpiChanged(UINT dpi);
     void LoadSettings();
+    void RefreshSpeechModelStatus();
     void SaveAndNotify();
     void ApplyLanguage();
     void RefreshAudioDevices();
@@ -150,12 +186,13 @@ private:
     void DrawGeneral(Gdiplus::Graphics& graphics);
     void DrawAudio(Gdiplus::Graphics& graphics);
     void DrawRecording(Gdiplus::Graphics& graphics);
+    void DrawCaptions(Gdiplus::Graphics& graphics);
     void DrawAbout(Gdiplus::Graphics& graphics);
     void DrawField(Gdiplus::Graphics& graphics, const Gdiplus::RectF& rect,
                    const std::wstring& text, bool hover, bool chevron = true);
     void DrawCheckRow(Gdiplus::Graphics& graphics, const Gdiplus::RectF& box,
                       const Gdiplus::RectF& label, const std::wstring& text, bool checked,
-                      Hit id);
+                      Hit id, bool enabled = true);
     void DrawToggleRow(Gdiplus::Graphics& graphics, const Gdiplus::RectF& card,
                        const Gdiplus::RectF& title, const Gdiplus::RectF& toggle,
                        const std::wstring& label, bool on, Hit id);
@@ -163,6 +200,12 @@ private:
     void ShowQualityMenu();
     void ShowEncoderMenu();
     void ShowDeviceMenu(bool output);
+    void ShowCaptionFontMenu();
+    void ShowCaptionSizeMenu();
+    void ShowCaptionColorMenu();
+    void ShowCaptionPositionMenu();
+    void ShowTranslationLanguageMenu();
+    void ShowModelDownload();
     void BrowseForFolder();
     void ShowDiagnostics();
     void OpenLogs();
@@ -173,6 +216,7 @@ private:
 
     HWND hwnd_ = nullptr;
     HWND owner_ = nullptr;
+    std::unique_ptr<ModelDownloadWindow> modelDownload_;
     HWND pathEdit_ = nullptr;
     std::function<void()> onChanged_;
     Page page_ = Page::General;
@@ -185,6 +229,8 @@ private:
     std::wstring defaultInputName_;
     std::vector<std::string> languageValues_;
     Layout layout_;
+    bool speechModelReady_ = false;
+    std::wstring speechModelDirectory_;
     std::vector<HitTarget> hits_;
     Hit hover_ = Hit::None;
     Hit pressed_ = Hit::None;
