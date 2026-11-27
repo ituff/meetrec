@@ -2,6 +2,7 @@
 
 #include <windowsx.h>
 
+#include <commctrl.h>
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -309,6 +310,7 @@ void MainWindow::OnCreate() {
                      {{"hotkey", "Ctrl+Alt+S"},
                       {"error", std::to_string(GetLastError())}});
     }
+    CreateCaptionTooltip();
     if (autoCheckUpdates_) nextUpdateCheckTick_ = GetTickCount64() + 6000;
 
     activateMessage_ = RegisterWindowMessageW(L"VsrActivateExistingInstance");
@@ -786,6 +788,11 @@ LRESULT MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_DESTROY:
             KillTimer(hwnd, timerId_);
+            if (captionTooltip_ != nullptr) {
+                DestroyWindow(captionTooltip_);
+                captionTooltip_ = nullptr;
+                captionTooltipAdded_ = false;
+            }
             if (micMuteHotkeyRegistered_) {
                 UnregisterHotKey(hwnd, kMicMuteHotkeyId);
                 micMuteHotkeyRegistered_ = false;
@@ -1547,12 +1554,11 @@ void MainWindow::DrawFooter(Gdiplus::Graphics& graphics, const StatusSnapshot& s
     }
     if (layout_.captionButton.Width > 0.0f) {
         const bool captionsOn = generateTranscript_ && showLiveCaptions_;
-        ui::DrawButton(graphics, fonts_, layout_.captionButton,
-                       i18n::Text(i18n::Str::CaptionButtonLabel),
+        ui::DrawButton(graphics, fonts_, layout_.captionButton, std::wstring(),
                        captionsOn ? ui::ButtonStyle::Primary
                                   : ui::ButtonStyle::Secondary,
                        hover_ == Hit::CaptionButton, pressed_ == Hit::CaptionButton,
-                       true, ui::Icon::None);
+                       true, ui::Icon::Captions);
     }
 }
 
@@ -2019,6 +2025,7 @@ void MainWindow::UpdateLayout() {
 
     layout_ = layout;
     BuildHitTargets();
+    UpdateCaptionTooltip();
     UpdatePreviewChild();
 }
 
@@ -3046,11 +3053,94 @@ void MainWindow::OnStopAsync() {
     }
 }
 
+void MainWindow::CreateCaptionTooltip() {
+    if (captionTooltip_ != nullptr) return;
+    INITCOMMONCONTROLSEX icc = {sizeof(icc), ICC_WIN95_CLASSES};
+    InitCommonControlsEx(&icc);
+    captionTooltip_ = CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr, GetModuleHandleW(nullptr),
+        nullptr);
+    if (captionTooltip_ == nullptr) {
+        log::Warning("UI", "CAPTION_TOOLTIP_FAILED", L"",
+                     L"Could not create the caption button tooltip.",
+                     {{"error", std::to_string(GetLastError())}});
+        return;
+    }
+    SetWindowPos(captionTooltip_, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SendMessageW(captionTooltip_, TTM_SETMAXTIPWIDTH, 0, 420);
+    UpdateCaptionTooltip();
+}
+
+void MainWindow::UpdateCaptionTooltip() {
+    if (captionTooltip_ == nullptr) return;
+
+    if (layout_.captionButton.Width <= 0.0f) {
+        if (captionTooltipAdded_) {
+            TOOLINFOW info = {};
+            info.cbSize = TTTOOLINFOW_V2_SIZE;
+            info.hwnd = hwnd_;
+            info.uId = 1;
+            SendMessageW(captionTooltip_, TTM_DELTOOLW, 0,
+                         reinterpret_cast<LPARAM>(&info));
+            captionTooltipAdded_ = false;
+        }
+        return;
+    }
+
+    if (!generateTranscript_) {
+        captionTooltipText_ = i18n::Text(i18n::Str::CaptionTooltipSetup);
+    } else {
+        captionTooltipText_ =
+            i18n::Text(showLiveCaptions_ ? i18n::Str::CaptionTooltipOff
+                                         : i18n::Str::CaptionTooltipOn);
+        if (liveCaptionsHotkeyRegistered_) {
+            captionTooltipText_ += L"  (Ctrl+Alt+S)";
+        }
+    }
+
+    TOOLINFOW info = {};
+    // TTTOOLINFOW_V2_SIZE keeps the add working on the common-controls
+    // versions that reject the larger v3 layout.
+    info.cbSize = TTTOOLINFOW_V2_SIZE;
+    info.uFlags = TTF_SUBCLASS | TTF_TRANSPARENT;
+    info.hwnd = hwnd_;
+    info.uId = 1;
+    info.lpszText = const_cast<LPWSTR>(captionTooltipText_.c_str());
+    info.rect.left = static_cast<LONG>(layout_.captionButton.X);
+    info.rect.top = static_cast<LONG>(layout_.captionButton.Y);
+    info.rect.right = static_cast<LONG>(layout_.captionButton.GetRight());
+    info.rect.bottom = static_cast<LONG>(layout_.captionButton.GetBottom());
+
+    if (!captionTooltipAdded_) {
+        const LRESULT added = SendMessageW(captionTooltip_, TTM_ADDTOOLW, 0,
+                                           reinterpret_cast<LPARAM>(&info));
+        captionTooltipAdded_ = added != 0;
+        if (!captionTooltipAdded_) {
+            log::Warning("UI", "CAPTION_TOOLTIP_ADD_FAILED", L"",
+                         L"Could not attach the tooltip to the caption button.",
+                         {{"error", std::to_string(GetLastError())},
+                          {"rect", std::to_string(info.rect.left) + "," +
+                                       std::to_string(info.rect.top) + "," +
+                                       std::to_string(info.rect.right) + "," +
+                                       std::to_string(info.rect.bottom)}});
+        }
+    } else {
+        SendMessageW(captionTooltip_, TTM_UPDATETIPTEXTW, 0,
+                     reinterpret_cast<LPARAM>(&info));
+        SendMessageW(captionTooltip_, TTM_NEWTOOLRECTW, 0,
+                     reinterpret_cast<LPARAM>(&info));
+    }
+}
+
 void MainWindow::OnToggleLiveCaptions() {
     if (!generateTranscript_) return;
     showLiveCaptions_ = !showLiveCaptions_;
     PersistSettings();
     UpdateCaptionOverlay(coordinator_.GetStatus().state);
+    UpdateCaptionTooltip();
     RefreshUi();
 }
 

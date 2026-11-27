@@ -151,6 +151,7 @@ enum class Icon {
     Square,
     Record,
     File,
+    Captions,
     Clock,
     Info,
     Search,

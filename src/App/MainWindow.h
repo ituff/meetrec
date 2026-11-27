@@ -54,6 +54,8 @@ public:
     void RefreshUi();
     void UpdateCaptionOverlay(AppState state);
     void OnToggleLiveCaptions();
+    void CreateCaptionTooltip();
+    void UpdateCaptionTooltip();
     // Opens (or activates) the compressor window from the menus and the
     // --compress-window development entry.
     void ShowCompressWindow();
@@ -309,6 +311,9 @@ private:
     CaptionOverlay captionOverlay_;
     bool captionOverlayActive_ = false;
     bool captionOverlayPaused_ = false;
+    HWND captionTooltip_ = nullptr;
+    std::wstring captionTooltipText_;
+    bool captionTooltipAdded_ = false;
     std::unique_ptr<WindowPicker> picker_;
     std::unique_ptr<ToastWindow> toast_;
     std::unique_ptr<CompressWindow> compressor_;

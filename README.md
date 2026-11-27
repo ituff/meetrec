@@ -79,7 +79,7 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
   (~155 MB) with progress and cancel; an offline model zip is also published. An optional
   live translation (Bing/Edge free endpoint, target language selectable) shows the original
   and translation together; only the recognized text is sent online, never audio. Everything
-  else runs on this PC. Toggle captions from the footer **字幕/CC** button, Settings → Captions,
+  else runs on this PC. Toggle captions from the footer **CC icon** button (hover for a hint), Settings → Captions,
   the tray menu, or `Ctrl+Alt+S`; font, size, text color and anchor are configurable.
 - **Window picker** with search, app icons and a **Meeting apps only** filter (Teams, Zoom,
   Tencent Meeting/Wemeet, VooV, DingTalk, Feishu/Lark, WeCom, Webex, Skype, GoToMeeting,
@@ -360,8 +360,8 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   (约 155 MB,带进度条和取消),之后分别识别系统声音(对方)和麦克风(我),录制结束在 MP4
   旁生成带说话人标签的 `<录制名>.srt` 与 `.txt`,并在录制窗口上方显示句级、可点击穿透的
   实时字幕。可选**实时翻译**(Bing/Edge 免费接口,目标语言可选),浮层同时显示原文与译文;
-  只有识别出的文字会发到在线服务,音频不会上传。其余识别全程本机完成;可用主界面「字幕」
-  按钮、托盘菜单或 `Ctrl+Alt+S` 开关字幕;字体、字号、颜色、位置和翻译在
+  只有识别出的文字会发到在线服务,音频不会上传。其余识别全程本机完成;可用主界面底部的字幕图标
+  按钮(悬停显示提示)、托盘菜单或 `Ctrl+Alt+S` 开关字幕;字体、字号、颜色、位置和翻译在
   「设置 → 字幕」中调整。
 - **窗口选择器**:支持搜索、应用图标,以及**「只看会议应用」筛选**(Teams、Zoom、腾讯会议、
   VooV、钉钉、飞书、企业微信、Webex、Skype、GoToMeeting、BlueJeans、华为云会议、浏览器

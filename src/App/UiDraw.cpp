@@ -452,6 +452,26 @@ void DrawIcon(Gdiplus::Graphics& graphics, Icon icon, const Gdiplus::RectF& rect
                               y + h * 0.30f);
             return;
         }
+        case Icon::Captions: {
+            const Gdiplus::RectF box(x + w * 0.12f, y + h * 0.22f, w * 0.76f,
+                                     h * 0.56f);
+            const float radius = h * 0.12f;
+            Gdiplus::GraphicsPath path;
+            path.AddArc(box.X, box.Y, radius * 2, radius * 2, 180, 90);
+            path.AddArc(box.GetRight() - radius * 2, box.Y, radius * 2, radius * 2, 270,
+                        90);
+            path.AddArc(box.GetRight() - radius * 2, box.GetBottom() - radius * 2,
+                        radius * 2, radius * 2, 0, 90);
+            path.AddArc(box.X, box.GetBottom() - radius * 2, radius * 2, radius * 2, 90,
+                        90);
+            path.CloseFigure();
+            graphics.DrawPath(&pen, &path);
+            graphics.DrawLine(&pen, x + w * 0.26f, y + h * 0.45f, x + w * 0.62f,
+                              y + h * 0.45f);
+            graphics.DrawLine(&pen, x + w * 0.26f, y + h * 0.60f, x + w * 0.74f,
+                              y + h * 0.60f);
+            return;
+        }
         case Icon::Clock: {
             const Gdiplus::RectF circle(x + w * 0.14f, y + h * 0.14f, w * 0.72f, h * 0.72f);
             graphics.DrawEllipse(&pen, circle);
