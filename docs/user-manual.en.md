@@ -1,6 +1,6 @@
 # MeetRec User Manual
 
-> Applies to: MeetRec 1.6 · Windows 10 2004+ x64 / Windows 11 x64
+> Applies to: MeetRec 1.6.1 · Windows 10 2004+ x64 / Windows 11 x64
 > A step-by-step, illustrated guide to everyday use; this manual will also be published to the
 > GitHub Wiki once the repository goes public.
 

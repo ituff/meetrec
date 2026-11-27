@@ -96,7 +96,7 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 - **Keyboard accessible**: Tab/Shift+Tab, Enter/Space, arrow keys on dropdowns, Esc; menus use
   native `TrackPopupMenu` semantics.
 
-## Meeting transcripts and live captions (1.6)
+## Meeting transcripts and live captions (1.6.1)
 
 Meeting transcription is opt-in and runs entirely on this PC. The first time it is enabled,
 MeetRec offers to download the ~155 MB speech model with a progress window; an offline model
@@ -414,7 +414,7 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 - **键盘可达**:Tab/Shift+Tab 移动焦点,Enter/Space 激活,方向键操作下拉框,Esc 关闭;
   菜单使用原生 `TrackPopupMenu` 语义。
 
-## 会议转录与实时字幕(1.6)
+## 会议转录与实时字幕(1.6.1)
 
 会议转录默认关闭,识别全程在本机完成。首次开启时程序会提示下载约 155 MB 的语音模型并显示
 进度窗口;离线环境也可单独下载模型包。

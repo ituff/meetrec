@@ -1,6 +1,6 @@
 # MeetRec 使用手册
 
-> 适用版本:MeetRec 1.6 · Windows 10 2004+ x64 / Windows 11 x64
+> 适用版本:MeetRec 1.6.1 · Windows 10 2004+ x64 / Windows 11 x64
 > 本手册图文并茂、分步讲解日常使用;仓库公开后将同步发布到 GitHub Wiki。
 
 ## 目录
