@@ -123,7 +123,7 @@ polls the feed:
   accent bar distinguish "对方/Them" (blue) from "我/Me" (green). Text is wrapped by the shared
   subtitle formatter; a speaker prefix is prepended to the first line so it never sits alone.
 - Enabled by **Settings -> Recording -> Show live captions while recording**
-  (`showLiveCaptions`, default on), the footer **字幕/CC** button, the tray **Live captions**
+  (`showLiveCaptions`, default on), the footer **CC icon** button, the tray **Live captions**
   item, or `Ctrl+Alt+S`.
 - Appearance lives in `CaptionStyle` (`captionFont`, `captionFontSize`, `captionColor`,
   `captionPosition`): YaHei/Segoe UI/SimSun/Arial, 16-32 px, auto/white/yellow/blue/green/

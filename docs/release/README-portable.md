@@ -60,12 +60,12 @@ MeetRec 是会议与演示的窗口录制器：选择一个应用窗口，录成
 
 ## 会议转录（可选，P1）
 
-在「设置 → 录制 → 录制后生成会议转录稿」中开启；首次开启会提示下载语音模型（带进度条，
+在「设置 → 字幕 → 录制后生成会议转录稿」中开启；首次开启会提示下载语音模型（带进度条，
 可取消），完成后自动安装到 `models\sensevoice\`。离线环境也可下载
 `MeetRec-<版本>-win64-speech-model.zip` 手动解压到程序目录。识别全程在本机
 完成，音频不会上传；支持普通话、粤语、英语、日语、韩语。SenseVoice 不支持热词，人名/产品名
 需要校对；录制时可在目标窗口上方显示句级实时字幕（主界面「字幕」按钮、托盘菜单或
-`Ctrl+Alt+S` 开关，字体/字号/颜色/位置在「设置 → 录制 → 字幕样式」调整），结束后生成
+`Ctrl+Alt+S` 开关，字体/字号/颜色/位置在「设置 → 字幕 → 字幕样式」调整），结束后生成
 `.srt`/`.txt`。模型许可证与归属见模型包内 `licenses/`。
 
 ---
@@ -86,4 +86,4 @@ Settings/logs: `%LOCALAPPDATA%\VirtualScreenRecorder`. Default recordings go to 
 
 **Optional live translation:** enable *Translate live captions* under Settings → Captions and pick a target language. The recognized text is sent to the free Bing/Edge online service (audio is never uploaded), and the translation is shown together with the original. Disable it for fully local recognition.
 
-**Optional meeting transcript (P1):** enable **Settings → Recording → Save a meeting transcript**; the first enable offers to download the speech model (~155 MB) with a progress bar and Cancel, then installs it into `models\sensevoice\` automatically. For offline use, the separate `MeetRec-<version>-win64-speech-model.zip` can be extracted manually. Recognition is local; audio is never uploaded. It supports Mandarin, Cantonese, English, Japanese and Korean. SenseVoice has no hotword boosting, so names and product terms need review. While recording, a sentence-level caption overlay can follow the target window (footer 字幕/CC button, tray menu or `Ctrl+Alt+S`; font/size/color/anchor are configurable under Settings → Recording → Caption style); after stop, `.srt`/`.txt` are written next to the MP4. Model license and attribution are in the pack's `licenses/` folder.
+**Optional meeting transcript (P1):** enable **Settings → Captions → Save a meeting transcript**; the first enable offers to download the speech model (~155 MB) with a progress bar and Cancel, then installs it into `models\sensevoice\` automatically. For offline use, the separate `MeetRec-<version>-win64-speech-model.zip` can be extracted manually. Recognition is local; audio is never uploaded. It supports Mandarin, Cantonese, English, Japanese and Korean. SenseVoice has no hotword boosting, so names and product terms need review. While recording, a sentence-level caption overlay can follow the target window (footer CC icon button, tray menu or `Ctrl+Alt+S`; font/size/color/anchor are configurable under Settings → Captions → Caption style); after stop, `.srt`/`.txt` are written next to the MP4. Model license and attribution are in the pack's `licenses/` folder.

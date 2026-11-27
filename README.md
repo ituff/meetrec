@@ -96,6 +96,39 @@ HDR/H.265/AV1/4K. See [docs/known-limitations.md](docs/known-limitations.md).
 - **Keyboard accessible**: Tab/Shift+Tab, Enter/Space, arrow keys on dropdowns, Esc; menus use
   native `TrackPopupMenu` semantics.
 
+## Meeting transcripts and live captions (1.6)
+
+Meeting transcription is opt-in and runs entirely on this PC. The first time it is enabled,
+MeetRec offers to download the ~155 MB speech model with a progress window; an offline model
+zip is published as well.
+
+![Caption settings](docs/images/ui-captions-settings.png)
+
+*Settings → Captions: enable the transcript and live captions, choose the caption font, size,
+text color and anchor, and optionally translate captions.*
+
+![Model download](docs/images/ui-model-download.png)
+
+*First-run model download with byte/percent progress and Cancel. Without the model, recording
+still works and only the transcript is skipped.*
+
+![Live caption overlay](docs/images/ui-caption-overlay.png)
+
+*During recording, a click-through overlay follows the recorded window. With live translation
+enabled, the recognized text stays on top in small dim type and the translation appears below
+it. The overlay is never captured into the MP4.*
+
+The footer CC button toggles the overlay; hover it to see the current state and the
+`Ctrl+Alt+S` shortcut.
+
+![Footer caption button](docs/images/ui-caption-button.png)
+
+*The CC icon button left of Start recording; hover for a tooltip, click to toggle live captions.*
+
+After stop, `<recording>.srt` and `<recording>.txt` are written next to the MP4 with
+"Them"/"Me" speaker labels. See the [user manual](docs/user-manual.en.md#step-8-optional-save-a-meeting-transcript)
+for the full walkthrough.
+
 ## Download and run
 
 1. Grab `MeetRec-<version>-win64-with-ffmpeg.zip` from
@@ -374,6 +407,34 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
   标识,并提供本地化的标题与说明。
 - **键盘可达**:Tab/Shift+Tab 移动焦点,Enter/Space 激活,方向键操作下拉框,Esc 关闭;
   菜单使用原生 `TrackPopupMenu` 语义。
+
+## 会议转录与实时字幕(1.6)
+
+会议转录默认关闭,识别全程在本机完成。首次开启时程序会提示下载约 155 MB 的语音模型并显示
+进度窗口;离线环境也可单独下载模型包。
+
+![字幕设置](docs/images/ui-captions-settings.png)
+
+*设置 → 字幕:开启转录与实时字幕,调整字体、字号、颜色、位置,并可选实时翻译。*
+
+![模型下载](docs/images/ui-model-download.png)
+
+*首次开启的模型下载窗口,显示已下载字节、百分比与取消按钮;没有模型时录制不受影响,
+只是不生成转录稿。*
+
+![实时字幕浮层](docs/images/ui-caption-overlay.png)
+
+*录制中浮层跟随目标窗口:开启翻译后,上方小字为原文,下方大字为译文;浮层点击穿透,
+不会被录进 MP4。*
+
+主界面底部的 CC 图标按钮开关实时字幕,鼠标悬停会显示当前状态与 `Ctrl+Alt+S` 快捷键。
+
+![底部字幕按钮](docs/images/ui-caption-button.png)
+
+*「开始录制」左侧的字幕图标按钮;悬停显示提示,点击开关实时字幕。*
+
+录制结束后会在 MP4 旁生成 `<录制名>.srt` 与 `<录制名>.txt`,按「对方 / 我」标注说话人。
+完整步骤见[使用手册](docs/user-manual.zh.md#第-8-步可选生成会议转录稿)。
 
 ## 下载与运行
 
