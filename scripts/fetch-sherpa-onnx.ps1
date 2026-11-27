@@ -82,7 +82,10 @@ if (-not $downloadOk) {
 }
 if (-not $downloadOk) { throw "Could not obtain $asset" }
 
-if (Test-Path $packageDir) { Remove-Item -Recurse -Force $packageDir }
+# A cached or interrupted extraction can leave read-only/locked files behind;
+# bsdtar may then wait on an overwrite prompt. Always extract into a clean tree.
+if (Test-Path $extractedRoot) { Remove-Item -Recurse -Force $extractedRoot }
+New-Item -ItemType Directory -Force -Path $extractedRoot | Out-Null
 $tar = Join-Path $env:SystemRoot "System32\tar.exe"
 Write-Host "Extracting $asset"
 & $tar -xjf $download -C $extractedRoot

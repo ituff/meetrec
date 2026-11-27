@@ -84,10 +84,14 @@ $vadUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/si
 Get-WithFallback $modelUrl $archive $modelSha
 Get-WithFallback $vadUrl $vadFile $vadSha
 
-if (Test-Path $extracted) { Remove-Item -Recurse -Force $extracted }
+# A cached or interrupted extraction can leave read-only/locked files behind;
+# bsdtar may then wait on an overwrite prompt. Always extract into a clean tree.
+$extractRoot = Join-Path $base "extracted"
+if (Test-Path $extractRoot) { Remove-Item -Recurse -Force $extractRoot }
+New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
 $tar = Join-Path $env:SystemRoot "System32\tar.exe"
 Write-Host "Extracting $archiveName"
-& $tar -xjf $archive -C (Join-Path $base "extracted")
+& $tar -xjf $archive -C $extractRoot
 if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
 if (-not (Test-Path (Join-Path $extracted "model.int8.onnx"))) {
     throw "Expected model.int8.onnx missing under $extracted"
