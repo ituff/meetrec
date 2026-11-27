@@ -47,6 +47,9 @@ public:
     // the child. Exit 0 on a finalized MP4. `competeFile` runs a transcode job
     // in the same process and suspends it when recording starts (ADR-007
     // "recording wins" verification).
+    // QA: shows a static live-caption overlay over a dummy window so the
+    // drag grip can be exercised without a recording/model.
+    int RunCaptionOverlayTest(int seconds);
     int RunDevRecordWindow(int seconds, const std::wstring& presetName,
                            const std::wstring& outputDir,
                            encoder::EncoderPreference encoder = encoder::EncoderPreference::Auto,

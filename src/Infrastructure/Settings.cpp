@@ -161,6 +161,26 @@ Settings SettingsStore::Load(bool* usedDefaults) {
         else if (!v.IsNull()) anyFallback = true;
     }
     {
+        const json::Value& v = root.Find("captionOffsetX");
+        if (v.GetType() == json::Type::Number) {
+            const int offset = static_cast<int>(v.AsInt(0));
+            if (offset >= -10000 && offset <= 10000) settings.captionOffsetX = offset;
+            else anyFallback = true;
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
+        const json::Value& v = root.Find("captionOffsetY");
+        if (v.GetType() == json::Type::Number) {
+            const int offset = static_cast<int>(v.AsInt(0));
+            if (offset >= -10000 && offset <= 10000) settings.captionOffsetY = offset;
+            else anyFallback = true;
+        } else if (!v.IsNull()) {
+            anyFallback = true;
+        }
+    }
+    {
         const json::Value& v = root.Find("translateCaptions");
         if (v.GetType() == json::Type::Boolean) settings.translateCaptions = v.AsBool();
         else if (!v.IsNull()) anyFallback = true;
@@ -294,6 +314,8 @@ Settings SettingsStore::Load(bool* usedDefaults) {
                            kv.first == "captionFontSize" ||
                            kv.first == "captionColor" ||
                            kv.first == "captionPosition" ||
+                           kv.first == "captionOffsetX" ||
+                           kv.first == "captionOffsetY" ||
                            kv.first == "translateCaptions" ||
                            kv.first == "captionTranslationLanguage" ||
                            kv.first == "speechModelDirectory" ||
@@ -339,6 +361,8 @@ bool SettingsStore::Save(const Settings& settings) {
     root.Set("captionFontSize", json::Value(settings.captionFontSize));
     root.Set("captionColor", json::Value(settings.captionColor));
     root.Set("captionPosition", json::Value(settings.captionPosition));
+    root.Set("captionOffsetX", json::Value(settings.captionOffsetX));
+    root.Set("captionOffsetY", json::Value(settings.captionOffsetY));
     root.Set("translateCaptions", json::Value(settings.translateCaptions));
     root.Set("captionTranslationLanguage",
              json::Value(settings.captionTranslationLanguage));

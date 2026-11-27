@@ -710,6 +710,13 @@ int Application::RunDevRecord(int seconds, const std::wstring& presetName,
                 overlaySettings.captionFont, overlaySettings.captionFontSize,
                 overlaySettings.captionColor, overlaySettings.captionPosition);
             overlay = std::make_unique<CaptionOverlay>();
+            overlay->SetOffset(overlaySettings.captionOffsetX,
+                               overlaySettings.captionOffsetY);
+            overlay->SetMovedCallback([&overlaySettings](int x, int y) {
+                overlaySettings.captionOffsetX = x;
+                overlaySettings.captionOffsetY = y;
+                SettingsStore().Save(overlaySettings);
+            });
             overlay->Show(targetWindow, captionFeed, true, overlayStyle);
             overlayTranslator = std::make_unique<CaptionTranslator>(captionFeed);
             overlayTranslator->SetTargetLanguage(
@@ -886,6 +893,70 @@ int RunDevTestWindow(unsigned fps, int seconds, const std::wstring& title) {
 }
 
 } // namespace
+
+int Application::RunCaptionOverlayTest(int seconds) {
+    const HINSTANCE instance = GetModuleHandleW(nullptr);
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = instance;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    wc.lpszClassName = L"VsrCaptionOverlayTestTarget";
+    if (RegisterClassExW(&wc) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        return 1;
+    }
+    HWND target = CreateWindowExW(0, wc.lpszClassName,
+                                  L"MeetRec - caption overlay test",
+                                  WS_OVERLAPPEDWINDOW | WS_VISIBLE, 200, 100, 900, 600,
+                                  nullptr, nullptr, instance, nullptr);
+    if (target == nullptr) return 1;
+    ShowWindow(target, SW_SHOWNOACTIVATE);
+    ::UpdateWindow(target);
+
+    Gdiplus::GdiplusStartupInput gdiplusInput;
+    ULONG_PTR gdiplusToken = 0;
+    if (Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusInput, nullptr) !=
+        Gdiplus::Ok) {
+        DestroyWindow(target);
+        return 2;
+    }
+
+    auto feed = std::make_shared<speech::CaptionFeed>();
+    feed->Push(L"这份报告明天上午发给大家。", false, 0, 2000000);
+    const std::vector<speech::CaptionCue> cues = feed->Snapshot(1);
+    if (!cues.empty()) {
+        feed->SetTranslation(cues.front().sequence,
+                             L"I will send this report to everyone tomorrow morning.",
+                             "en");
+    }
+
+    {
+        CaptionOverlay overlay;
+        overlay.SetOffset(0, 0);
+        overlay.SetMovedCallback([](int x, int y) {
+            wprintf(L"[caption-overlay-test] moved offset=%d,%d\n", x, y);
+            fflush(stdout);
+        });
+        overlay.Show(target, feed, true,
+                     CaptionStyleFromKeys("yahei", 24, "auto", "bottom-center"));
+
+        const DWORD end = GetTickCount() + static_cast<DWORD>(seconds) * 1000;
+        MSG message = {};
+        while (GetTickCount() < end) {
+            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            Sleep(10);
+        }
+        overlay.Hide();
+    }
+
+    Gdiplus::GdiplusShutdown(gdiplusToken);
+    DestroyWindow(target);
+    return 0;
+}
 
 int Application::RunDevRecordWindow(int seconds, const std::wstring& presetName,
                                     const std::wstring& outputDir,
@@ -1308,6 +1379,13 @@ int wmain(int argc, wchar_t* argv[]) {
         std::vector<std::wstring> files;
         for (int i = 2; i < argc; ++i) files.emplace_back(argv[i]);
         Application::Instance().SetOpenCompressorOnStart(true, files);
+    }
+
+    if (argc >= 2 && wcscmp(argv[1], L"--caption-overlay-test") == 0) {
+        const int seconds = argc >= 3 ? _wtoi(argv[2]) : 60;
+        const int code = Application::Instance().RunCaptionOverlayTest(seconds);
+        if (coInit == S_OK || coInit == S_FALSE) CoUninitialize();
+        return code;
     }
 
     if (argc >= 2 && wcscmp(argv[1], L"--settings-window") == 0) {

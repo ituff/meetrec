@@ -125,6 +125,10 @@ The footer CC button toggles the overlay; hover it to see the current state and 
 
 *The CC icon button left of Start recording; hover for a tooltip, click to toggle live captions.*
 
+Drag the grip dots in the overlay's top-right corner to reposition it; double-click the grip to
+return to the selected anchor. The position is remembered across recordings and resets when the
+anchor changes in Settings.
+
 After stop, `<recording>.srt` and `<recording>.txt` are written next to the MP4 with
 "Them"/"Me" speaker labels. See the [user manual](docs/user-manual.en.md#step-8-optional-save-a-meeting-transcript)
 for the full walkthrough.
@@ -257,6 +261,8 @@ MeetRec.exe --translate-test "TEXT" --to en
                                          # test the free Bing/Edge translation client
 MeetRec.exe --caption-translate-test "TEXT" --to en
                                          # test CaptionFeed -> translator -> feed
+MeetRec.exe --caption-overlay-test [seconds]
+                                         # static caption overlay for UI/drag tests
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # compress one existing recording
 MeetRec.exe --compress-window [FILE...]  # open the compressor window, optionally pre-filled
@@ -433,6 +439,9 @@ Screen Recorder project. See [docs/sample-audit-idd.md](docs/sample-audit-idd.md
 
 *「开始录制」左侧的字幕图标按钮;悬停显示提示,点击开关实时字幕。*
 
+浮层右上角的拖动点可以自由调整位置;双击拖动点恢复所选对齐位置。位置会跨录制记住，
+在设置中切换「位置」选项时重置。
+
 录制结束后会在 MP4 旁生成 `<录制名>.srt` 与 `<录制名>.txt`,按「对方 / 我」标注说话人。
 完整步骤见[使用手册](docs/user-manual.zh.md#第-8-步可选生成会议转录稿)。
 
@@ -554,6 +563,8 @@ MeetRec.exe --translate-test "TEXT" --to en
                                          # 测试 Bing/Edge 免费翻译客户端
 MeetRec.exe --caption-translate-test "TEXT" --to en
                                          # 测试字幕 feed -> 翻译 -> feed
+MeetRec.exe --caption-overlay-test [seconds]
+                                         # 静态字幕浮层,用于 UI/拖动测试
 MeetRec.exe --compress FILE [--output DIR] [--preset low|standard|high]
                                          # 压缩单个已有录制文件
 MeetRec.exe --compress-window [FILE...]  # 打开压缩窗口,可预填文件

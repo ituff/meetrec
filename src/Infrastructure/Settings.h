@@ -63,6 +63,11 @@ struct Settings {
     int captionFontSize = 22;
     std::string captionColor = "auto";
     std::string captionPosition = "bottom-center";
+    // Free-position offset from the selected anchor, in logical pixels. The
+    // user drags the overlay's top-right grip; the offset persists per anchor
+    // and is reset when the anchor changes.
+    int captionOffsetX = 0;
+    int captionOffsetY = 0;
     // Optional online translation of live captions (Bing/Edge web endpoint;
     // only the recognized text leaves the machine, never audio).
     bool translateCaptions = false;

@@ -11,6 +11,7 @@
 #include <gdiplus.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -37,6 +38,10 @@ public:
     void Hide();
     // Applies a new font/size/color/anchor while the overlay is visible.
     void SetStyle(const CaptionStyle& style);
+    // Sets the drag offset from the selected anchor (logical 96-DPI pixels).
+    void SetOffset(int logicalX, int logicalY);
+    // Called after a drag or a double-click reset with the new logical offset.
+    void SetMovedCallback(std::function<void(int, int)> callback);
     // Pause keeps the target/feed but hides the text; Resume shows it again
     // when the next cue arrives.
     void SetPaused(bool paused);
@@ -51,6 +56,9 @@ private:
     void DestroyWindowNow();
     void UpdateContent();
     bool Position();
+    void ComputeBasePosition(int width, int height, int& x, int& y) const;
+    bool IsGripPoint(POINT client) const;
+    void FinishDrag(bool persist);
     void Paint();
     void ReleaseBackBuffer();
     void RecreateFonts(UINT dpi);
@@ -86,6 +94,16 @@ private:
     int lastY_ = -1;
     int lastWidth_ = -1;
     int lastHeight_ = -1;
+    int baseX_ = 0;
+    int baseY_ = 0;
+    int offsetLogicalX_ = 0;
+    int offsetLogicalY_ = 0;
+    bool dragging_ = false;
+    bool gripHover_ = false;
+    bool trackingLeave_ = false;
+    POINT dragStartCursor_ = {};
+    RECT dragStartRect_ = {};
+    std::function<void(int, int)> onMoved_;
 };
 
 } // namespace vsr::app

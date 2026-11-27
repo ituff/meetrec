@@ -310,6 +310,11 @@ void MainWindow::OnCreate() {
                      {{"hotkey", "Ctrl+Alt+S"},
                       {"error", std::to_string(GetLastError())}});
     }
+    captionOverlay_.SetMovedCallback([this](int x, int y) {
+        captionOffsetX_ = x;
+        captionOffsetY_ = y;
+        PersistSettings();
+    });
     CreateCaptionTooltip();
     if (autoCheckUpdates_) nextUpdateCheckTick_ = GetTickCount64() + 6000;
 
@@ -2319,6 +2324,8 @@ void MainWindow::LoadSettings() {
     captionFontSize_ = settings.captionFontSize;
     captionColor_ = settings.captionColor;
     captionPosition_ = settings.captionPosition;
+    captionOffsetX_ = settings.captionOffsetX;
+    captionOffsetY_ = settings.captionOffsetY;
     translateCaptions_ = settings.translateCaptions;
     captionTranslationLanguage_ = settings.captionTranslationLanguage;
     speechModelDirectory_ = settings.speechModelDirectory;
@@ -2367,7 +2374,17 @@ void MainWindow::ApplySettingsFromStore() {
     captionFont_ = settings.captionFont;
     captionFontSize_ = settings.captionFontSize;
     captionColor_ = settings.captionColor;
+    const bool captionAnchorChanged = captionPosition_ != settings.captionPosition;
     captionPosition_ = settings.captionPosition;
+    if (captionAnchorChanged) {
+        // A new anchor is an explicit position choice; drop the drag offset so
+        // the overlay lands exactly at the selected anchor.
+        captionOffsetX_ = 0;
+        captionOffsetY_ = 0;
+    } else {
+        captionOffsetX_ = settings.captionOffsetX;
+        captionOffsetY_ = settings.captionOffsetY;
+    }
     translateCaptions_ = settings.translateCaptions;
     captionTranslationLanguage_ = settings.captionTranslationLanguage;
     speechModelDirectory_ = settings.speechModelDirectory;
@@ -2417,6 +2434,8 @@ void MainWindow::PersistSettings() {
     settings.captionFontSize = captionFontSize_;
     settings.captionColor = captionColor_;
     settings.captionPosition = captionPosition_;
+    settings.captionOffsetX = captionOffsetX_;
+    settings.captionOffsetY = captionOffsetY_;
     settings.translateCaptions = translateCaptions_;
     settings.captionTranslationLanguage = captionTranslationLanguage_;
     settings.speechModelDirectory = speechModelDirectory_;
@@ -3165,6 +3184,7 @@ void MainWindow::UpdateCaptionOverlay(AppState state) {
 
     const CaptionStyle style = CaptionStyleFromKeys(
         captionFont_, captionFontSize_, captionColor_, captionPosition_);
+    captionOverlay_.SetOffset(captionOffsetX_, captionOffsetY_);
     if (!captionOverlayActive_) {
         captionOverlay_.Show(target_, captionFeed_,
                              i18n::CurrentLanguage() == i18n::Language::ZhCn, style);

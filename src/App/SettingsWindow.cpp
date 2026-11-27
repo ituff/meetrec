@@ -221,6 +221,13 @@ void SettingsWindow::SaveAndNotify() {
         std::filesystem::create_directories(settings_.outputDirectory, ec);
     }
     SettingsStore store;
+    Settings current = store.Load(nullptr);
+    if (current.captionPosition == settings_.captionPosition) {
+        // Preserve a position dragged while this window was open; only an
+        // explicit anchor change clears the offset.
+        settings_.captionOffsetX = current.captionOffsetX;
+        settings_.captionOffsetY = current.captionOffsetY;
+    }
     store.Save(settings_);
     if (onChanged_) onChanged_();
 }
@@ -950,7 +957,13 @@ void SettingsWindow::ShowCaptionPositionMenu() {
     const UINT command =
         static_cast<UINT>(menu::Show(hwnd_, point, items, fonts_, false));
     if (command < kCmdCaptionPositionBase) return;
-    settings_.captionPosition = options[command - kCmdCaptionPositionBase].key;
+    const std::string chosen = options[command - kCmdCaptionPositionBase].key;
+    if (chosen != settings_.captionPosition) {
+        settings_.captionPosition = chosen;
+        // The anchor is an explicit position choice; forget any drag offset.
+        settings_.captionOffsetX = 0;
+        settings_.captionOffsetY = 0;
+    }
     SaveAndNotify();
     InvalidateRect(hwnd_, nullptr, FALSE);
 }

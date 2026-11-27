@@ -79,6 +79,7 @@ void CaptionOverlay::EnsureWindow() {
     HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
+    wc.style = CS_DBLCLKS;
     wc.lpfnWndProc = &CaptionOverlay::WndProcThunk;
     wc.hInstance = instance;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -90,8 +91,8 @@ void CaptionOverlay::EnsureWindow() {
     const UINT dpi = target_ != nullptr ? GetDpiForWindow(target_) : GetDpiForSystem();
     RecreateFonts(dpi == 0 ? 96 : dpi);
 
-    hwnd_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE |
-                                WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+    hwnd_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW |
+                                WS_EX_TOPMOST,
                             kOverlayClassName, L"", WS_POPUP, 0, 0, 1, 1, nullptr,
                             nullptr, instance, this);
     if (hwnd_ == nullptr) return;
@@ -105,6 +106,7 @@ void CaptionOverlay::EnsureWindow() {
 
 void CaptionOverlay::DestroyWindowNow() {
     if (hwnd_ == nullptr) return;
+    if (dragging_) FinishDrag(false);
     KillTimer(hwnd_, kOverlayTimerId);
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
@@ -175,6 +177,85 @@ void CaptionOverlay::SetStyle(const CaptionStyle& style) {
     }
 }
 
+void CaptionOverlay::SetOffset(int logicalX, int logicalY) {
+    if (dragging_) return; // The drag owns the offset until the button is released.
+    const int x = std::clamp(logicalX, -10000, 10000);
+    const int y = std::clamp(logicalY, -10000, 10000);
+    if (x == offsetLogicalX_ && y == offsetLogicalY_) return;
+    offsetLogicalX_ = x;
+    offsetLogicalY_ = y;
+    if (hwnd_ != nullptr && !paused_) Position();
+}
+
+void CaptionOverlay::SetMovedCallback(std::function<void(int, int)> callback) {
+    onMoved_ = std::move(callback);
+}
+
+void CaptionOverlay::ComputeBasePosition(int width, int height, int& x, int& y) const {
+    x = 0;
+    y = 0;
+    if (target_ == nullptr) return;
+    RECT targetRect = {};
+    if (!GetWindowRect(target_, &targetRect)) return;
+    const int targetWidth = targetRect.right - targetRect.left;
+    const int margin = ui::Scale(kMarginLogical, dpi_);
+    switch (style_.anchor) {
+        case CaptionAnchor::TopCenter:
+            x = targetRect.left + (targetWidth - width) / 2;
+            y = targetRect.top + margin;
+            break;
+        case CaptionAnchor::BottomLeft:
+            x = targetRect.left + ui::Scale(kSideMarginLogical, dpi_);
+            y = targetRect.bottom - height - margin;
+            break;
+        case CaptionAnchor::BottomRight:
+            x = targetRect.right - width - ui::Scale(kSideMarginLogical, dpi_);
+            y = targetRect.bottom - height - margin;
+            break;
+        case CaptionAnchor::BottomCenter:
+        default:
+            x = targetRect.left + (targetWidth - width) / 2;
+            y = targetRect.bottom - height - margin;
+            break;
+    }
+}
+
+bool CaptionOverlay::IsGripPoint(POINT client) const {
+    if (hwnd_ == nullptr) return false;
+    RECT rc = {};
+    GetClientRect(hwnd_, &rc);
+    const int size = ui::Scale(36, dpi_);
+    return client.x >= rc.right - size && client.x <= rc.right && client.y >= 0 &&
+           client.y <= size;
+}
+
+void CaptionOverlay::FinishDrag(bool persist) {
+    if (!dragging_) return;
+    dragging_ = false;
+    if (hwnd_ != nullptr && GetCapture() == hwnd_) ReleaseCapture();
+    if (!persist || hwnd_ == nullptr) return;
+    if (target_ == nullptr || !IsWindow(target_)) return;
+    RECT rc = {};
+    if (!GetWindowRect(hwnd_, &rc)) return;
+    const int width = rc.right - rc.left;
+    const int height = rc.bottom - rc.top;
+    int baseX = 0;
+    int baseY = 0;
+    ComputeBasePosition(width, height, baseX, baseY);
+    offsetLogicalX_ =
+        std::clamp(MulDiv(rc.left - baseX, 96, static_cast<int>(dpi_)), -10000, 10000);
+    offsetLogicalY_ =
+        std::clamp(MulDiv(rc.top - baseY, 96, static_cast<int>(dpi_)), -10000, 10000);
+    log::Debug("UI", "CAPTION_OVERLAY_DRAGGED", L"",
+               L"Caption overlay moved.",
+               {{"x", std::to_string(offsetLogicalX_)},
+                {"y", std::to_string(offsetLogicalY_)}});
+    if (onMoved_ != nullptr) onMoved_(offsetLogicalX_, offsetLogicalY_);
+    lastWidth_ = -1;
+    lastHeight_ = -1;
+    Position();
+}
+
 float CaptionOverlay::LatestLineHeight() const {
     return ui::ScaleF(std::max(24.0f, static_cast<float>(style_.fontSize) * 1.36f),
                       dpi_);
@@ -192,7 +273,8 @@ int CaptionOverlay::PreferredWidth() const {
 
 int CaptionOverlay::WrapUnits() const {
     const int widthLogical = std::clamp(style_.fontSize * 34, 520, 980);
-    const int available = widthLogical - kPaddingLogical * 2;
+    // Reserve a little right-edge space for the drag grip's dots.
+    const int available = widthLogical - kPaddingLogical * 2 - 18;
     const int units = static_cast<int>(
         (static_cast<double>(available) * 2.0 /
          static_cast<double>(std::max(14, style_.fontSize))) *
@@ -218,6 +300,7 @@ int CaptionOverlay::ContentWidth() const {
 }
 
 void CaptionOverlay::Hide() {
+    if (dragging_) FinishDrag(false);
     target_ = nullptr;
     feed_.reset();
     paused_ = false;
@@ -377,29 +460,10 @@ bool CaptionOverlay::Position() {
     }
     heightF += static_cast<float>(latestLines_.size()) * latestLine;
     const int height = static_cast<int>(std::lround(heightF));
-    const int margin = ui::Scale(kMarginLogical, dpi_);
 
-    int x = targetRect.left + (targetWidth - width) / 2;
-    int y = targetRect.bottom - height - margin;
-    switch (style_.anchor) {
-        case CaptionAnchor::TopCenter:
-            x = targetRect.left + (targetWidth - width) / 2;
-            y = targetRect.top + margin;
-            break;
-        case CaptionAnchor::BottomLeft:
-            x = targetRect.left + ui::Scale(kSideMarginLogical, dpi_);
-            y = targetRect.bottom - height - margin;
-            break;
-        case CaptionAnchor::BottomRight:
-            x = targetRect.right - width - ui::Scale(kSideMarginLogical, dpi_);
-            y = targetRect.bottom - height - margin;
-            break;
-        case CaptionAnchor::BottomCenter:
-        default:
-            x = targetRect.left + (targetWidth - width) / 2;
-            y = targetRect.bottom - height - margin;
-            break;
-    }
+    ComputeBasePosition(width, height, baseX_, baseY_);
+    int x = baseX_ + ui::Scale(offsetLogicalX_, dpi_);
+    int y = baseY_ + ui::Scale(offsetLogicalY_, dpi_);
 
     MONITORINFO info = {};
     info.cbSize = sizeof(info);
@@ -531,6 +595,24 @@ void CaptionOverlay::Paint() {
                                 Gdiplus::PointF(side, y), &format, &brush);
             y += latestLine;
         }
+
+        // Drag grip: two columns of three dots in the top-right corner. The
+        // rest of the overlay stays click-through; only this corner accepts
+        // the mouse (see WM_NCHITTEST).
+        const float dot = ui::ScaleF(2.4f, dpi_);
+        const float gap = ui::ScaleF(3.2f, dpi_);
+        const float gripTop = ui::ScaleF(10.0f, dpi_);
+        const float gripRight =
+            static_cast<float>(width) - ui::ScaleF(11.0f, dpi_);
+        Gdiplus::SolidBrush gripBrush(
+            Gdiplus::Color(gripHover_ ? 200 : 95, 255, 255, 255));
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 2; ++col) {
+                const float gx = gripRight - dot - (1 - col) * (dot + gap);
+                const float gy = gripTop + static_cast<float>(row) * (dot + gap);
+                graphics.FillEllipse(&gripBrush, gx, gy, dot, dot);
+            }
+        }
     }
 
     HDC dc = GetDC(hwnd_);
@@ -562,7 +644,7 @@ LRESULT CaptionOverlay::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_TIMER:
             if (wp == kOverlayTimerId) {
-                if (paused_ || feed_ == nullptr) return 0;
+                if (paused_ || feed_ == nullptr || dragging_) return 0;
                 if (feed_->Sequence() != lastSequence_) {
                     UpdateContent();
                 } else {
@@ -573,9 +655,99 @@ LRESULT CaptionOverlay::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
-        case WM_NCHITTEST:
-            return HTTRANSPARENT;
+        case WM_NCHITTEST: {
+            POINT client = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            ScreenToClient(hwnd, &client);
+            return IsGripPoint(client) ? HTCLIENT : HTTRANSPARENT;
+        }
+        case WM_SETCURSOR:
+            if (LOWORD(lp) == HTCLIENT) {
+                POINT point = {};
+                GetCursorPos(&point);
+                ScreenToClient(hwnd, &point);
+                if (IsGripPoint(point)) {
+                    SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
+                    return TRUE;
+                }
+            }
+            break;
+        case WM_MOUSEMOVE: {
+            POINT point = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            if (dragging_) {
+                // Use the message coordinates mapped to the screen instead of
+                // GetCursorPos: a captured window receives WM_MOUSEMOVE even
+                // when the physical cursor is over another surface.
+                POINT screen = point;
+                ClientToScreen(hwnd, &screen);
+                const int x =
+                    dragStartRect_.left + (screen.x - dragStartCursor_.x);
+                const int y =
+                    dragStartRect_.top + (screen.y - dragStartCursor_.y);
+                SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0,
+                             SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+                lastX_ = x;
+                lastY_ = y;
+                return 0;
+            }
+            const bool hover = IsGripPoint(point);
+            if (hover != gripHover_) {
+                gripHover_ = hover;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            if (hover) {
+                SetCursor(LoadCursorW(nullptr, IDC_SIZEALL));
+                if (!trackingLeave_) {
+                    TRACKMOUSEEVENT track = {};
+                    track.cbSize = sizeof(track);
+                    track.dwFlags = TME_LEAVE;
+                    track.hwndTrack = hwnd;
+                    TrackMouseEvent(&track);
+                    trackingLeave_ = true;
+                }
+            }
+            return 0;
+        }
+        case WM_MOUSELEAVE:
+            trackingLeave_ = false;
+            if (gripHover_) {
+                gripHover_ = false;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
+        case WM_LBUTTONDOWN: {
+            POINT point = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            if (!IsGripPoint(point)) return 0;
+            dragging_ = true;
+            SetCapture(hwnd);
+            dragStartCursor_ = point;
+            ClientToScreen(hwnd, &dragStartCursor_);
+            GetWindowRect(hwnd, &dragStartRect_);
+            gripHover_ = true;
+            InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+        case WM_LBUTTONDBLCLK: {
+            POINT point = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+            if (!IsGripPoint(point)) return 0;
+            offsetLogicalX_ = 0;
+            offsetLogicalY_ = 0;
+            if (onMoved_ != nullptr) onMoved_(0, 0);
+            lastWidth_ = -1;
+            lastHeight_ = -1;
+            Position();
+            return 0;
+        }
+        case WM_LBUTTONUP:
+            if (dragging_) {
+                FinishDrag(true);
+                return 0;
+            }
+            break;
+        case WM_CAPTURECHANGED:
+            if (dragging_) FinishDrag(true);
+            return 0;
         case WM_DESTROY:
+            if (dragging_) FinishDrag(false);
             KillTimer(hwnd, kOverlayTimerId);
             hwnd_ = nullptr;
             shown_ = false;

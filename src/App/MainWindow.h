@@ -351,6 +351,8 @@ private:
     int captionFontSize_ = 22;
     std::string captionColor_ = "auto";
     std::string captionPosition_ = "bottom-center";
+    int captionOffsetX_ = 0;
+    int captionOffsetY_ = 0;
     bool translateCaptions_ = false;
     std::string captionTranslationLanguage_ = "en";
     bool liveCaptionsHotkeyRegistered_ = false;

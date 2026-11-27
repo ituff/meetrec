@@ -392,7 +392,7 @@ constexpr Entry kZh[] = {
     {Str::ModelDownloadDone, L"完成"},
     {Str::SettingsModelDownload, L"下载"},
     {Str::NavCaptions, L"字幕"},
-    {Str::SettingsCaptionsHint, L"会议转录、实时字幕、字幕样式与翻译。"},
+    {Str::SettingsCaptionsHint, L"会议转录、实时字幕、字幕样式与翻译。字幕浮层右上角的拖动点可调整位置，双击恢复。"},
     {Str::SettingsTranslation, L"实时翻译字幕"},
     {Str::SettingsTranslationLanguage, L"目标语言"},
     {Str::SettingsTranslationNote,
@@ -825,7 +825,9 @@ constexpr Entry kEn[] = {
     {Str::SettingsModelDownload, L"Download"},
     {Str::NavCaptions, L"Captions"},
     {Str::SettingsCaptionsHint,
-     L"Meeting transcript, live captions, caption style and translation."},
+     L"Meeting transcript, live captions, caption style and translation. "
+     L"Drag the grip in the overlay's top-right corner to move it; double-click "
+     L"to reset."},
     {Str::SettingsTranslation, L"Translate live captions"},
     {Str::SettingsTranslationLanguage, L"Target language"},
     {Str::SettingsTranslationNote,

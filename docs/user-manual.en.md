@@ -224,6 +224,10 @@ Notes:
 
   *Live overlay during recording: original on top in small dim text, translation below it;
   click-through and never captured into the MP4.*
+
+- Drag the **grip** in the overlay's top-right corner to reposition it; double-click the grip to
+  return to the selected anchor. The position is remembered and resets when the anchor changes.
+  Everything except the grip stays click-through.
 - During recording, `<recording>.partial.srt` is kept as a crash-safe journal; the final
   `.srt`/`.txt` are written after stop.
 - If the model pack or runtime DLLs are missing, recording still works and only the transcript
