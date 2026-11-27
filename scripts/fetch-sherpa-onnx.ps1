@@ -65,10 +65,10 @@ if ((Test-Path $download) -and -not $Force) {
     $hash = (Get-FileHash -Path $download -Algorithm SHA256).Hash
     $downloadOk = $hash -eq $ExpectedSha256
 }
-if (-not $downloadOk -and $env:GITHUB_ACTIONS -ne 'true') {
+if (-not $downloadOk) {
     try {
         # The China-friendly mirror can be slow or stale; cap the attempt and
-        # fall back to github.com. CI runners reach GitHub directly.
+        # fall back to github.com.
         Get-Asset $proxyUrl $download 600
         $downloadOk = $true
     } catch {

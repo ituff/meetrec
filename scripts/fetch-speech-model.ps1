@@ -67,16 +67,14 @@ function Get-WithFallback([string]$GithubUrl, [string]$Path, [string]$ExpectedSh
         $hash = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
         if ($hash -eq $ExpectedSha) { return }
     }
-    if ($env:GITHUB_ACTIONS -ne 'true') {
-        $proxy = "https://jscdn.msone.top/$GithubUrl"
-        try {
-            # The mirror can be slow; cap it so a stalled transfer falls back.
-            Get-Asset $proxy $Path $ExpectedSha 600
-            return
-        } catch {
-            Write-Warning "Proxy download failed: $($_.Exception.Message)"
-            Write-Host "Retrying directly from github.com..."
-        }
+    $proxy = "https://jscdn.msone.top/$GithubUrl"
+    try {
+        # The mirror can be slow; cap it so a stalled transfer falls back.
+        Get-Asset $proxy $Path $ExpectedSha 600
+        return
+    } catch {
+        Write-Warning "Proxy download failed: $($_.Exception.Message)"
+        Write-Host "Retrying directly from github.com..."
     }
     Get-Asset $GithubUrl $Path $ExpectedSha
 }
